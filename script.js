@@ -10682,3 +10682,186 @@ document.addEventListener("click",(e)=>{
     try{renderProfile=patchedProfile}catch(e){}
   }
 })();
+
+/* ===== DLINKY FIX 18/05 — entrada do perfil sempre volta + nome/link livre + logo/HUD visíveis ===== */
+(function(){
+  if(window.__DLINKY_FIX_ENTRADA_LINK_LOGO_1805__) return;
+  window.__DLINKY_FIX_ENTRADA_LINK_LOGO_1805__ = true;
+
+  const USER_KEY = 'dlinkyUser';
+  const PREF_KEY = 'dlinkyPreferredAccount';
+  const q = (s,r=document)=>r.querySelector(s);
+  const qa = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  function readJSON(key, fallback){ try{ const raw=localStorage.getItem(key); return raw?JSON.parse(raw):fallback; }catch(e){ return fallback; } }
+  function writeJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
+  function cleanSlug(v){ return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario'; }
+  function localUser(){ return readJSON(USER_KEY, {}); }
+  function syncUser(u){
+    writeJSON(USER_KEY,u);
+    try{ if(typeof user!=='undefined' && user){ Object.keys(user).forEach(k=>delete user[k]); Object.assign(user,u); } }catch(e){}
+    try{ if(window.user){ Object.keys(window.user).forEach(k=>delete window.user[k]); Object.assign(window.user,u); } }catch(e){}
+  }
+  function saveOnline(u){
+    try{
+      if(!window.firebase || !firebase.auth || !firebase.firestore || !firebase.auth().currentUser) return;
+      const fb=firebase.auth().currentUser;
+      const db=firebase.firestore();
+      const data=Object.assign({},u,{uid:fb.uid,email:(fb.email||u.email||'').toLowerCase().trim(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      db.collection('users').doc(fb.uid).set(data,{merge:true});
+      if(data.slug){
+        db.collection('profiles').doc(data.slug).set({
+          uid:fb.uid,name:data.name||'Usuário',slug:data.slug,email:data.email||'',bio:data.bio||'',avatar:data.avatar||'',banner:data.banner||'',bg:data.bg||'',video:data.video||'',frame:data.frame||'',music:data.music||'',welcome:data.welcome||'Clique aqui',color:data.color||'#a855f7',particleType:data.particleType||'snow',particles:data.particles!==false,verified:!!data.verified,links:Array.isArray(data.links)?data.links:[],socials:Array.isArray(data.socials)?data.socials:[],tags:Array.isArray(data.tags)?data.tags:[],embeds:Array.isArray(data.embeds)?data.embeds:[],decoration:data.decoration||'',updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+        },{merge:true});
+      }
+    }catch(e){ console.warn('Dlinky saveOnline final:',e); }
+  }
+  function applyPreferred(forceSave){
+    const pref=readJSON(PREF_KEY,null);
+    if(!pref) return null;
+    const cur=localUser();
+    const merged=Object.assign({},cur);
+    let changed=false;
+    if(pref.name && merged.name!==pref.name){ merged.name=pref.name; changed=true; }
+    if(pref.slug && merged.slug!==pref.slug){ merged.slug=pref.slug; changed=true; }
+    if(pref.bio!==undefined && merged.bio!==pref.bio){ merged.bio=pref.bio; changed=true; }
+    if(pref.music!==undefined && merged.music!==pref.music){ merged.music=pref.music; changed=true; }
+    if(pref.welcome && merged.welcome!==pref.welcome){ merged.welcome=pref.welcome; changed=true; }
+    if(changed || forceSave){ syncUser(merged); saveOnline(merged); }
+    return merged;
+  }
+
+  // Salvar conta: agora nome E link ficam exatamente do jeito que você digitar.
+  document.addEventListener('click', function(ev){
+    const btn=ev.target && ev.target.closest && ev.target.closest('#saveAccount');
+    if(!btn) return;
+    ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+    const old=localUser();
+    const name=(q('#cfgName')?.value||'').trim() || old.name || 'Usuário';
+    const slug=cleanSlug(q('#cfgSlug')?.value || old.slug || name);
+    const bio=q('#cfgBio')?.value ?? old.bio ?? '';
+    const music=(q('#cfgMusic')?.value||'').trim();
+    const welcome=(q('#cfgWelcome')?.value||'').trim() || 'Clique aqui';
+    const merged=Object.assign({},old,{name,slug,bio,music,welcome});
+    writeJSON(PREF_KEY,{name,slug,bio,music,welcome,updatedAt:Date.now()});
+    syncUser(merged);
+    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+    try{ if(typeof toast==='function') toast('Salvo com sucesso!'); }catch(e){}
+    saveOnline(merged);
+    setTimeout(()=>applyPreferred(true),700);
+    setTimeout(()=>applyPreferred(true),2200);
+    setTimeout(()=>applyPreferred(true),5000);
+  }, true);
+
+  // Se o Firebase tentar voltar para nome/link antigo do e-mail, força o que você salvou manualmente.
+  const oldSetItem=localStorage.setItem.bind(localStorage);
+  localStorage.setItem=function(key,value){
+    const result=oldSetItem(key,value);
+    if(key===USER_KEY){ setTimeout(()=>applyPreferred(false),30); }
+    return result;
+  };
+
+  // Render do painel sem apagar campo enquanto digita, e mantendo nome/link preferidos.
+  const oldRenderDash = window.renderDash || (typeof renderDash==='function'?renderDash:null);
+  if(typeof oldRenderDash==='function'){
+    const patchedDash=function(){
+      applyPreferred(false);
+      const r=oldRenderDash.apply(this,arguments);
+      const pref=readJSON(PREF_KEY,null);
+      if(pref){
+        if(q('#cfgName') && document.activeElement!==q('#cfgName')) q('#cfgName').value=pref.name||'';
+        if(q('#cfgSlug') && document.activeElement!==q('#cfgSlug')) q('#cfgSlug').value=pref.slug||'';
+        if(q('#cfgBio') && document.activeElement!==q('#cfgBio')) q('#cfgBio').value=pref.bio||'';
+        if(q('#cfgMusic') && document.activeElement!==q('#cfgMusic')) q('#cfgMusic').value=pref.music||'';
+        if(q('#cfgWelcome') && document.activeElement!==q('#cfgWelcome')) q('#cfgWelcome').value=pref.welcome||'Clique aqui';
+      }
+      return r;
+    };
+    window.renderDash=patchedDash;
+    try{ renderDash=patchedDash; }catch(e){}
+  }
+
+  function clearEntryMemory(){
+    try{
+      Object.keys(sessionStorage).forEach(k=>{ if(k.indexOf('dlinky_entry_ok_')===0) sessionStorage.removeItem(k); });
+    }catch(e){}
+    window.__dlinkyForceEntryOverlay=true;
+  }
+  function resetProfileMedia(){
+    const a=q('#profileAudio'); if(a){ try{a.pause();a.currentTime=0;}catch(e){} }
+  }
+
+  // Ao clicar em Ver Perfil, sempre volta a tela "Clique aqui" para a música tocar de novo.
+  document.addEventListener('click',function(e){
+    if(e.target.closest('#viewProfile') || e.target.closest('#viewProfile2') || e.target.closest('[data-goto="profile"]')){
+      clearEntryMemory(); resetProfileMedia();
+    }
+    if(e.target.closest('#backToDash')){
+      clearEntryMemory(); resetProfileMedia();
+    }
+  },true);
+
+  const oldRenderProfile = window.renderProfile || (typeof renderProfile==='function'?renderProfile:null);
+  if(typeof oldRenderProfile==='function'){
+    const patchedProfile=function(){
+      applyPreferred(false);
+      const entering=!!window.__dlinkyForceEntryOverlay;
+      if(entering) clearEntryMemory();
+      const r=oldRenderProfile.apply(this,arguments);
+      const u=localUser();
+      const overlay=q('#entryOverlay');
+      const audio=q('#profileAudio');
+      if(audio){
+        const music=String(u.music||'').trim();
+        if(music && (audio.getAttribute('src')||'')!==music){ audio.src=music; audio.load(); }
+      }
+      if(entering && overlay){
+        overlay.classList.remove('hidden');
+        resetProfileMedia();
+      }
+      if(q('#profileName')) q('#profileName').textContent=u.name||'Usuário';
+      if(q('#profileSlug2')) q('#profileSlug2').textContent='@'+(u.slug||'usuario');
+      return r;
+    };
+    window.renderProfile=patchedProfile;
+    try{ renderProfile=patchedProfile; }catch(e){}
+  }
+
+  // Quando clica na tela inicial do perfil, libera entrada e toca música atual.
+  document.addEventListener('click',function(e){
+    if(e.target.closest('#entryOverlay')){
+      window.__dlinkyForceEntryOverlay=false;
+      const u=localUser();
+      const a=q('#profileAudio');
+      if(a && u.music){
+        if((a.getAttribute('src')||'')!==u.music){ a.src=u.music; a.load(); }
+        setTimeout(()=>a.play().catch(()=>{}),80);
+      }
+    }
+  },true);
+
+  // Garante logo/brand e HUD visíveis de novo.
+  function injectVisualFix(){
+    if(q('#dlinkyLogoHudVisualFix')) return;
+    const st=document.createElement('style');
+    st.id='dlinkyLogoHudVisualFix';
+    st.textContent=`
+      .topbar .brand,.brand{display:flex!important;align-items:center!important;gap:10px!important;visibility:visible!important;opacity:1!important;}
+      .brand strong{display:inline!important;visibility:visible!important;opacity:1!important;}
+      .brand-icon{display:grid!important;place-items:center!important;visibility:visible!important;opacity:1!important;}
+      #dlinkyProfileHudPlayer,.dlinky-profile-hud-player,.madeby,#soundBtn{visibility:visible!important;opacity:1!important;}
+      body.is-profile #dlinkyProfileHudPlayer, body.public-profile #dlinkyProfileHudPlayer{display:flex!important;}
+      .profile-meta,.profile-links,.profile-socials{visibility:visible!important;opacity:1!important;}
+    `;
+    document.head.appendChild(st);
+  }
+  function ensureBrand(){
+    qa('.brand').forEach(b=>{
+      if(!b.querySelector('.brand-icon')) b.insertAdjacentHTML('afterbegin','<span class="brand-icon">D</span>');
+      if(!b.querySelector('strong')) b.insertAdjacentHTML('beforeend','<strong>Dlinky</strong>');
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>{injectVisualFix();ensureBrand();applyPreferred(false);});
+  else {injectVisualFix();ensureBrand();applyPreferred(false);}
+  setInterval(()=>{applyPreferred(false); ensureBrand();},2500);
+})();
