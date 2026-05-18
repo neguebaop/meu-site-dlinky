@@ -11898,3 +11898,155 @@ document.addEventListener("click",(e)=>{
   }
   setTimeout(apply,200);
 })();
+
+
+/* ===== DLINKY FIX CIRÚRGICO FINAL — AVATAR REAL NA PREVIEW DA MOLDURA =====
+   Só mexe na imagem/avatar dentro dos cards de Molduras da Loja.
+   Não altera abas, duração, preço, música, perfil, admin, inventário ou compra.
+*/
+(function(){
+  if(window.__dlinkyAvatarPreviewMolduraFinal) return;
+  window.__dlinkyAvatarPreviewMolduraFinal = true;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+
+  function cleanUrl(v){
+    v = String(v || '').trim();
+    if(!v || v === 'none') return '';
+    const m = v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v = m[1];
+    return v.replace(/^['"]|['"]$/g,'').trim();
+  }
+
+  function readUser(){
+    try{
+      const saved = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
+      if(typeof user === 'object' && user){ return Object.assign({}, saved, user); }
+      return saved;
+    }catch(e){
+      try{ if(typeof user === 'object' && user) return user; }catch(err){}
+      return {};
+    }
+  }
+
+  function fromElement(sel){
+    const el = q(sel);
+    if(!el) return '';
+    if(el.tagName === 'IMG') return cleanUrl(el.getAttribute('src'));
+    return cleanUrl(el.style.backgroundImage || getComputedStyle(el).backgroundImage);
+  }
+
+  function bestAvatar(){
+    const u = readUser();
+    const candidates = [
+      u.avatar,
+      u.photo,
+      u.photoURL,
+      u.avatarUrl,
+      localStorage.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')),
+      localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')),
+      fromElement('#dashAvatar'),
+      fromElement('#sideAvatar'),
+      fromElement('#profileAvatar'),
+      fromElement('.profile-avatar'),
+      fromElement('.avatar')
+    ];
+    for(const c of candidates){
+      const v = cleanUrl(c);
+      if(v && !/placeholder|default-avatar|usuario|user-icon/i.test(v)) return v;
+      if(v && /^https?:\/\//i.test(v)) return v;
+    }
+    return cleanUrl(u.avatar || candidates.find(Boolean) || '');
+  }
+
+  function paintAvatarPreview(){
+    const store = q('#tab-store');
+    if(!store) return;
+    const av = bestAvatar();
+    if(!av) return;
+
+    // Mantém salvo para próximos renders sem mexer nos outros dados.
+    try{
+      const u = readUser();
+      if(u && !u.avatar){ u.avatar = av; localStorage.setItem('dlinkyUser', JSON.stringify(u)); }
+      localStorage.setItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'), av);
+    }catch(e){}
+
+    const targets = qa('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', store);
+    targets.forEach(el=>{
+      el.style.setProperty('background-image', 'url("'+av.replace(/"/g,'%22')+'")', 'important');
+      el.style.setProperty('background-size', 'cover', 'important');
+      el.style.setProperty('background-position', 'center', 'important');
+      el.style.setProperty('background-repeat', 'no-repeat', 'important');
+      el.style.setProperty('background-color', 'transparent', 'important');
+      el.style.setProperty('display', 'block', 'important');
+      el.style.setProperty('visibility', 'visible', 'important');
+      el.style.setProperty('opacity', '1', 'important');
+    });
+
+    // Caso algum card tenha perdido o elemento do avatar, recria somente dentro da preview da moldura.
+    qa('.frame-shop-preview,.real-frame-preview,.inv-preview', store).forEach(box=>{
+      const hasFrame = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
+      if(!hasFrame) return;
+      let avatarEl = q('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', box);
+      if(!avatarEl){
+        avatarEl = document.createElement('div');
+        avatarEl.className = 'frame-avatar-demo zyo-person-demo';
+        box.insertBefore(avatarEl, box.firstChild);
+      }
+      avatarEl.style.cssText += ';position:absolute!important;left:50%!important;top:50%!important;width:92px!important;height:92px!important;border-radius:50%!important;transform:translate(-50%,-50%)!important;z-index:1!important;background:url("'+av.replace(/"/g,'%22')+'") center/cover no-repeat!important;';
+      box.style.setProperty('position','relative','important');
+      box.style.setProperty('overflow','hidden','important');
+      const img = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
+      if(img){
+        img.style.setProperty('position','absolute','important');
+        img.style.setProperty('left','50%','important');
+        img.style.setProperty('top','50%','important');
+        img.style.setProperty('transform','translate(-50%,-50%)','important');
+        img.style.setProperty('z-index','2','important');
+        img.style.setProperty('object-fit','contain','important');
+        img.style.setProperty('pointer-events','none','important');
+      }
+    });
+  }
+
+  // Reaplica após renders antigos da loja sem alterar o render da loja.
+  const oldRenderShop = window.renderShop;
+  if(typeof oldRenderShop === 'function' && !oldRenderShop.__dlinkyAvatarPreviewOnly){
+    const patched = function(){
+      const r = oldRenderShop.apply(this, arguments);
+      requestAnimationFrame(paintAvatarPreview);
+      setTimeout(paintAvatarPreview, 80);
+      return r;
+    };
+    patched.__dlinkyAvatarPreviewOnly = true;
+    window.renderShop = patched;
+    try{ renderShop = patched; }catch(e){}
+  }
+
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab],#tab-store [data-frame-duration]')){
+      setTimeout(paintAvatarPreview, 30);
+      setTimeout(paintAvatarPreview, 180);
+    }
+  }, true);
+
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]')){
+      setTimeout(paintAvatarPreview, 30);
+      setTimeout(paintAvatarPreview, 180);
+    }
+  }, true);
+
+  const mo = new MutationObserver(function(){
+    const store = q('#tab-store');
+    if(store && store.classList.contains('active')) requestAnimationFrame(paintAvatarPreview);
+  });
+  function startObserve(){ const store=q('#tab-store'); if(store) mo.observe(store,{childList:true,subtree:true}); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserve, {once:true}); else startObserve();
+
+  setTimeout(paintAvatarPreview, 100);
+  setTimeout(paintAvatarPreview, 500);
+  setTimeout(paintAvatarPreview, 1200);
+})();
