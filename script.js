@@ -11107,3 +11107,157 @@ document.addEventListener("click",(e)=>{
   setTimeout(patchForms,1200);
   setTimeout(()=>{ if(!currentPathSlug() && (!location.hash || location.hash==="#")){ try{ location.hash="#/"; route(); }catch(e){} } },200);
 })();
+
+/* ===== DLINKY HOTFIX — Customização salva nome/bio de verdade ===== */
+(function(){
+  if(window.__DLINKY_FIX_CUSTOM_NOME_BIO_1805__) return;
+  window.__DLINKY_FIX_CUSTOM_NOME_BIO_1805__ = true;
+
+  const USER_KEY = 'dlinkyUser';
+  const PREF_KEY = 'dlinkyPreferredAccount';
+  const DRAFT_KEY = 'dlinkyCustomDraft_v1';
+  const q = (s,r=document)=>r.querySelector(s);
+
+  function readJSON(k,f){ try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):f; }catch(e){ return f; } }
+  function writeJSON(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+  function cleanSlug(v){ return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario'; }
+  function readUser(){ return readJSON(USER_KEY,{}); }
+  function syncUser(patch){
+    const old = readUser();
+    const merged = Object.assign({}, old, patch||{});
+    if(patch && patch.slug) merged.slug = cleanSlug(patch.slug);
+    writeJSON(USER_KEY, merged);
+    try{ if(typeof user !== 'undefined' && user){ Object.keys(user).forEach(k=>delete user[k]); Object.assign(user, merged); } }catch(e){}
+    try{ if(window.user){ Object.keys(window.user).forEach(k=>delete window.user[k]); Object.assign(window.user, merged); } }catch(e){}
+    return merged;
+  }
+  function saveOnline(u){
+    try{
+      if(!window.firebase || !firebase.auth || !firebase.firestore || !firebase.auth().currentUser) return;
+      const fb = firebase.auth().currentUser;
+      const db = firebase.firestore();
+      const data = Object.assign({}, u, {
+        uid: fb.uid,
+        email: (fb.email || u.email || '').toLowerCase().trim(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      db.collection('users').doc(fb.uid).set(data,{merge:true});
+      if(data.slug){
+        db.collection('profiles').doc(cleanSlug(data.slug)).set({
+          uid: fb.uid,
+          name: data.name || 'Usuário',
+          slug: cleanSlug(data.slug),
+          email: data.email || '',
+          bio: data.bio || '',
+          avatar: data.avatar || '',
+          banner: data.banner || '',
+          bg: data.bg || '',
+          video: data.video || '',
+          frame: data.frame || '',
+          music: data.music || '',
+          welcome: data.welcome || 'Clique aqui',
+          color: data.color || '#a855f7',
+          particleType: data.particleType || 'snow',
+          particles: data.particles !== false,
+          verified: !!data.verified,
+          links: Array.isArray(data.links) ? data.links : [],
+          socials: Array.isArray(data.socials) ? data.socials : [],
+          tags: Array.isArray(data.tags) ? data.tags : [],
+          embeds: Array.isArray(data.embeds) ? data.embeds : [],
+          decoration: data.decoration || '',
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        },{merge:true});
+      }
+    }catch(e){ console.warn('Dlinky custom save online:', e); }
+  }
+  function setValueSafe(id,val){
+    const el=q(id); if(!el) return;
+    if(document.activeElement === el) return;
+    el.value = val || '';
+  }
+  function captureDraft(){
+    const draft = readJSON(DRAFT_KEY,{});
+    if(q('#customName')) draft.name = q('#customName').value;
+    if(q('#customBio')) draft.bio = q('#customBio').value;
+    if(q('#customBgFx')) draft.bgFx = q('#customBgFx').value;
+    writeJSON(DRAFT_KEY,draft);
+  }
+  function applyFieldsFromUser(){
+    const u = readUser();
+    const draft = readJSON(DRAFT_KEY,{});
+    const name = (draft.name && draft.name !== 'Usuário') ? draft.name : (u.name || '');
+    const bio = (draft.bio !== undefined) ? draft.bio : (u.bio || '');
+    setValueSafe('#customName', name);
+    setValueSafe('#customBio', bio);
+    if(q('#customBgFx') && document.activeElement !== q('#customBgFx')) q('#customBgFx').value = draft.bgFx || u.bgFx || 'none';
+  }
+
+  document.addEventListener('input', function(e){
+    if(e.target && (e.target.id === 'customName' || e.target.id === 'customBio')) captureDraft();
+  }, true);
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.id === 'customBgFx') captureDraft();
+  }, true);
+
+  function saveCustom(ev){
+    const btn = ev && ev.target && ev.target.closest && ev.target.closest('#saveCustom,#saveCustomFinal,#saveCustomFinal2,#saveCustomFinalReal');
+    if(!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+
+    const old = readUser();
+    const draft = readJSON(DRAFT_KEY,{});
+    const nameInput = q('#customName');
+    const bioInput = q('#customBio');
+    const fxInput = q('#customBgFx');
+
+    const name = (nameInput ? nameInput.value : draft.name || old.name || 'Usuário').trim() || old.name || 'Usuário';
+    const bio = bioInput ? bioInput.value : (draft.bio !== undefined ? draft.bio : old.bio || '');
+    const bgFx = fxInput ? fxInput.value : (draft.bgFx || old.bgFx || 'none');
+
+    const merged = syncUser({ name, bio, bgFx });
+    const pref = readJSON(PREF_KEY,{});
+    writeJSON(PREF_KEY, Object.assign({}, pref, { name, bio, updatedAt: Date.now() }));
+    writeJSON(DRAFT_KEY, { name, bio, bgFx });
+
+    setValueSafe('#cfgName', name);
+    setValueSafe('#cfgBio', bio);
+    setValueSafe('#customName', name);
+    setValueSafe('#customBio', bio);
+
+    try{ if(typeof renderDash === 'function') renderDash(); }catch(e){}
+    try{ if(typeof renderProfile === 'function' && (location.hash === '#/profile' || document.querySelector('#profile.active'))) renderProfile(); }catch(e){}
+    try{ if(typeof toast === 'function') toast('Customização salva!'); }catch(e){}
+    saveOnline(merged);
+
+    setTimeout(function(){ const u=syncUser({name,bio,bgFx}); saveOnline(u); applyFieldsFromUser(); }, 800);
+    setTimeout(function(){ const u=syncUser({name,bio,bgFx}); saveOnline(u); applyFieldsFromUser(); }, 2200);
+  }
+  document.addEventListener('click', saveCustom, true);
+
+  const oldRenderDash = window.renderDash || (typeof renderDash === 'function' ? renderDash : null);
+  if(typeof oldRenderDash === 'function' && !oldRenderDash.__customNomeBioFix){
+    const patched = function(){
+      const r = oldRenderDash.apply(this, arguments);
+      applyFieldsFromUser();
+      return r;
+    };
+    patched.__customNomeBioFix = true;
+    window.renderDash = patched;
+    try{ renderDash = patched; }catch(e){}
+  }
+  const oldOpenTab = window.openTab || (typeof openTab === 'function' ? openTab : null);
+  if(typeof oldOpenTab === 'function' && !oldOpenTab.__customNomeBioFix){
+    const patchedOpen = function(id){
+      const r = oldOpenTab.apply(this, arguments);
+      if(id === 'custom') setTimeout(applyFieldsFromUser,80);
+      return r;
+    };
+    patchedOpen.__customNomeBioFix = true;
+    window.openTab = patchedOpen;
+    try{ openTab = patchedOpen; }catch(e){}
+  }
+  window.addEventListener('hashchange',()=>setTimeout(applyFieldsFromUser,120));
+  setTimeout(applyFieldsFromUser,300);
+})();
