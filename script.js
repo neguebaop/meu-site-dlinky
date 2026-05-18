@@ -11453,3 +11453,160 @@ document.addEventListener("click",(e)=>{
   setTimeout(restoreFields,200);
   setTimeout(restoreFields,1000);
 })();
+
+/* ===== DLINKY HOTFIX — BIO sempre aparece e salva no perfil ===== */
+(function(){
+  if(window.__DLINKY_FIX_BIO_APARECER_1805__) return;
+  window.__DLINKY_FIX_BIO_APARECER_1805__ = true;
+
+  const USER_KEY = 'dlinkyUser';
+  const DRAFT_KEYS = ['dlinkyLiveDraft_Final_v3','dlinkyCustomDraft_v1','dlinkyPreferredAccount'];
+  const q = (s,r=document)=>r.querySelector(s);
+  const cleanSlug = v => String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario';
+  function readJSON(k,f){try{const raw=localStorage.getItem(k);return raw?JSON.parse(raw):f;}catch(e){return f;}}
+  function writeJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+  function getUser(){return readJSON(USER_KEY,{});}
+  function setUser(patch){
+    const old=getUser();
+    const merged=Object.assign({},old,patch||{});
+    if(merged.slug) merged.slug=cleanSlug(merged.slug);
+    writeJSON(USER_KEY,merged);
+    try{if(typeof user!=='undefined'&&user){Object.keys(user).forEach(k=>delete user[k]);Object.assign(user,merged);}}catch(e){}
+    try{window.user=Object.assign(window.user||{},merged);}catch(e){}
+    return merged;
+  }
+  function draftBio(){
+    for(const k of DRAFT_KEYS){
+      const d=readJSON(k,{});
+      if(typeof d.bio==='string' && d.bio.trim()) return d.bio;
+    }
+    return '';
+  }
+  function bestBio(){
+    const active = q('#cfgBio') || q('#customBio');
+    if(active && active.value && active.value.trim()) return active.value;
+    const u=getUser();
+    return (u.bio && String(u.bio).trim()) ? u.bio : draftBio();
+  }
+  function bestName(){
+    const u=getUser();
+    return (u.name && u.name !== 'Usuário') ? u.name : ((q('#cfgName')&&q('#cfgName').value.trim()) || (q('#customName')&&q('#customName').value.trim()) || 'Usuário');
+  }
+  function bestSlug(){
+    const u=getUser();
+    return cleanSlug(u.slug || (q('#cfgSlug')&&q('#cfgSlug').value) || bestName());
+  }
+  function saveOnline(u){
+    try{
+      if(!window.firebase || !firebase.auth || !firebase.firestore || !firebase.auth().currentUser) return;
+      const fb=firebase.auth().currentUser;
+      const db=firebase.firestore();
+      const data=Object.assign({},u,{uid:fb.uid,email:(fb.email||u.email||'').toLowerCase().trim(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      db.collection('users').doc(fb.uid).set(data,{merge:true});
+      const slug=cleanSlug(data.slug||'');
+      if(slug){
+        db.collection('profiles').doc(slug).set({
+          uid:fb.uid,
+          name:data.name||'Usuário',
+          slug,
+          email:data.email||'',
+          bio:data.bio||'',
+          avatar:data.avatar||'',
+          banner:data.banner||'',
+          bg:data.bg||'',
+          video:data.video||'',
+          frame:data.frame||'',
+          frameUrl:data.frameUrl||data.frame||'',
+          activeFrameId:data.activeFrameId||'',
+          frameAdjustments:data.frameAdjustments||{},
+          music:data.music||'',
+          welcome:data.welcome||'Clique aqui',
+          color:data.color||'#a855f7',
+          particleType:data.particleType||'snow',
+          particles:data.particles!==false,
+          verified:!!data.verified,
+          links:Array.isArray(data.links)?data.links:[],
+          socials:Array.isArray(data.socials)?data.socials:[],
+          tags:Array.isArray(data.tags)?data.tags:[],
+          embeds:Array.isArray(data.embeds)?data.embeds:[],
+          decoration:data.decoration||'',
+          updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+        },{merge:true});
+      }
+    }catch(e){console.warn('Dlinky bio save online:',e);}
+  }
+  function paintBio(){
+    const bio=bestBio();
+    const bioEl=q('#profileBio');
+    if(bioEl){
+      bioEl.textContent=bio || '';
+      bioEl.style.setProperty('display','block','important');
+      bioEl.style.setProperty('visibility','visible','important');
+      bioEl.style.setProperty('opacity','1','important');
+      bioEl.style.setProperty('min-height', bio ? '18px' : '0px','important');
+      bioEl.style.setProperty('margin','8px 0 14px','important');
+      bioEl.style.setProperty('color','var(--profileBioColor, #fff)','important');
+      bioEl.style.setProperty('font-size','16px','important');
+      bioEl.style.setProperty('font-weight','600','important');
+      bioEl.classList.add('dlinky-bio-forced');
+    }
+  }
+  function commitFromFields(){
+    const patch={};
+    const b1=q('#cfgBio'), b2=q('#customBio');
+    const n1=q('#cfgName'), n2=q('#customName'), s1=q('#cfgSlug');
+    if(n1 && n1.value.trim()) patch.name=n1.value.trim();
+    if(n2 && n2.value.trim()) patch.name=n2.value.trim();
+    if(s1 && s1.value.trim()) patch.slug=cleanSlug(s1.value);
+    if(b1) patch.bio=b1.value;
+    if(b2) patch.bio=b2.value;
+    if(q('#cfgMusic')) patch.music=q('#cfgMusic').value.trim();
+    if(q('#cfgWelcome')) patch.welcome=q('#cfgWelcome').value.trim()||'Clique aqui';
+    const u=setUser(patch);
+    for(const k of DRAFT_KEYS){
+      const d=readJSON(k,{});
+      if(patch.bio!==undefined) d.bio=patch.bio;
+      if(patch.name!==undefined) d.name=patch.name;
+      if(patch.slug!==undefined) d.slug=patch.slug;
+      d.updatedAt=Date.now();
+      writeJSON(k,d);
+    }
+    clearTimeout(window.__dlinkyBioOnlineTimer);
+    window.__dlinkyBioOnlineTimer=setTimeout(()=>saveOnline(u),500);
+    return u;
+  }
+
+  document.addEventListener('input',function(e){
+    if(e.target && ['cfgBio','customBio','cfgName','customName','cfgSlug'].includes(e.target.id)){
+      commitFromFields();
+      if(q('#profile.active')) paintBio();
+    }
+  },true);
+
+  document.addEventListener('click',function(e){
+    const btn=e.target && e.target.closest && e.target.closest('#saveAccount,#saveCustom,#saveCustomFinal,#saveCustomFinal2,#saveCustomFinalReal');
+    if(!btn) return;
+    setTimeout(function(){ const u=commitFromFields(); saveOnline(u); paintBio(); try{if(typeof toast==='function')toast('Salvo com sucesso!');}catch(err){} },0);
+  },true);
+
+  const oldRenderProfile=window.renderProfile || (typeof renderProfile==='function'?renderProfile:null);
+  if(typeof oldRenderProfile==='function' && !oldRenderProfile.__bioAparecerFix){
+    const patched=function(){
+      const r=oldRenderProfile.apply(this,arguments);
+      const u=getUser();
+      if(q('#profileName')) q('#profileName').textContent=u.name||bestName();
+      if(q('#profileSlug2')) q('#profileSlug2').textContent='@'+(u.slug||bestSlug());
+      paintBio();
+      setTimeout(paintBio,80);
+      setTimeout(paintBio,400);
+      return r;
+    };
+    patched.__bioAparecerFix=true;
+    window.renderProfile=patched;
+    try{renderProfile=patched;}catch(e){}
+  }
+
+  window.addEventListener('hashchange',()=>setTimeout(paintBio,200));
+  setTimeout(paintBio,300);
+  setTimeout(paintBio,1200);
+})();
