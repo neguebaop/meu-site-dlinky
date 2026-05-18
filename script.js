@@ -12434,3 +12434,34 @@ document.addEventListener("click",(e)=>{
 
   console.log("Moldura fantasma removida.");
 })();
+/* ===== AJUSTE SOMENTE NA LOJA: diminuir preview da moldura ===== */
+(function(){
+  if(window.__dlinkyLojaMolduraMenorPreview) return;
+  window.__dlinkyLojaMolduraMenorPreview = true;
+
+  const css = document.createElement("style");
+  css.id = "dlinky-loja-moldura-menor-preview";
+  css.textContent = `
+    /* Só na loja, só no card de molduras */
+    #tab-store .frame-shop-preview .frame-img.big,
+    #shopGrid .frame-shop-preview .frame-img.big,
+    #shopGrid .real-frame-preview .frame-img.big {
+      width: 150px !important;
+      height: 150px !important;
+      object-fit: contain !important;
+      left: 50% !important;
+      top: 50% !important;
+      transform: translate(-50%, -50%) !important;
+      position: absolute !important;
+      max-width: 150px !important;
+      max-height: 150px !important;
+    }
+
+    #tab-store .frame-shop-preview,
+    #shopGrid .real-frame-preview {
+      position: relative !important;
+      overflow: hidden !important;
+    }
+  `;
+  document.head.appendChild(css);
+})();
