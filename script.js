@@ -11687,12 +11687,6 @@ document.addEventListener("click",(e)=>{
     if(dur==='7 dias') return base*2;
     return base;
   }
-  const DURATION_STORE_KEY='dlinkyFrameDurationByFrame_v2';
-  function readDurations(){try{return JSON.parse(localStorage.getItem(DURATION_STORE_KEY)||'{}')}catch(e){return {}}}
-  function writeDurations(v){try{localStorage.setItem(DURATION_STORE_KEY,JSON.stringify(v||{}))}catch(e){}}
-  function durationKey(frame,index){return String((frame&&frame.url)||'frame')+'|'+String((frame&&frame.name)||index)}
-  function getSavedDuration(frame,index){const data=readDurations();return data[durationKey(frame,index)]||data.__last||'3 dias'}
-  function saveDuration(frame,index,value){const data=readDurations();data[durationKey(frame,index)]=value;data.__last=value;writeDurations(data)}
   function getAvatar(){
     const u=getUser();
     return String(u.avatar || u.photoURL || u.foto || u.icon || localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')) || '').trim();
@@ -11747,16 +11741,14 @@ document.addEventListener("click",(e)=>{
     }
     g.innerHTML=frames.map((f,i)=>{
       const base=priceNumber(f.price);
-      const savedDur=getSavedDuration(f,i);
-      const currentPrice=(f.prices && f.prices[savedDur]!=null) ? Number(f.prices[savedDur]) : priceFor(base,savedDur);
       return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
         <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
           <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
           <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
         </div>
         <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
-        <div class="frame-price">Preço: <b data-price-label="${i}">${currentPrice} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(d=>`<option ${d===savedDur?'selected':''}>${d}</option>`).join('')}</select>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${base} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}"><option>3 dias</option><option>7 dias</option><option>15 dias</option><option>Permanente</option></select>
         <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
       </div>`;
     }).join('');
@@ -11801,8 +11793,6 @@ document.addEventListener("click",(e)=>{
     const sel=e.target.closest('#tab-store [data-frame-duration]');
     if(!sel) return;
     const idx=Number(sel.dataset.frameDuration||0);
-    const frames=getFrames();
-    if(frames[idx]) saveDuration(frames[idx],idx,sel.value);
     const item=(window.__dlinkyVisibleFrames||[])[idx];
     const card=sel.closest('[data-frame-card]');
     const base=Number(card?.dataset?.basePrice || priceNumber(item?.[1]));
@@ -11813,7 +11803,7 @@ document.addEventListener("click",(e)=>{
 
   const oldOpen=window.openTab || (typeof openTab==='function'?openTab:null);
   if(typeof oldOpen==='function' && !oldOpen.__lojaOnlySafePatch){
-    const patched=function(id){ const r=oldOpen.apply(this,arguments); if(id==='store') setTimeout(()=>renderStore(getMode()),20); return r; };
+    const patched=function(id){ const r=oldOpen.apply(this,arguments); if(id==='store' && typeof renderStore==='function') renderStore(getMode()); return r; };
     patched.__lojaOnlySafePatch=true;
     window.openTab=patched;
     try{openTab=patched}catch(e){}
@@ -11825,8 +11815,93 @@ document.addEventListener("click",(e)=>{
   window.renderShop=patchedRender;
   try{renderShop=patchedRender}catch(e){}
 
-  window.addEventListener('hashchange',()=>setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },120));
-  document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },120));
-  setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },500);
 })();
 
+
+
+/* ===== DLINKY FIX FINAL — SOMENTE SELECT DA DURAÇÃO DA MOLDURA =====
+   Mantém a duração escolhida (3/7/15/Permanente) mesmo se a loja renderizar novamente.
+   Não mexe em perfil, avatar, música, admin, inventário ou layout.
+*/
+(function(){
+  if(window.__dlinkyFrameDurationFinalFixV7) return;
+  window.__dlinkyFrameDurationFinalFixV7 = true;
+
+  const STORE_KEY = 'dlinky_frame_duration_selected_v7';
+  const q = (s,r=document)=>r.querySelector(s);
+  const qa = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  function read(){ try{return JSON.parse(localStorage.getItem(STORE_KEY)||'{}')}catch(e){return{}} }
+  function write(v){ localStorage.setItem(STORE_KEY,JSON.stringify(v||{})); }
+  function keyFor(card,sel){
+    if(!card) return 'global';
+    const img = card.querySelector('img.frame-img, .frame-img, img');
+    const title = card.querySelector('.frame-info b, .asset-body b, b');
+    return [card.dataset.frameCard||sel?.dataset.frameDuration||'0', img?.getAttribute('src')||'', title?.textContent||''].join('|');
+  }
+  function priceNumber(v){ const m=String(v||'40').match(/\d+/); return m?Number(m[0]):40; }
+  function priceFor(base,dur){
+    if(dur==='Permanente') return base*5;
+    if(dur==='15 dias') return base*3;
+    if(dur==='7 dias') return base*2;
+    return base;
+  }
+  function updatePrice(sel){
+    const card = sel.closest('[data-frame-card]');
+    if(!card) return;
+    const idx = sel.dataset.frameDuration || card.dataset.frameCard || '0';
+    const base = Number(card.dataset.basePrice || priceNumber(card.textContent));
+    let price = priceFor(base, sel.value);
+    try{
+      const item = (window.__dlinkyVisibleFrames||[])[Number(idx)];
+      const prices = item && item[6];
+      if(prices && prices[sel.value] != null) price = Number(prices[sel.value]);
+    }catch(e){}
+    const lab = q(`[data-price-label="${idx}"]`) || card.querySelector('[data-price-label], .frame-price b');
+    if(lab) lab.textContent = price + ' Linkwuans';
+  }
+  function saveSelect(sel){
+    const card = sel.closest('[data-frame-card]');
+    const data = read();
+    const k = keyFor(card,sel);
+    data[k] = sel.value;
+    data.__last = sel.value;
+    write(data);
+    updatePrice(sel);
+  }
+  function restoreAll(){
+    const data = read();
+    qa('#tab-store select[data-frame-duration], select[data-frame-duration]').forEach(sel=>{
+      const card = sel.closest('[data-frame-card]');
+      const saved = data[keyFor(card,sel)] || data.__last;
+      if(saved && sel.value !== saved){ sel.value = saved; }
+      updatePrice(sel);
+    });
+  }
+
+  document.addEventListener('input',function(e){
+    const sel=e.target.closest && e.target.closest('#tab-store select[data-frame-duration], select[data-frame-duration]');
+    if(sel) saveSelect(sel);
+  },true);
+  document.addEventListener('change',function(e){
+    const sel=e.target.closest && e.target.closest('#tab-store select[data-frame-duration], select[data-frame-duration]');
+    if(sel) saveSelect(sel);
+  },true);
+  document.addEventListener('click',function(e){
+    if(e.target.closest && e.target.closest('#tab-store, [data-shop-tab]')){
+      setTimeout(restoreAll,0);
+      setTimeout(restoreAll,80);
+      setTimeout(restoreAll,300);
+      setTimeout(restoreAll,800);
+      setTimeout(restoreAll,1300);
+    }
+  },true);
+
+  const grid = q('#shopGrid');
+  if(grid && window.MutationObserver){
+    const obs = new MutationObserver(()=>{ clearTimeout(window.__dlinkyFrameDurationRestoreTimer); window.__dlinkyFrameDurationRestoreTimer=setTimeout(restoreAll,20); });
+    obs.observe(grid,{childList:true,subtree:true});
+  }
+  setInterval(()=>{ if(q('#tab-store.active') || location.hash.includes('dashboard')) restoreAll(); },700);
+  restoreAll();
+})();
