@@ -11261,3 +11261,195 @@ document.addEventListener("click",(e)=>{
   window.addEventListener('hashchange',()=>setTimeout(applyFieldsFromUser,120));
   setTimeout(applyFieldsFromUser,300);
 })();
+
+/* ===== DLINKY HOTFIX FINAL — trava anti-timer nos campos + bio no perfil ===== */
+(function(){
+  if(window.__DLINKY_FIX_TIMER_CAMPOS_BIO_1805__) return;
+  window.__DLINKY_FIX_TIMER_CAMPOS_BIO_1805__ = true;
+
+  const USER_KEY = 'dlinkyUser';
+  const DRAFT_KEY = 'dlinkyLiveDraft_Final_v3';
+  const q = (s,r=document)=>r.querySelector(s);
+
+  function readJSON(k,f){ try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):f; }catch(e){ return f; } }
+  function writeJSON(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+  function cleanSlug(v){ return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario'; }
+  function getUser(){ return readJSON(USER_KEY,{}); }
+  function setGlobalUser(u){
+    try{ if(typeof user !== 'undefined' && user){ Object.keys(user).forEach(k=>delete user[k]); Object.assign(user,u); } }catch(e){}
+    try{ window.user = Object.assign(window.user||{}, u); }catch(e){}
+  }
+  function saveUserLocal(patch){
+    const old = getUser();
+    const merged = Object.assign({}, old, patch||{});
+    if(merged.slug) merged.slug = cleanSlug(merged.slug);
+    writeJSON(USER_KEY, merged);
+    setGlobalUser(merged);
+    return merged;
+  }
+  function saveOnline(u){
+    try{
+      if(!window.firebase || !firebase.auth || !firebase.firestore || !firebase.auth().currentUser) return;
+      const fb = firebase.auth().currentUser;
+      const db = firebase.firestore();
+      const data = Object.assign({}, u, {
+        uid: fb.uid,
+        email: (fb.email || u.email || '').toLowerCase().trim(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      db.collection('users').doc(fb.uid).set(data,{merge:true});
+      if(data.slug){
+        db.collection('profiles').doc(cleanSlug(data.slug)).set({
+          uid: fb.uid,
+          name: data.name || 'Usuário',
+          slug: cleanSlug(data.slug),
+          email: data.email || '',
+          bio: data.bio || '',
+          avatar: data.avatar || '',
+          banner: data.banner || '',
+          bg: data.bg || '',
+          video: data.video || '',
+          frame: data.frame || '',
+          music: data.music || '',
+          welcome: data.welcome || 'Clique aqui',
+          color: data.color || '#a855f7',
+          particleType: data.particleType || 'snow',
+          particles: data.particles !== false,
+          verified: !!data.verified,
+          links: Array.isArray(data.links) ? data.links : [],
+          socials: Array.isArray(data.socials) ? data.socials : [],
+          tags: Array.isArray(data.tags) ? data.tags : [],
+          embeds: Array.isArray(data.embeds) ? data.embeds : [],
+          decoration: data.decoration || '',
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        },{merge:true});
+      }
+    }catch(e){ console.warn('Dlinky save online:', e); }
+  }
+
+  const map = {
+    cfgName:'name', cfgSlug:'slug', cfgBio:'bio', cfgMusic:'music', cfgWelcome:'welcome',
+    cfgAvatar:'avatar', cfgBanner:'banner', cfgBg:'bg', cfgVideo:'video', cfgFrame:'frame',
+    customName:'name', customBio:'bio', customBgFx:'bgFx',
+    uploadAvatar:'avatar', uploadBg:'bg', uploadMusic:'music', uploadCursor:'cursor'
+  };
+
+  function rememberField(el){
+    if(!el || !map[el.id]) return;
+    const key = map[el.id];
+    const draft = readJSON(DRAFT_KEY,{});
+    draft[key] = el.value;
+    draft.updatedAt = Date.now();
+    writeJSON(DRAFT_KEY,draft);
+
+    const patch = {};
+    patch[key] = key === 'slug' ? cleanSlug(el.value) : el.value;
+    const u = saveUserLocal(patch);
+    if(key === 'name' || key === 'slug' || key === 'bio' || key === 'music' || key === 'welcome'){
+      clearTimeout(window.__dlinkyOnlineSaveTimerFinal);
+      window.__dlinkyOnlineSaveTimerFinal = setTimeout(()=>saveOnline(u),900);
+    }
+  }
+
+  document.addEventListener('input', e=>rememberField(e.target), true);
+  document.addEventListener('change', e=>rememberField(e.target), true);
+
+  function safeSet(id,val){
+    const el = q('#'+id);
+    if(!el) return;
+    if(document.activeElement === el) return;
+    const draft = readJSON(DRAFT_KEY,{});
+    const key = map[id];
+    const use = draft[key] !== undefined ? draft[key] : val;
+    el.value = use || '';
+  }
+
+  function restoreFields(){
+    const u = getUser();
+    safeSet('cfgName', u.name || '');
+    safeSet('cfgSlug', u.slug || '');
+    safeSet('cfgBio', u.bio || '');
+    safeSet('cfgMusic', u.music || '');
+    safeSet('cfgWelcome', u.welcome || 'Clique aqui');
+    safeSet('cfgAvatar', u.avatar || '');
+    safeSet('cfgBanner', u.banner || '');
+    safeSet('cfgBg', u.bg || '');
+    safeSet('cfgVideo', u.video || '');
+    safeSet('cfgFrame', u.frame || '');
+    safeSet('customName', u.name || '');
+    safeSet('customBio', u.bio || '');
+    if(q('#customBgFx') && document.activeElement !== q('#customBgFx')) q('#customBgFx').value = u.bgFx || 'none';
+  }
+
+  function saveAccountNow(ev){
+    const btn = ev.target && ev.target.closest && ev.target.closest('#saveAccount,#saveCustom,#saveCustomFinal,#saveCustomFinal2,#saveCustomFinalReal');
+    if(!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+
+    const current = getUser();
+    const patch = {};
+    if(q('#cfgName')) patch.name = q('#cfgName').value.trim() || current.name || 'Usuário';
+    if(q('#cfgSlug')) patch.slug = cleanSlug(q('#cfgSlug').value || current.slug || patch.name || 'usuario');
+    if(q('#cfgBio')) patch.bio = q('#cfgBio').value;
+    if(q('#cfgMusic')) patch.music = q('#cfgMusic').value.trim();
+    if(q('#cfgWelcome')) patch.welcome = q('#cfgWelcome').value.trim() || 'Clique aqui';
+    if(q('#customName')) patch.name = q('#customName').value.trim() || patch.name || current.name || 'Usuário';
+    if(q('#customBio')) patch.bio = q('#customBio').value;
+    if(q('#customBgFx')) patch.bgFx = q('#customBgFx').value;
+
+    const u = saveUserLocal(patch);
+    writeJSON(DRAFT_KEY,Object.assign(readJSON(DRAFT_KEY,{}), patch, {updatedAt:Date.now()}));
+    saveOnline(u);
+    restoreFields();
+    try{ if(typeof renderDash === 'function') setTimeout(renderDash,0); }catch(e){}
+    try{ if(typeof toast === 'function') toast('Salvo com sucesso!'); }catch(e){}
+  }
+  document.addEventListener('click', saveAccountNow, true);
+  document.addEventListener('submit', function(e){
+    if(e.target && (e.target.id === 'registerForm' || e.target.id === 'loginForm')) return;
+    if(e.target && e.target.closest && e.target.closest('#tab-account,#tab-custom')) saveAccountNow(e);
+  }, true);
+
+  const oldRenderDash = window.renderDash || (typeof renderDash === 'function' ? renderDash : null);
+  if(typeof oldRenderDash === 'function' && !oldRenderDash.__dlinkyTimerFixFinal){
+    const patched = function(){
+      const r = oldRenderDash.apply(this, arguments);
+      restoreFields();
+      return r;
+    };
+    patched.__dlinkyTimerFixFinal = true;
+    window.renderDash = patched;
+    try{ renderDash = patched; }catch(e){}
+  }
+
+  const oldRenderProfile = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
+  if(typeof oldRenderProfile === 'function' && !oldRenderProfile.__dlinkyBioFixFinal){
+    const patchedProfile = function(){
+      const r = oldRenderProfile.apply(this, arguments);
+      const u = getUser();
+      const nameEl = q('#profileName');
+      const slugEl = q('#profileSlug2');
+      const bioEl = q('#profileBio');
+      if(nameEl) nameEl.textContent = u.name || 'Usuário';
+      if(slugEl) slugEl.textContent = '@' + (u.slug || 'usuario');
+      if(bioEl){
+        bioEl.textContent = u.bio || '';
+        bioEl.style.display = u.bio ? 'block' : 'none';
+        bioEl.style.visibility = 'visible';
+        bioEl.style.opacity = '1';
+      }
+      return r;
+    };
+    patchedProfile.__dlinkyBioFixFinal = true;
+    window.renderProfile = patchedProfile;
+    try{ renderProfile = patchedProfile; }catch(e){}
+  }
+
+  window.addEventListener('hashchange',()=>setTimeout(restoreFields,80));
+  document.addEventListener('click',()=>setTimeout(restoreFields,120),true);
+  setInterval(()=>{ if(q('#tab-account.active') || q('#tab-custom.active')) restoreFields(); },700);
+  setTimeout(restoreFields,200);
+  setTimeout(restoreFields,1000);
+})();
