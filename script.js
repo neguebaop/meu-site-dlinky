@@ -11610,3 +11610,57 @@ document.addEventListener("click",(e)=>{
   setTimeout(paintBio,300);
   setTimeout(paintBio,1200);
 })();
+
+/* ===== FIX FINAL: abas da loja estáveis (Recarga/Molduras/Efeitos/Outros) ===== */
+(function(){
+  const $=(s,r=document)=>r.querySelector(s);
+  const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=v=>String(v??'').replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[m]));
+  const safeData={
+    coins:[['345 Linkwuans','R$ 30,00',345],['650 Linkwuans','R$ 50,00',650],['1450 Linkwuans','R$ 100,00',1450],['3300 Linkwuans','R$ 200,00',3300]],
+    effects:[['Neon no Nome','180 Linkwuans','neonName'],['Nome Brilhante','220 Linkwuans','shineName'],['Nome Colorido','240 Linkwuans','rainbowName'],['Ocultar Views','150 Linkwuans','hideViews']],
+    other:[['Cursor Custom','120 Linkwuans','cursor'],['Tema Cyber','300 Linkwuans','cyber']]
+  };
+  function userObj(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch{return {}}}
+  function frames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
+  function num(v){const m=String(v||'').match(/\d+/);return m?Number(m[0]):20}
+  function priceFor(f,d){const b=num(f.price); if(f.prices&&f.prices[d]!=null)return Number(f.prices[d]); if(d==='Permanente')return b*3; if(d==='15 dias')return b*2; if(d==='7 dias')return Math.round(b*1.5); return b;}
+  function renderMode(mode){
+    const grid=$('#shopGrid'); if(!grid)return;
+    $$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===mode));
+    localStorage.setItem('dlinkyShopTab',mode);
+    if(mode==='frames'){
+      const arr=frames().filter(f=>f&&f.url);
+      grid.className='asset-grid frames-shop-grid';
+      if(!arr.length){grid.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura no Admin para aparecer aqui.</p></div>';return;}
+      const av=esc((userObj().avatar)||'');
+      grid.innerHTML=arr.map((f,i)=>{const d=f.__duration||'3 dias';return `<div class="asset-card frame-shop-card"><div class="asset-preview inv-preview real-inv-preview"><span class="real-inv-avatar" style="background-image:url('${av}')"></span><img class="real-inv-frame" src="${esc(f.url)}" alt="${esc(f.name||'Moldura')}"></div><div class="asset-body"><b>${esc(f.name||'Moldura')}</b><small>${esc(f.desc||'Moldura')}</small><div class="frame-price">Preço: <b data-v3-price="${i}">${priceFor(f,d)} Linkwuans</b></div><select class="frame-duration" data-v3-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select><button class="btn primary small" type="button" data-v3-buy-frame="${i}">Comprar</button></div></div>`}).join('');
+      return;
+    }
+    const data=safeData[mode]||[];
+    grid.className='asset-grid';
+    grid.innerHTML=data.length?data.map((it,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">${mode==='coins'?'◈':'✦'}</div><div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}">Comprar</button></div></div>`).join(''):'<p>Nada cadastrado nessa aba.</p>';
+  }
+  function bind(){
+    const saved=localStorage.getItem('dlinkyShopTab')||'coins';
+    if($('#tab-store')?.classList.contains('active')) renderMode(saved);
+  }
+  document.addEventListener('pointerdown',function(e){
+    const btn=e.target.closest?.('.shop-tabs [data-shop-tab]');
+    if(!btn)return;
+    const mode=btn.dataset.shopTab||'coins';
+    setTimeout(()=>renderMode(mode),0);
+    setTimeout(()=>renderMode(mode),80);
+    setTimeout(()=>renderMode(mode),220);
+  },true);
+  document.addEventListener('click',function(e){
+    const btn=e.target.closest?.('.shop-tabs [data-shop-tab]');
+    if(!btn)return;
+    const mode=btn.dataset.shopTab||'coins';
+    setTimeout(()=>renderMode(mode),0);
+    setTimeout(()=>renderMode(mode),80);
+  },false);
+  window.addEventListener('hashchange',()=>setTimeout(bind,150));
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(bind,250));
+  setTimeout(bind,500);
+})();
