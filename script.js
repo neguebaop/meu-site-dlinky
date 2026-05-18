@@ -9172,7 +9172,14 @@ document.addEventListener("click",(e)=>{
   function normalizeFrame(raw,i){const url=String(raw?.url||raw?.frameUrl||'').trim();const price=num(raw?.price??raw?.basePrice??raw?.prices?.['3 dias']??20)||20;const prices=Object.assign({},raw?.prices||{});['3 dias','7 dias','15 dias','Permanente'].forEach(k=>{prices[k]=num(prices[k])||0});if(!prices['3 dias'])prices['3 dias']=price;if(!prices['7 dias'])prices['7 dias']=Math.round(price*1.5);if(!prices['15 dias'])prices['15 dias']=Math.round(price*2);if(!prices['Permanente'])prices['Permanente']=Math.round(price*3);return {id:String(raw?.id||slug(url||raw?.name||i)),name:String(raw?.name||raw?.title||'Moldura'),desc:String(raw?.desc||raw?.description||''),url,price,prices};}
   function allFrames(){const src=[...read(FRAMES_KEY,[]),...read(OLD_FRAMES_KEY,[]),...(userData().customFrames||[])];const map=new Map();src.forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const arr=[...map.values()];write(FRAMES_KEY,arr);write(OLD_FRAMES_KEY,arr);const u=userData();u.customFrames=arr;write(USER_KEY,u);return arr;}
   function saveFrames(arr){const map=new Map();(Array.isArray(arr)?arr:[]).forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const clean=[...map.values()];write(FRAMES_KEY,clean);write(OLD_FRAMES_KEY,clean);const u=userData();u.customFrames=clean;saveUser(u);return clean;}
-  function framePrice(f,d='3 dias'){return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
+  function framePrice(f,d='3 dias'){
+    const prices=f?.prices||{};
+    const chosen=num(prices[d]);
+    if(chosen) return chosen;
+    const base3=num(prices['3 dias']);
+    if(base3) return base3;
+    return num(f?.price)||20;
+  }
   function frameUrl(it){return String(it?.url||it?.frameUrl||'').trim();}
   function isFrameItem(it){return !!(it&&frameUrl(it)&&/frame|moldur/i.test(String(it.type||it.kind||it.name||'frame')));}
   function itemId(it){return String(it?.id||slug(frameUrl(it)||it?.name));}
