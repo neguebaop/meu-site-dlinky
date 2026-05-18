@@ -12890,16 +12890,14 @@ document.addEventListener("click",(e)=>{
 
 
 
-/* ===== FIX DEFINITIVO: ABAS DA LOJA NÃO VOLTAM SOZINHAS ===== */
+/* ===== FIX SIMPLES: ABAS DA LOJA CLICÁVEIS SEM VOLTAR SOZINHAS ===== */
 (function(){
-  if(window.__dlinkyFixAbasLojaNaoVoltar) return;
-  window.__dlinkyFixAbasLojaNaoVoltar = true;
+  if(window.__dlinkyFixAbasLojaClicavel) return;
+  window.__dlinkyFixAbasLojaClicavel = true;
 
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
-
-  let lockedShopMode = localStorage.getItem("dlinkyShopModeAtual") || "coins";
 
   function getFrames(){
     try{return JSON.parse(localStorage.getItem("dlinkyCustomFrames")||"[]").filter(f=>f&&f.url)}catch(e){return []}
@@ -12909,23 +12907,26 @@ document.addEventListener("click",(e)=>{
     try{return JSON.parse(localStorage.getItem("dlinkyUser")||"{}")}catch(e){return {}}
   }
 
-  function setActiveShopButton(mode){
-    qa("#tab-store [data-shop-tab]").forEach(btn=>{
-      btn.classList.toggle("active", btn.dataset.shopTab === mode);
+  function getMode(){
+    const active = q("#tab-store [data-shop-tab].active");
+    return active?.dataset?.shopTab || window.shopMode || "coins";
+  }
+
+  function setMode(mode){
+    mode = mode || "coins";
+    try{ shopMode = mode; }catch(e){}
+    window.shopMode = mode;
+    qa("#tab-store [data-shop-tab]").forEach(b=>{
+      b.classList.toggle("active", b.dataset.shopTab === mode);
     });
   }
 
-  function renderShopStable(mode){
+  function renderShopSafe(mode){
     const grid = q("#shopGrid");
     if(!grid) return;
 
-    mode = mode || lockedShopMode || "coins";
-    lockedShopMode = mode;
-    localStorage.setItem("dlinkyShopModeAtual", mode);
-
-    try{ shopMode = mode; }catch(e){}
-    window.shopMode = mode;
-    setActiveShopButton(mode);
+    mode = mode || getMode();
+    setMode(mode);
 
     if(mode === "frames"){
       const frames = getFrames();
@@ -12942,6 +12943,7 @@ document.addEventListener("click",(e)=>{
 
       const u = getUser();
       const avatar = esc(u.avatar || "");
+
       window.__dlinkyVisibleFrames = frames.map((f,i)=>[
         f.name || "Moldura personalizada",
         f.price || "20 Linkwuans",
@@ -13001,57 +13003,33 @@ document.addEventListener("click",(e)=>{
     </div>`).join("") : "<p>Nada cadastrado aqui.</p>";
   }
 
-  function forceStable(mode){
-    lockedShopMode = mode || lockedShopMode || "coins";
-    localStorage.setItem("dlinkyShopModeAtual", lockedShopMode);
-
-    // vários códigos antigos chamam renderShop com atraso; isso vence eles sem alterar o resto
-    [0,30,80,160,350,700,1200].forEach(ms=>{
-      setTimeout(()=>renderShopStable(lockedShopMode), ms);
-    });
-  }
-
-  // Clique nas abas da loja: trava a aba escolhida e impede outro listener antigo de trocar de volta.
+  // IMPORTANTE: sem stopImmediatePropagation aqui, para não travar os cliques.
   document.addEventListener("click", function(e){
     const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
     if(!tab) return;
 
     e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
+    setMode(tab.dataset.shopTab || "coins");
+    renderShopSafe(tab.dataset.shopTab || "coins");
+  }, false);
 
-    forceStable(tab.dataset.shopTab || "coins");
-  }, true);
-
-  // Se algum código antigo mexer no botão ativo ou no conteúdo, volta para a aba que o usuário escolheu.
-  const store = q("#tab-store");
-  if(store && window.MutationObserver){
-    const obs = new MutationObserver(()=>{
-      const active = q("#tab-store [data-shop-tab].active");
-      const activeMode = active?.dataset?.shopTab;
-      if(activeMode !== lockedShopMode){
-        renderShopStable(lockedShopMode);
-      }
-    });
-    obs.observe(store, {subtree:true, childList:true, attributes:true, attributeFilter:["class"]});
-  }
-
-  // Sobrescreve renderShop no final, porque o bug é função duplicada antiga chamando a aba anterior.
-  window.renderShop = function(){ renderShopStable(lockedShopMode); };
+  // Substitui renderShop sem loop/MutationObserver.
+  window.renderShop = function(){
+    renderShopSafe(getMode());
+  };
   try{ renderShop = window.renderShop; }catch(e){}
 
   const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__fixAbasLojaNaoVoltar){
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__fixAbasLojaClicavel){
     const patched = function(id){
       const r = oldOpenTab.apply(this, arguments);
-      if(id === "store") forceStable(lockedShopMode);
+      if(id === "store") setTimeout(()=>renderShopSafe(getMode()), 0);
       return r;
     };
-    patched.__fixAbasLojaNaoVoltar = true;
+    patched.__fixAbasLojaClicavel = true;
     window.openTab = patched;
     try{ openTab = patched; }catch(e){}
   }
 
-  // Ao carregar, mantém a última aba escolhida sem deixar voltar sozinha.
-  setTimeout(()=>forceStable(lockedShopMode), 500);
+  setTimeout(()=>renderShopSafe(getMode()), 500);
 })();
