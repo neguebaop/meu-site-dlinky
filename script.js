@@ -422,12 +422,7 @@ renderDash();
   }
   document.addEventListener('click',e=>{
     const b=e.target.closest('[data-confirm-frame]');
-    if(b){
-      const card=b.closest('[data-frame-card]');
-      const sel=card?.querySelector('[data-frame-duration]');
-      if(sel?.dataset?.frameKey) localStorage.setItem(sel.dataset.frameKey, sel.value);
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); openFrameConfirm(+b.dataset.confirmFrame); return;
-    }
+    if(b){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); openFrameConfirm(+b.dataset.confirmFrame); return; }
     if(e.target.closest('#closeFrameBuy')) q('#frameBuyModal')?.classList.remove('show');
     if(e.target.closest('#cancelFrameBuy')) q('#frameBuyModal')?.classList.remove('show');
     if(e.target.closest('#confirmFrameBuy')) buySelectedFrame();
@@ -11616,25 +11611,22 @@ document.addEventListener("click",(e)=>{
   setTimeout(paintBio,1200);
 })();
 
-
-/* ===== DLINKY PATCH SEGURO — SOMENTE LOJA =====
-   Corrige apenas a Loja:
-   - Aba ativa fica correta e não pula.
-   - Molduras mostra molduras cadastradas.
-   - Efeitos mostra efeitos.
-   - Outros fica reservado para Selos.
-   - Preview da moldura usa avatar/GIF atual.
-   Não altera perfil, música, avatar salvo, login, cadastro nem renderProfile.
+/* ===== DLINKY PATCH DEFINITIVO — SOMENTE LOJA SEM PISCAR/RESETAR =====
+   Corrige apenas a loja:
+   - Recarga/Molduras/Efeitos/Outros ficam na aba certa.
+   - A duração da moldura não volta mais para 3 dias.
+   - Se algum script antigo tentar redesenhar a loja, este patch restaura a aba correta.
+   - Não mexe em perfil, avatar, música, login, cadastro nem renderProfile.
 */
 (function(){
-  if(window.__dlinkyOnlyStorePatchV1) return;
-  window.__dlinkyOnlyStorePatchV1 = true;
+  if(window.__dlinkyStoreStableFinalV10) return;
+  window.__dlinkyStoreStableFinalV10 = true;
 
-  const STORE_MODE_KEY = 'dlinky_loja_aba_fixa';
+  const MODE_KEY = 'dlinky_loja_aba_fixa_final';
+  const DUR_KEY = 'dlinky_moldura_duracao_fixa_final';
   const USER_KEY = 'dlinkyUser';
   const FRAME_KEYS = ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
   const SELO_KEYS = ['dlinkyCleanAdminSelosCatalog','dlinkyCustomSelos','dlinkyAdminSelos','dlinkySelos','dlinkyInsignias','dlinkyBadges'];
-
   const COINS = [
     ['345 Linkwuans','R$ 30,00',345],
     ['650 Linkwuans','R$ 50,00',650],
@@ -11647,99 +11639,89 @@ document.addEventListener("click",(e)=>{
     ['Nome Colorido','240 Linkwuans','rainbowName'],
     ['Ocultar Views','150 Linkwuans','hideViews']
   ];
+  const DURATIONS = ['3 dias','7 dias','15 dias','Permanente'];
 
-  function q(s,r=document){ return r.querySelector(s); }
-  function qa(s,r=document){ return Array.from(r.querySelectorAll(s)); }
-  function esc(v){ return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function readJSON(k,f){ try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f));}catch(e){return f;} }
-  function writeJSON(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
+  let rendering = false;
+  let lastMode = normMode(localStorage.getItem(MODE_KEY) || 'coins');
+  let restoreTimer = null;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function esc(v){return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function toastMsg(t){try{if(typeof window.toast==='function')return window.toast(t)}catch(e){}}
+  function storeRoot(){return q('#tab-store')}
+  function shopGrid(){const s=storeRoot();return s?q('#shopGrid',s):q('#shopGrid')}
+  function normMode(m){
+    m=String(m||'').toLowerCase();
+    if(m.includes('frame')||m.includes('mold')) return 'frames';
+    if(m.includes('effect')||m.includes('efe')) return 'effects';
+    if(m.includes('other')||m.includes('out')||m.includes('selo')||m.includes('insign')) return 'other';
+    return 'coins';
+  }
+  function setMode(m){lastMode=normMode(m);localStorage.setItem(MODE_KEY,lastMode);return lastMode}
+  function getMode(){return normMode(lastMode || localStorage.getItem(MODE_KEY) || 'coins')}
   function getUser(){
-    const saved = readJSON(USER_KEY,{});
-    if(window.user && typeof window.user === 'object') return Object.assign(window.user,saved);
+    const saved=readJSON(USER_KEY,{});
+    try{if(window.user&&typeof window.user==='object')return Object.assign(window.user,saved)}catch(e){}
     return saved;
   }
   function saveUser(u){
     writeJSON(USER_KEY,u||{});
-    if(window.user && typeof window.user === 'object') Object.assign(window.user,u||{});
+    try{if(window.user&&typeof window.user==='object')Object.assign(window.user,u||{})}catch(e){}
   }
-  function toastMsg(t){ try{ if(typeof window.toast==='function') return window.toast(t); }catch(e){} }
-  function storeRoot(){ return q('#tab-store'); }
-  function shopGrid(){ const s=storeRoot(); return s ? q('#shopGrid',s) : null; }
-  function normMode(m){
-    m=String(m||'').toLowerCase();
-    if(m.includes('frame') || m.includes('mold')) return 'frames';
-    if(m.includes('effect') || m.includes('efe')) return 'effects';
-    if(m.includes('other') || m.includes('out') || m.includes('selo') || m.includes('insign')) return 'other';
-    return 'coins';
-  }
-  function getMode(){ return normMode(localStorage.getItem(STORE_MODE_KEY) || 'coins'); }
-  function setMode(m){ localStorage.setItem(STORE_MODE_KEY,normMode(m)); }
-  function setActive(m){
-    const s=storeRoot(); if(!s) return;
-    const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
-    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',s).forEach(btn=>{
-      const bm=normMode(btn.dataset.shopTab || btn.textContent);
-      btn.dataset.shopTab=bm;
-      if(labels[bm]) btn.textContent=labels[bm];
-      btn.classList.toggle('active',bm===m);
-    });
-  }
-  function firstUrl(o){ return String(o?.url || o?.img || o?.image || o?.src || o?.frame || o?.frameUrl || o?.value || '').trim(); }
-  function priceNumber(v){ const m=String(v||'40').match(/\d+/); return m?Number(m[0]):40; }
-  function priceFor(base,dur){
-    if(dur==='Permanente') return base*5;
-    if(dur==='15 dias') return base*3;
-    if(dur==='7 dias') return base*2;
+  function firstUrl(o){return String(o?.url||o?.img||o?.image||o?.src||o?.frame||o?.frameUrl||o?.value||'').trim()}
+  function priceNumber(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
+  function durationMap(){return readJSON(DUR_KEY,{})}
+  function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
+  function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
+  function priceFor(frame,dur){
+    const base=priceNumber(frame.price);
+    if(frame.prices&&frame.prices[dur]!=null)return Number(frame.prices[dur]);
+    if(dur==='Permanente')return base*5;
+    if(dur==='15 dias')return base*3;
+    if(dur==='7 dias')return base*2;
     return base;
-  }
-  function frameDurationKey(f,i){
-    return 'dlinkyFrameDuration_' + String((f && (f.id || f.url || f.name)) || i).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');
-  }
-  function getFrameDuration(f,i){
-    const v=localStorage.getItem(frameDurationKey(f,i));
-    return ['3 dias','7 dias','15 dias','Permanente'].includes(v) ? v : '3 dias';
-  }
-  function optionDur(label,current){
-    return `<option ${label===current?'selected':''}>${label}</option>`;
   }
   function getAvatar(){
     const u=getUser();
-    return String(u.avatar || u.photoURL || u.foto || u.icon || localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')) || '').trim();
+    return String(u.avatar||u.photoURL||u.foto||u.icon||localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local'))||'').trim();
   }
   function getFrames(){
     let arr=[];
-    FRAME_KEYS.forEach(k=>{ const v=readJSON(k,[]); if(Array.isArray(v)) arr=arr.concat(v); });
+    FRAME_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
     const u=getUser();
     if(Array.isArray(u.inventory)){
       u.inventory.forEach(it=>{
         const url=firstUrl(it);
         const txt=String([it.type,it.kind,it.name,it.title,it.value].filter(Boolean).join(' ')).toLowerCase();
-        if(url && (txt.includes('frame') || txt.includes('moldura'))){
-          arr.push({name:it.name||'Moldura',desc:it.desc||'Espinhos.',price:it.price||'40 Linkwuans',url,prices:it.prices||null});
+        if(url&&(txt.includes('frame')||txt.includes('moldura'))){
+          arr.push({name:it.name||'Moldura',desc:it.desc||'Espinhos.',price:it.price||'40 Linkwuans',url,prices:it.prices||null,id:it.id||url});
         }
       });
     }
     const seen=new Set();
-    return arr.map((f,i)=>({
-      name:f.name||f.nome||f.title||'Moldura',
-      desc:f.desc||f.descricao||f.description||'Espinhos.',
-      price:f.price||f.preco||f.valor||'40 Linkwuans',
-      url:firstUrl(f),
-      prices:f.prices||f.precos||null,
-      id:f.id||('frame_'+i)
-    })).filter(f=>f.url).filter(f=>{ const k=(f.url+'|'+f.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });
+    return arr.map((f,i)=>{
+      const url=firstUrl(f);
+      return {name:f.name||f.nome||f.title||'Moldura',desc:f.desc||f.descricao||f.description||'Espinhos.',price:f.price||f.preco||f.valor||'40 Linkwuans',url,prices:f.prices||f.precos||null,id:String(f.id||url||('frame_'+i))};
+    }).filter(f=>f.url).filter(f=>{const k=(f.url+'|'+f.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
   }
   function getSelos(){
     let arr=[];
-    SELO_KEYS.forEach(k=>{ const v=readJSON(k,[]); if(Array.isArray(v)) arr=arr.concat(v); });
+    SELO_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
     const seen=new Set();
-    return arr.map((s,i)=>({
-      name:s.name||s.nome||s.title||'Selo',
-      desc:s.desc||s.descricao||'',
-      price:s.price||s.preco||'0 Linkwuans',
-      url:firstUrl(s),
-      id:s.id||('selo_'+i)
-    })).filter(s=>{ const k=(s.id+'|'+s.url+'|'+s.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });
+    return arr.map((s,i)=>({name:s.name||s.nome||s.title||'Selo',desc:s.desc||s.descricao||'',price:s.price||s.preco||'0 Linkwuans',url:firstUrl(s),id:String(s.id||s.url||('selo_'+i))})).filter(s=>{const k=(s.id+'|'+s.url+'|'+s.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+  }
+  function setActive(m){
+    const s=storeRoot(); if(!s)return;
+    const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
+    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',s).forEach(btn=>{
+      const bm=normMode(btn.dataset.shopTab||btn.textContent);
+      btn.dataset.shopTab=bm;
+      if(labels[bm])btn.textContent=labels[bm];
+      btn.classList.toggle('active',bm===m);
+    });
   }
   function renderCoins(g){
     g.className='asset-grid';
@@ -11748,24 +11730,20 @@ document.addEventListener("click",(e)=>{
   function renderFrames(g){
     const frames=getFrames();
     const av=getAvatar();
-    window.__dlinkyVisibleFrames=frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices||null]);
+    window.__dlinkyVisibleFrames=frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices||null,f.id]);
     g.className='asset-grid frames-shop-grid';
-    if(!frames.length){
-      g.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';
-      return;
-    }
+    if(!frames.length){g.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return;}
     g.innerHTML=frames.map((f,i)=>{
-      const base=priceNumber(f.price);
-      const dur=getFrameDuration(f,i);
-      const shownPrice=(f.prices && f.prices[dur]!=null) ? Number(f.prices[dur]) : priceFor(base,dur);
-      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}" data-frame-key="${esc(frameDurationKey(f,i))}">
+      const d=getDuration(f.id);
+      const p=priceFor(f,d);
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-frame-id="${esc(f.id)}" data-base-price="${priceNumber(f.price)}">
         <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
           <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
           <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
         </div>
         <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
-        <div class="frame-price">Preço: <b data-price-label="${i}">${shownPrice} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}" data-frame-key="${esc(frameDurationKey(f,i))}">${optionDur('3 dias',dur)}${optionDur('7 dias',dur)}${optionDur('15 dias',dur)}${optionDur('Permanente',dur)}</select>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${p} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}" data-frame-id="${esc(f.id)}">${DURATIONS.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>
         <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
       </div>`;
     }).join('');
@@ -11777,66 +11755,92 @@ document.addEventListener("click",(e)=>{
   function renderSelos(g){
     const selos=getSelos();
     g.className='asset-grid';
-    if(!selos.length){
-      g.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';
-      return;
-    }
-    g.innerHTML=selos.map((s,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">${s.url?`<img src="${esc(s.url)}" alt="${esc(s.name)}" style="max-width:90px;max-height:90px;object-fit:contain">`:'✦'}</div><div class="asset-body"><b>${esc(s.name)}</b><small>${esc(s.price)}</small><button class="btn primary small" type="button" data-loja-selo="${esc(s.id)}">Comprar</button></div></div>`).join('');
+    if(!selos.length){g.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';return;}
+    g.innerHTML=selos.map(s=>`<div class="asset-card"><div class="asset-preview shop-preview">${s.url?`<img src="${esc(s.url)}" alt="${esc(s.name)}" style="max-width:90px;max-height:90px;object-fit:contain">`:'✦'}</div><div class="asset-body"><b>${esc(s.name)}</b><small>${esc(s.price)}</small><button class="btn primary small" type="button" data-loja-selo="${esc(s.id)}">Comprar</button></div></div>`).join('');
   }
   function renderStore(m){
-    const g=shopGrid(); if(!g) return;
-    m=normMode(m||getMode()); setMode(m); setActive(m);
-    if(m==='frames') renderFrames(g);
-    else if(m==='effects') renderEffects(g);
-    else if(m==='other') renderSelos(g);
+    const g=shopGrid(); if(!g)return;
+    m=setMode(m||getMode());
+    rendering=true;
+    setActive(m);
+    if(m==='frames')renderFrames(g);
+    else if(m==='effects')renderEffects(g);
+    else if(m==='other')renderSelos(g);
     else renderCoins(g);
+    requestAnimationFrame(()=>{rendering=false});
+  }
+  function scheduleRestore(){
+    clearTimeout(restoreTimer);
+    restoreTimer=setTimeout(()=>{
+      const s=storeRoot();
+      if(s&&s.classList.contains('active')) renderStore(getMode());
+    },40);
   }
 
-  document.addEventListener('click',function(e){
-    const tab=e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
-    if(tab){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); renderStore(tab.dataset.shopTab || tab.textContent); return false; }
-
-    const coin=e.target.closest('[data-loja-coin]');
-    if(coin){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const v=Number(coin.dataset.lojaCoin||0); if(window.dlinkyOpenPixRecharge) window.dlinkyOpenPixRecharge(v); else {const u=getUser(); u.coins=Number(u.coins||0)+v; saveUser(u); toastMsg('Linkwuans adicionados.');} return false; }
-
-    const eff=e.target.closest('[data-loja-effect]');
-    if(eff){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const it=EFFECTS[Number(eff.dataset.lojaEffect)||0]; const u=getUser(); u.inventory=Array.isArray(u.inventory)?u.inventory:[]; u.inventory.unshift({type:'effects',name:it[0],value:it[2]}); u[it[2]]=true; saveUser(u); toastMsg('Efeito adicionado!'); return false; }
-
-    const selo=e.target.closest('[data-loja-selo]');
-    if(selo){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const u=getUser(); u.selosOwned=Array.isArray(u.selosOwned)?u.selosOwned:[]; if(!u.selosOwned.includes(selo.dataset.lojaSelo)) u.selosOwned.push(selo.dataset.lojaSelo); u.activeSelo=selo.dataset.lojaSelo; saveUser(u); toastMsg('Selo comprado!'); return false; }
+  window.addEventListener('pointerdown',function(e){
+    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
+    if(!tab)return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    renderStore(tab.dataset.shopTab||tab.textContent);
   },true);
 
-  document.addEventListener('change',function(e){
-    const sel=e.target.closest('#tab-store [data-frame-duration]');
-    if(!sel) return;
+  window.addEventListener('click',function(e){
+    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
+    if(tab){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();renderStore(tab.dataset.shopTab||tab.textContent);return;}
+    const coin=e.target&&e.target.closest&&e.target.closest('[data-loja-coin]');
+    if(coin){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const v=Number(coin.dataset.lojaCoin||0);if(window.dlinkyOpenPixRecharge)window.dlinkyOpenPixRecharge(v);else{const u=getUser();u.coins=Number(u.coins||0)+v;saveUser(u);toastMsg('Linkwuans adicionados.')}return;}
+    const eff=e.target&&e.target.closest&&e.target.closest('[data-loja-effect]');
+    if(eff){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const it=EFFECTS[Number(eff.dataset.lojaEffect)||0];const u=getUser();u.inventory=Array.isArray(u.inventory)?u.inventory:[];u.inventory.unshift({type:'effects',name:it[0],value:it[2]});u[it[2]]=true;saveUser(u);toastMsg('Efeito adicionado!');return;}
+    const selo=e.target&&e.target.closest&&e.target.closest('[data-loja-selo]');
+    if(selo){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const u=getUser();u.selosOwned=Array.isArray(u.selosOwned)?u.selosOwned:[];if(!u.selosOwned.includes(selo.dataset.lojaSelo))u.selosOwned.push(selo.dataset.lojaSelo);u.activeSelo=selo.dataset.lojaSelo;saveUser(u);toastMsg('Selo comprado!');return;}
+  },true);
+
+  window.addEventListener('input',function(e){
+    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
+    if(!sel)return;
+    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
+    saveDuration(id,sel.value);
+    const frames=getFrames();
     const idx=Number(sel.dataset.frameDuration||0);
-    if(sel.dataset.frameKey){
-      localStorage.setItem(sel.dataset.frameKey, sel.value);
-    }
-    const item=(window.__dlinkyVisibleFrames||[])[idx];
-    const card=sel.closest('[data-frame-card]');
-    const base=Number(card?.dataset?.basePrice || priceNumber(item?.[1]));
-    const prices=item?.[6]||null;
-    const price=(prices && prices[sel.value]!=null) ? Number(prices[sel.value]) : priceFor(base,sel.value);
-    const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab) lab.textContent=price+' Linkwuans';
+    const f=frames[idx];
+    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
   },true);
 
-  const oldOpen=window.openTab || (typeof openTab==='function'?openTab:null);
-  if(typeof oldOpen==='function' && !oldOpen.__lojaOnlySafePatch){
-    const patched=function(id){ const r=oldOpen.apply(this,arguments); if(id==='store') setTimeout(()=>renderStore(getMode()),20); return r; };
-    patched.__lojaOnlySafePatch=true;
-    window.openTab=patched;
-    try{openTab=patched}catch(e){}
+  window.addEventListener('change',function(e){
+    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
+    if(!sel)return;
+    e.stopPropagation();
+    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
+    saveDuration(id,sel.value);
+    const frames=getFrames();
+    const idx=Number(sel.dataset.frameDuration||0);
+    const f=frames[idx];
+    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
+  },true);
+
+  const oldOpen=window.openTab||(typeof openTab==='function'?openTab:null);
+  if(typeof oldOpen==='function'){
+    const patched=function(id){const r=oldOpen.apply(this,arguments); if(id==='store')setTimeout(()=>renderStore(getMode()),20); return r;};
+    window.openTab=patched; try{openTab=patched}catch(e){}
   }
+  window.renderShop=function(){return renderStore(getMode())};
+  try{renderShop=window.renderShop}catch(e){}
 
-  const oldRenderShop=window.renderShop || (typeof renderShop==='function'?renderShop:null);
-  const patchedRender=function(){ return renderStore(getMode()); };
-  patchedRender.__lojaOnlySafePatch=true;
-  window.renderShop=patchedRender;
-  try{renderShop=patchedRender}catch(e){}
+  const mo=new MutationObserver(function(){
+    if(rendering)return;
+    const s=storeRoot();
+    if(!s||!s.classList.contains('active'))return;
+    const active=s.querySelector('.shop-tabs [data-shop-tab].active, .asset-tabs [data-shop-tab].active');
+    const activeMode=active?normMode(active.dataset.shopTab||active.textContent):getMode();
+    if(activeMode!==getMode()) scheduleRestore();
+    if(getMode()==='frames'){
+      const sel=s.querySelector('[data-frame-duration]');
+      if(sel){const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0); if(sel.value!==getDuration(id)) scheduleRestore();}
+    }
+  });
+  function observe(){const s=storeRoot(); if(s)mo.observe(s,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observe,{once:true});else observe();
 
-  window.addEventListener('hashchange',()=>setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },120));
-  document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },120));
-  setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },500);
+  window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
+  setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
 })();
-
