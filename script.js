@@ -11687,6 +11687,12 @@ document.addEventListener("click",(e)=>{
     if(dur==='7 dias') return base*2;
     return base;
   }
+  const DURATION_STORE_KEY='dlinkyFrameDurationByFrame_v2';
+  function readDurations(){try{return JSON.parse(localStorage.getItem(DURATION_STORE_KEY)||'{}')}catch(e){return {}}}
+  function writeDurations(v){try{localStorage.setItem(DURATION_STORE_KEY,JSON.stringify(v||{}))}catch(e){}}
+  function durationKey(frame,index){return String((frame&&frame.url)||'frame')+'|'+String((frame&&frame.name)||index)}
+  function getSavedDuration(frame,index){const data=readDurations();return data[durationKey(frame,index)]||data.__last||'3 dias'}
+  function saveDuration(frame,index,value){const data=readDurations();data[durationKey(frame,index)]=value;data.__last=value;writeDurations(data)}
   function getAvatar(){
     const u=getUser();
     return String(u.avatar || u.photoURL || u.foto || u.icon || localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')) || '').trim();
@@ -11741,14 +11747,16 @@ document.addEventListener("click",(e)=>{
     }
     g.innerHTML=frames.map((f,i)=>{
       const base=priceNumber(f.price);
+      const savedDur=getSavedDuration(f,i);
+      const currentPrice=(f.prices && f.prices[savedDur]!=null) ? Number(f.prices[savedDur]) : priceFor(base,savedDur);
       return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
         <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
           <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
           <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
         </div>
         <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
-        <div class="frame-price">Preço: <b data-price-label="${i}">${base} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}"><option>3 dias</option><option>7 dias</option><option>15 dias</option><option>Permanente</option></select>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${currentPrice} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(d=>`<option ${d===savedDur?'selected':''}>${d}</option>`).join('')}</select>
         <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
       </div>`;
     }).join('');
@@ -11793,6 +11801,8 @@ document.addEventListener("click",(e)=>{
     const sel=e.target.closest('#tab-store [data-frame-duration]');
     if(!sel) return;
     const idx=Number(sel.dataset.frameDuration||0);
+    const frames=getFrames();
+    if(frames[idx]) saveDuration(frames[idx],idx,sel.value);
     const item=(window.__dlinkyVisibleFrames||[])[idx];
     const card=sel.closest('[data-frame-card]');
     const base=Number(card?.dataset?.basePrice || priceNumber(item?.[1]));
@@ -11820,121 +11830,3 @@ document.addEventListener("click",(e)=>{
   setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },500);
 })();
 
-
-
-/* ===== DLINKY HOTFIX FINAL — manter duração da moldura fixa =====
-   Corrige SOMENTE o select de duração da loja.
-   Não altera avatar, música, perfil, inventário, admin nem layout.
-*/
-(function(){
-  if(window.__DLINKY_FIX_DURACAO_MOLDURA_FIXA__) return;
-  window.__DLINKY_FIX_DURACAO_MOLDURA_FIXA__ = true;
-
-  const KEY = 'dlinkyFrameDurationSelected_v1';
-  const q = (s,r=document)=>r.querySelector(s);
-  const qa = (s,r=document)=>Array.from(r.querySelectorAll(s));
-
-  function read(){
-    try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}}
-  }
-  function write(v){
-    try{localStorage.setItem(KEY,JSON.stringify(v||{}))}catch(e){}
-  }
-  function cardKey(sel){
-    const card = sel && sel.closest ? sel.closest('[data-frame-card]') : null;
-    const idx = sel ? String(sel.dataset.frameDuration || card?.dataset?.frameCard || '0') : '0';
-    const img = card ? (card.querySelector('img.frame-img,img.inv-frame-preview,img')?.getAttribute('src') || '') : '';
-    const name = card ? (card.querySelector('.frame-info b,.asset-body b,b')?.textContent || '') : '';
-    return (img || name || idx).trim() + '|' + idx;
-  }
-  function forcePriceUpdate(sel){
-    try{
-      sel.dispatchEvent(new Event('change',{bubbles:true}));
-    }catch(e){}
-  }
-  function saveSelect(sel){
-    if(!sel) return;
-    const val = sel.value || '3 dias';
-    const data = read();
-    data.last = val;
-    data[cardKey(sel)] = val;
-    write(data);
-  }
-  function restoreOne(sel){
-    if(!sel) return;
-    const data = read();
-    const val = data[cardKey(sel)] || data.last;
-    if(!val) return;
-    const has = Array.from(sel.options || []).some(o=>o.value===val || o.textContent===val);
-    if(!has) return;
-    if(sel.value !== val){
-      sel.value = val;
-      forcePriceUpdate(sel);
-    }
-  }
-  function restoreAll(){
-    const root = q('#tab-store') || document;
-    qa('select[data-frame-duration], .frame-duration', root).forEach(restoreOne);
-  }
-  function scheduleRestore(){
-    [0,50,150,350,700,1200,1800].forEach(t=>setTimeout(restoreAll,t));
-  }
-
-  document.addEventListener('change',function(e){
-    const sel = e.target && e.target.closest ? e.target.closest('#tab-store select[data-frame-duration], #tab-store .frame-duration') : null;
-    if(!sel) return;
-    saveSelect(sel);
-    scheduleRestore();
-  },true);
-
-  document.addEventListener('click',function(e){
-    const buy = e.target && e.target.closest ? e.target.closest('#tab-store [data-confirm-frame]') : null;
-    if(buy){
-      restoreAll();
-      const card = buy.closest('[data-frame-card]');
-      const sel = card && card.querySelector('select[data-frame-duration], .frame-duration');
-      if(sel) saveSelect(sel);
-    }
-    const tab = e.target && e.target.closest ? e.target.closest('#tab-store [data-shop-tab]') : null;
-    if(tab) scheduleRestore();
-  },true);
-
-  const observe = ()=>{
-    const grid = q('#shopGrid');
-    if(!grid || grid.__dlinkyDurationObserver) return;
-    grid.__dlinkyDurationObserver = true;
-    new MutationObserver(scheduleRestore).observe(grid,{childList:true,subtree:true});
-  };
-
-  const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === 'function' && !oldOpenTab.__dlinkyDurationPatch){
-    const patched = function(){
-      const r = oldOpenTab.apply(this,arguments);
-      if(arguments[0] === 'store') scheduleRestore();
-      return r;
-    };
-    patched.__dlinkyDurationPatch = true;
-    window.openTab = patched;
-    try{ openTab = patched; }catch(e){}
-  }
-
-  const oldRenderShop = window.renderShop;
-  if(typeof oldRenderShop === 'function' && !oldRenderShop.__dlinkyDurationPatch){
-    const patchedRender = function(){
-      const r = oldRenderShop.apply(this,arguments);
-      scheduleRestore();
-      return r;
-    };
-    patchedRender.__dlinkyDurationPatch = true;
-    window.renderShop = patchedRender;
-    try{ renderShop = patchedRender; }catch(e){}
-  }
-
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded',()=>{observe();scheduleRestore();});
-  }else{
-    observe();scheduleRestore();
-  }
-  window.addEventListener('hashchange',()=>{observe();scheduleRestore();});
-  setInterval(()=>{ if((location.hash||'').includes('dashboard') && q('#tab-store.active')) restoreAll(); },1000);
-})();
