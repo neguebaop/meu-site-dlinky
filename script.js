@@ -12376,3 +12376,61 @@ document.addEventListener("click",(e)=>{
 
   setTimeout(()=>{fixShopDataAliases(); fixButtonsDataset(); keepActiveCorrect();},300);
 })();
+// ===== PATCH ÚNICO: APAGAR MOLDURA FANTASMA DO INVENTÁRIO/LOJA =====
+(function(){
+  const FAKE_NAMES = ["moldura irritado","espinhos"];
+
+  function read(k,f){
+    try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}
+    catch(e){return f}
+  }
+
+  function write(k,v){
+    localStorage.setItem(k, JSON.stringify(v));
+  }
+
+  function isFake(obj){
+    const txt = String([
+      obj?.name,
+      obj?.title,
+      obj?.desc,
+      obj?.description
+    ].filter(Boolean).join(" ")).toLowerCase();
+
+    return FAKE_NAMES.some(x => txt.includes(x));
+  }
+
+  // limpa admin
+  const frames = read("dlinkyCustomFrames", []).filter(x => !isFake(x));
+  write("dlinkyCustomFrames", frames);
+
+  // limpa usuário/inventário
+  const u = read("dlinkyUser", {});
+  if(u && typeof u === "object"){
+    u.inventory = Array.isArray(u.inventory)
+      ? u.inventory.filter(x => !isFake(x))
+      : [];
+
+    if(isFake({
+      name:u.frameName,
+      desc:u.frameDesc
+    })){
+      u.frame = "";
+      u.frameUrl = "";
+      u.frameName = "";
+      u.frameDesc = "";
+      u.decoration = "none";
+    }
+
+    write("dlinkyUser", u);
+  }
+
+  // limpa caches antigos
+  [
+    "dlinkyFrames",
+    "dlinkyFrameVault",
+    "dlinkyLastGoodFrameUrl"
+  ].forEach(k => localStorage.removeItem(k));
+
+  console.log("Moldura fantasma removida.");
+})();
