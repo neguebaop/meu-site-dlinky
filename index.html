@@ -383,7 +383,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
   
-<!-- ===== DLINKY FIREBASE ONLINE V2: tudo salvo online, sem depender do localStorage do navegador ===== -->
+<!-- ===== DLINKY FIREBASE ONLINE V3: salva online antes do script carregar ===== -->
 <script>
 (function(){
   const FIREBASE_PROJECT_ID = "dlinky-45df5";
@@ -391,184 +391,140 @@
   const DOC_URL =
     "https://firestore.googleapis.com/v1/projects/" +
     FIREBASE_PROJECT_ID +
-    "/databases/(default)/documents/dlinky/global?key=" +
+    "/databases/(default)/documents/dlinky/main?key=" +
     FIREBASE_API_KEY;
 
   const realLocalStorage = window.localStorage;
   const cloudStore = {};
-  let lastSavedText = "";
+  let lastSaved = "";
   let saveTimer = null;
 
-  function showFirebaseError(msg){
-    console.error("DLINKY FIREBASE:", msg);
-    window.__dlinkyFirebaseError = msg;
+  function readDoc(raw){
+    const doc = JSON.parse(raw || "{}");
+    const str = doc?.fields?.store?.stringValue || "{}";
+    const obj = JSON.parse(str || "{}");
+    Object.keys(cloudStore).forEach(k => delete cloudStore[k]);
+    Object.keys(obj || {}).forEach(k => cloudStore[k] = String(obj[k]));
+    lastSaved = JSON.stringify(cloudStore);
   }
 
-  function parseDoc(raw){
-    try{
-      const doc = JSON.parse(raw || "{}");
-      const storeString = doc?.fields?.store?.stringValue || "{}";
-      const obj = JSON.parse(storeString || "{}");
-      Object.keys(cloudStore).forEach(k => delete cloudStore[k]);
-      if(obj && typeof obj === "object"){
-        Object.keys(obj).forEach(k => cloudStore[k] = String(obj[k]));
-      }
-      lastSavedText = JSON.stringify(cloudStore);
-    }catch(e){
-      showFirebaseError("Erro lendo o banco online.");
-    }
-  }
-
-  function loadOnlineSync(){
-    try{
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", DOC_URL, false);
-      xhr.send(null);
-
-      if(xhr.status >= 200 && xhr.status < 300){
-        parseDoc(xhr.responseText);
-        console.log("Dlinky Firebase: dados carregados online.");
-        return true;
-      }
-
-      if(xhr.status === 404){
-        saveOnlineSync(true);
-        return true;
-      }
-
-      showFirebaseError("Firebase não deixou ler. Status: " + xhr.status + " — veja as Regras do Firestore.");
-      return false;
-    }catch(e){
-      showFirebaseError("Falha de conexão com Firebase.");
-      return false;
-    }
-  }
-
-  function makeBody(){
+  function body(){
     return JSON.stringify({
-      fields: {
-        store: { stringValue: JSON.stringify(cloudStore) },
-        updatedAt: { timestampValue: new Date().toISOString() }
+      fields:{
+        store:{stringValue:JSON.stringify(cloudStore)},
+        updatedAt:{timestampValue:new Date().toISOString()}
       }
     });
   }
 
-  function saveOnlineSync(force){
-    const now = JSON.stringify(cloudStore);
-    if(!force && now === lastSavedText) return true;
+  function loadSync(){
+    try{
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", DOC_URL, false);
+      xhr.send(null);
+      if(xhr.status >= 200 && xhr.status < 300){
+        readDoc(xhr.responseText);
+        console.log("Dlinky Firebase V3: carregou online");
+        return true;
+      }
+      if(xhr.status === 404){
+        saveSync(true);
+        return true;
+      }
+      console.error("Dlinky Firebase V3: erro ao ler", xhr.status, xhr.responseText);
+      return false;
+    }catch(e){
+      console.error("Dlinky Firebase V3: falha ao ler", e);
+      return false;
+    }
+  }
 
+  function saveSync(force){
+    const now = JSON.stringify(cloudStore);
+    if(!force && now === lastSaved) return true;
     try{
       const xhr = new XMLHttpRequest();
       xhr.open("PATCH", DOC_URL, false);
       xhr.setRequestHeader("Content-Type", "application/json");
-      xhr.send(makeBody());
-
+      xhr.send(body());
       if(xhr.status >= 200 && xhr.status < 300){
-        lastSavedText = now;
-        console.log("Dlinky Firebase: salvo online.");
+        lastSaved = now;
+        console.log("Dlinky Firebase V3: salvou online");
         return true;
       }
-
-      showFirebaseError("Firebase não deixou salvar. Status: " + xhr.status + " — veja as Regras do Firestore.");
+      console.error("Dlinky Firebase V3: erro ao salvar", xhr.status, xhr.responseText);
       return false;
     }catch(e){
-      showFirebaseError("Falha salvando no Firebase.");
+      console.error("Dlinky Firebase V3: falha ao salvar", e);
       return false;
     }
   }
 
-  function saveOnlineSoon(){
+  function saveSoon(){
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function(){
-      saveOnlineSync(false);
-    }, 80);
+    saveTimer = setTimeout(() => saveSync(false), 80);
   }
 
-  // Carrega ANTES do script.js iniciar.
-  loadOnlineSync();
+  loadSync();
 
-  const originalGetItem = Storage.prototype.getItem;
-  const originalSetItem = Storage.prototype.setItem;
-  const originalRemoveItem = Storage.prototype.removeItem;
-  const originalClear = Storage.prototype.clear;
-  const originalKey = Storage.prototype.key;
+  const ogGet = Storage.prototype.getItem;
+  const ogSet = Storage.prototype.setItem;
+  const ogRemove = Storage.prototype.removeItem;
+  const ogClear = Storage.prototype.clear;
+  const ogKey = Storage.prototype.key;
 
   Storage.prototype.getItem = function(key){
     if(this === realLocalStorage){
       key = String(key);
-      return Object.prototype.hasOwnProperty.call(cloudStore, key) ? cloudStore[key] : null;
+      return Object.prototype.hasOwnProperty.call(cloudStore,key) ? cloudStore[key] : null;
     }
-    return originalGetItem.call(this, key);
+    return ogGet.call(this,key);
   };
 
-  Storage.prototype.setItem = function(key, value){
+  Storage.prototype.setItem = function(key,value){
     if(this === realLocalStorage){
       cloudStore[String(key)] = String(value);
-      saveOnlineSoon();
+      saveSoon();
       return;
     }
-    return originalSetItem.call(this, key, value);
+    return ogSet.call(this,key,value);
   };
 
   Storage.prototype.removeItem = function(key){
     if(this === realLocalStorage){
       delete cloudStore[String(key)];
-      saveOnlineSoon();
+      saveSoon();
       return;
     }
-    return originalRemoveItem.call(this, key);
+    return ogRemove.call(this,key);
   };
 
   Storage.prototype.clear = function(){
     if(this === realLocalStorage){
       Object.keys(cloudStore).forEach(k => delete cloudStore[k]);
-      saveOnlineSoon();
+      saveSoon();
       return;
     }
-    return originalClear.call(this);
+    return ogClear.call(this);
   };
 
-  Storage.prototype.key = function(index){
-    if(this === realLocalStorage){
-      return Object.keys(cloudStore)[index] || null;
-    }
-    return originalKey.call(this, index);
+  Storage.prototype.key = function(i){
+    if(this === realLocalStorage) return Object.keys(cloudStore)[i] || null;
+    return ogKey.call(this,i);
   };
 
-  Object.defineProperty(Storage.prototype, "length", {
-    get:function(){
-      if(this === realLocalStorage) return Object.keys(cloudStore).length;
-      return 0;
-    }
-  });
-
-  // botão/comando pra testar no console
-  window.dlinkyCloudSaveNow = function(){
-    return saveOnlineSync(true);
-  };
-
-  window.dlinkyCloudReloadNow = function(){
-    return loadOnlineSync();
-  };
-
-  window.dlinkyCloudDebug = function(){
+  window.dlinkyCloudSaveNow = () => saveSync(true);
+  window.dlinkyCloudReloadNow = () => loadSync();
+  window.dlinkyCloudDebug = () => {
     console.log(JSON.parse(JSON.stringify(cloudStore)));
     return cloudStore;
   };
 
-  window.addEventListener("beforeunload", function(){
-    saveOnlineSync(false);
+  window.addEventListener("beforeunload", () => saveSync(false));
+  document.addEventListener("visibilitychange", () => {
+    if(document.visibilityState === "hidden") saveSync(false);
   });
-
-  document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "hidden") saveOnlineSync(false);
-  });
-
-  setInterval(function(){
-    saveOnlineSync(false);
-  }, 2000);
-
-  console.log("Dlinky Firebase Online V2 ativo.");
+  setInterval(() => saveSync(false), 2000);
 })();
 </script>
 
