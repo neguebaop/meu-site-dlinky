@@ -12332,3 +12332,377 @@ document.addEventListener("click",(e)=>{
 
   setTimeout(()=>{fixShopDataAliases(); fixButtonsDataset(); keepActiveCorrect();},300);
 })();
+
+
+
+/* ===== FIX: LOJA MOLDURAS SOMENTE DO ADMIN, SEM MOLDURA FAKE ===== */
+(function(){
+  if(window.__dlinkyFixMoldurasSomenteAdmin) return;
+  window.__dlinkyFixMoldurasSomenteAdmin = true;
+
+  const q=(s,r=document)=>r.querySelector(s);
+  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+  function readJSON(k,fb){
+    try{
+      const raw=localStorage.getItem(k);
+      if(!raw) return fb;
+      const val=JSON.parse(raw);
+      return val ?? fb;
+    }catch(e){return fb}
+  }
+
+  function writeJSON(k,v){
+    localStorage.setItem(k,JSON.stringify(v));
+  }
+
+  function getAdminFrames(){
+    let arr = readJSON("dlinkyCustomFrames", []);
+    if(!Array.isArray(arr)) arr = [];
+
+    // Remove qualquer item fake/antigo e deixa somente o que foi cadastrado no Admin com URL real.
+    arr = arr.filter(f=>{
+      if(!f || typeof f !== "object") return false;
+      const url = String(f.url || "").trim();
+      if(!url) return false;
+
+      // bloqueia moldura fake antiga que estava aparecendo sem estar no admin
+      const name = String(f.name || "").toLowerCase();
+      const desc = String(f.desc || "").toLowerCase();
+      if(name.includes("irritado") && !f.createdAt && !f.id) return false;
+      if(desc.includes("espinhos") && !f.createdAt && !f.id) return false;
+
+      return true;
+    });
+
+    // Salva de volta limpo para ficar fixo no reload.
+    writeJSON("dlinkyCustomFrames", arr);
+    return arr;
+  }
+
+  function syncInventoryOnlyAdmin(){
+    const frames = getAdminFrames();
+    const allowed = new Set(frames.map(f=>String(f.url||"").trim()));
+
+    const u = readJSON("dlinkyUser", {});
+    if(!u || typeof u !== "object") return u;
+
+    u.inventory = Array.isArray(u.inventory) ? u.inventory.filter(it=>{
+      const url = String((it && (it.url || it.frameUrl)) || "").trim();
+      return url && allowed.has(url);
+    }) : [];
+
+    const equipped = String(u.frame || u.frameUrl || "").trim();
+    if(equipped && !allowed.has(equipped)){
+      u.frame = "";
+      u.frameUrl = "";
+      u.frameName = "";
+      u.decoration = "none";
+    }
+
+    writeJSON("dlinkyUser", u);
+    try{ if(typeof user === "object" && user) Object.assign(user,u); }catch(e){}
+    return u;
+  }
+
+  function renderFramesShopOnlyAdmin(){
+    const grid = q("#shopGrid");
+    if(!grid) return;
+
+    const frames = getAdminFrames();
+    grid.classList.add("frames-shop-grid");
+
+    if(!frames.length){
+      window.__dlinkyVisibleFrames = [];
+      grid.innerHTML = `<div class="panel empty-frames-help">
+        <h2>Nenhuma moldura cadastrada</h2>
+        <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
+      </div>`;
+      return;
+    }
+
+    const u = readJSON("dlinkyUser", {});
+    const avatar = esc(u.avatar || "");
+
+    window.__dlinkyVisibleFrames = frames.map((f,i)=>[
+      f.name || "Moldura personalizada",
+      f.price || "20 Linkwuans",
+      "custom-"+i,
+      f.desc || "Moldura cadastrada no Admin",
+      "Disponível",
+      f.url || "",
+      f.prices || null,
+      f.id || f.url || ("admin-frame-"+i)
+    ]);
+
+    grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
+      const base = String(x[1]).match(/\d+/)?.[0] || 20;
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
+        <div class="frame-shop-preview real-frame-preview">
+          <div class="frame-avatar-demo zyo-person-demo" style="background-image:${avatar?`url('${avatar}')`:"none"}!important"></div>
+          <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
+        </div>
+        <div class="frame-info clean-info">
+          <b>${esc(x[0])}</b>
+          <small>${esc(x[3])}</small>
+        </div>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${esc(x[1])}</b></div>
+        <select class="frame-duration" data-frame-duration="${i}">
+          <option>3 dias</option>
+          <option>7 dias</option>
+          <option>15 dias</option>
+          <option>Permanente</option>
+        </select>
+        <div class="frame-actions">
+          <button class="btn primary small" type="button" data-buy-admin-frame-only="${i}">Comprar</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderAdminListOnlyReal(){
+    const box = q("#adminFramesList");
+    if(!box) return;
+
+    const arr = getAdminFrames();
+    box.innerHTML = arr.length ? arr.map((f,i)=>`
+      <div class="admin-item">
+        <img src="${esc(f.url)}" alt="" style="object-fit:contain">
+        <div>
+          <b>${esc(f.name || "Moldura")}</b><br>
+          <small>${esc(f.price || "20 Linkwuans")} • ${esc(f.desc || "")}</small>
+        </div>
+        <button class="delete" type="button" data-del-admin-frame-only="${i}">×</button>
+      </div>
+    `).join("") : "<p>Nenhuma moldura custom adicionada ainda.</p>";
+  }
+
+  function renderInventoryOnlyAdmin(){
+    const u = syncInventoryOnlyAdmin();
+    const grid = q("#inventoryGrid");
+    if(!grid) return;
+
+    const inv = Array.isArray(u.inventory) ? u.inventory : [];
+    const avatar = esc(u.avatar || "");
+
+    grid.innerHTML = inv.length ? inv.map((it,i)=>{
+      const url = esc(it.url || it.frameUrl || "");
+      return `<div class="asset-card inv-item-card">
+        <div class="asset-preview shop-preview inv-preview" style="position:relative;display:grid;place-items:center;min-height:150px;overflow:hidden">
+          <span class="inv-avatar-preview zyo-person-demo" style="width:82px;height:82px;border-radius:50%;background:${avatar?`url('${avatar}') center/cover no-repeat`:"#ddd"};position:absolute;z-index:1"></span>
+          <img class="inv-frame-preview" src="${url}" style="position:absolute;z-index:2;width:135px;height:135px;object-fit:contain;pointer-events:none">
+        </div>
+        <div class="asset-body">
+          <b>${esc(it.name || "Moldura")}</b>
+          <small>${esc(it.duration || "item")}</small>
+          <button class="btn primary small" type="button" data-use-admin-only-frame="${i}">Usar</button>
+        </div>
+      </div>`;
+    }).join("") : "<p>Você ainda não possui itens no inventário.</p>";
+
+    ["invItemsCount","invCountMini"].forEach(id=>{
+      const el=q("#"+id);
+      if(el) el.textContent = inv.length;
+    });
+  }
+
+  // Protege contra qualquer código antigo tentando recriar a Moldura irritado fake.
+  const nativeSetItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key,value){
+    try{
+      if(key === "dlinkyCustomFrames"){
+        let arr = JSON.parse(value || "[]");
+        if(Array.isArray(arr)){
+          arr = arr.filter(f=>{
+            if(!f || !f.url) return false;
+            const name = String(f.name || "").toLowerCase();
+            const desc = String(f.desc || "").toLowerCase();
+            if(name.includes("irritado") && !f.createdAt && !f.id) return false;
+            if(desc.includes("espinhos") && !f.createdAt && !f.id) return false;
+            return true;
+          });
+          value = JSON.stringify(arr);
+        }
+      }
+
+      if(key === "dlinkyUser"){
+        const frames = getAdminFrames();
+        const allowed = new Set(frames.map(f=>String(f.url||"").trim()));
+        let u = JSON.parse(value || "{}");
+        if(u && typeof u === "object"){
+          u.inventory = Array.isArray(u.inventory) ? u.inventory.filter(it=>{
+            const url = String((it && (it.url || it.frameUrl)) || "").trim();
+            return url && allowed.has(url);
+          }) : [];
+          const equipped = String(u.frame || u.frameUrl || "").trim();
+          if(equipped && !allowed.has(equipped)){
+            u.frame = "";
+            u.frameUrl = "";
+            u.frameName = "";
+            u.decoration = "none";
+          }
+          value = JSON.stringify(u);
+        }
+      }
+    }catch(e){}
+    return nativeSetItem(key,value);
+  };
+
+  document.addEventListener("click",function(e){
+    const add = e.target && e.target.id === "adminAddFrame";
+    if(add){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const url = q("#adminFrameUrl")?.value?.trim() || "";
+      if(!url){
+        try{toast("Cole a URL da moldura.");}catch(err){}
+        return;
+      }
+
+      const arr = getAdminFrames();
+      arr.unshift({
+        id:"admin-frame-"+Date.now(),
+        name:q("#adminFrameName")?.value || "Moldura personalizada",
+        desc:q("#adminFrameDesc")?.value || "Moldura cadastrada no Admin",
+        price:q("#adminFramePrice")?.value || "20 Linkwuans",
+        url:url,
+        createdAt:Date.now()
+      });
+
+      writeJSON("dlinkyCustomFrames", arr);
+      renderAdminListOnlyReal();
+      renderFramesShopOnlyAdmin();
+      try{toast("Moldura salva e fixa no Admin.");}catch(err){}
+      return;
+    }
+
+    const del = e.target.closest && e.target.closest("[data-del-admin-frame-only]");
+    if(del){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const arr = getAdminFrames();
+      arr.splice(Number(del.dataset.delAdminFrameOnly),1);
+      writeJSON("dlinkyCustomFrames", arr);
+      syncInventoryOnlyAdmin();
+      renderAdminListOnlyReal();
+      renderFramesShopOnlyAdmin();
+      renderInventoryOnlyAdmin();
+      try{toast("Moldura removida.");}catch(err){}
+      return;
+    }
+
+    const buy = e.target.closest && e.target.closest("[data-buy-admin-frame-only]");
+    if(buy){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const item = (window.__dlinkyVisibleFrames || [])[Number(buy.dataset.buyAdminFrameOnly)];
+      if(!item || !item[5]) return;
+
+      const u = syncInventoryOnlyAdmin();
+      u.inventory = Array.isArray(u.inventory) ? u.inventory : [];
+      u.inventory = u.inventory.filter(it=>String(it.url||it.frameUrl||"").trim() !== String(item[5]).trim());
+
+      const duration = q(`[data-frame-duration="${buy.dataset.buyAdminFrameOnly}"]`)?.value || "Permanente";
+      const price = q(`[data-price-label="${buy.dataset.buyAdminFrameOnly}"]`)?.textContent || item[1];
+
+      u.inventory.unshift({
+        type:"frames",
+        kind:"frame",
+        name:item[0],
+        url:item[5],
+        frameUrl:item[5],
+        duration:duration,
+        price:price,
+        date:Date.now()
+      });
+
+      u.frame = item[5];
+      u.frameUrl = item[5];
+      u.frameName = item[0];
+      u.decoration = "none";
+
+      writeJSON("dlinkyUser", u);
+      try{ if(typeof user === "object" && user) Object.assign(user,u); }catch(err){}
+      renderInventoryOnlyAdmin();
+      try{toast("Moldura comprada e salva no inventário.");}catch(err){}
+      return;
+    }
+
+    const use = e.target.closest && e.target.closest("[data-use-admin-only-frame]");
+    if(use){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const u = syncInventoryOnlyAdmin();
+      const it = (u.inventory || [])[Number(use.dataset.useAdminOnlyFrame)];
+      if(!it) return;
+
+      u.frame = it.url || it.frameUrl || "";
+      u.frameUrl = u.frame;
+      u.frameName = it.name || "Moldura";
+      u.decoration = "none";
+
+      writeJSON("dlinkyUser", u);
+      try{ if(typeof user === "object" && user) Object.assign(user,u); }catch(err){}
+      try{toast("Moldura aplicada.");}catch(err){}
+      renderInventoryOnlyAdmin();
+      return;
+    }
+  }, true);
+
+  const oldRenderShop = window.renderShop;
+  window.renderShop = function(){
+    const active = q("#tab-store [data-shop-tab].active");
+    const mode = active?.dataset?.shopTab || window.shopMode || (typeof shopMode !== "undefined" ? shopMode : "coins");
+
+    if(mode === "frames" || mode === "molduras"){
+      renderFramesShopOnlyAdmin();
+      return;
+    }
+
+    if(typeof oldRenderShop === "function") return oldRenderShop.apply(this, arguments);
+  };
+  try{ renderShop = window.renderShop; }catch(e){}
+
+  window.renderInventory = renderInventoryOnlyAdmin;
+  try{ renderInventory = renderInventoryOnlyAdmin; }catch(e){}
+
+  const oldOpenTab = window.openTab;
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__moldurasSomenteAdmin){
+    const patched = function(id){
+      const r = oldOpenTab.apply(this, arguments);
+      if(id === "store"){
+        setTimeout(()=>{
+          const active = q("#tab-store [data-shop-tab].active");
+          const mode = active?.dataset?.shopTab || window.shopMode;
+          if(mode === "frames" || mode === "molduras") renderFramesShopOnlyAdmin();
+        },0);
+      }
+      if(id === "admin") setTimeout(renderAdminListOnlyReal,0);
+      if(id === "inventory") setTimeout(renderInventoryOnlyAdmin,0);
+      return r;
+    };
+    patched.__moldurasSomenteAdmin = true;
+    window.openTab = patched;
+    try{ openTab = patched; }catch(e){}
+  }
+
+  // Limpa a fake assim que o site abre.
+  getAdminFrames();
+  syncInventoryOnlyAdmin();
+  setTimeout(()=>{
+    renderAdminListOnlyReal();
+    renderInventoryOnlyAdmin();
+    const active = q("#tab-store [data-shop-tab].active");
+    const mode = active?.dataset?.shopTab || window.shopMode;
+    if(mode === "frames" || mode === "molduras") renderFramesShopOnlyAdmin();
+  },400);
+})();
