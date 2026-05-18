@@ -11041,12 +11041,20 @@ document.addEventListener("click",(e)=>{
   }
 
   function publicSlug(){
+    const blocked = ["login","register","dashboard","assets","premium","community","admin","store"];
+
+    const pathRaw = (location.pathname || "").replace(/^\/+|\/+$/g,"").split("/")[0] || "";
+    const pathSlug = cleanSlug(pathRaw);
+    if(pathSlug && !blocked.includes(pathSlug)){
+      return pathSlug;
+    }
+
     const h = location.hash || "";
     const m = h.match(/^#\/([a-z0-9_-]{2,30})$/i);
     if(!m) return "";
-    const slug = m[1];
-    if(["login","register","dashboard","assets","premium","community"].includes(slug)) return "";
-    return cleanSlug(slug);
+    const slug = cleanSlug(m[1]);
+    if(blocked.includes(slug)) return "";
+    return slug;
   }
   function showOnlyProfile(){
     qa(".page").forEach(p=>p.classList.remove("active"));
@@ -11089,4 +11097,157 @@ document.addEventListener("click",(e)=>{
   window.addEventListener("hashchange",()=>{ patchAuthClean(); openPublicFast(); });
   setTimeout(patchAuthClean,500);
   setTimeout(patchAuthClean,1500);
+})();
+
+/* ===== DLINKY HOTFIX — CADASTRO NOVO FUNCIONANDO + LINK DIRETO PERFIL ===== */
+(function(){
+  if(window.__dlinkyCadastroNovoHotfix) return;
+  window.__dlinkyCadastroNovoHotfix = true;
+
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCPmjhOSXXNaVXXXdrAK9Y77fqxCoLv7Wo",
+    authDomain: "dlinky.firebaseapp.com",
+    projectId: "dlinky",
+    storageBucket: "dlinky.firebasestorage.app",
+    messagingSenderId: "856690547155",
+    appId: "1:856690547155:web:6444b8a4be23ee5a6d7726"
+  };
+  const ADMIN_EMAIL = "jailtonsilas48@gmail.com";
+  const USER_KEY = "dlinkyUser";
+  const ACCOUNTS_KEY = "dlinkyAccounts_v5";
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function clean(v){return String(v||"usuario").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_-]/g,"").slice(0,30)||"usuario"}
+  function aviso(t){try{ if(typeof toast==='function') return toast(t); }catch(e){} alert(t)}
+  function fbReady(){try{if(!window.firebase||!firebase.apps)return false;if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);return true}catch(e){return false}}
+
+  function baseUser(data){
+    const email=String(data.email||"").toLowerCase().trim();
+    const nome=String(data.name||data.nome||"").trim() || (email?email.split('@')[0]:"Usuário");
+    const slug=clean(data.slug||nome);
+    const antigo=readJSON(USER_KEY,{});
+    const manter=(antigo && String(antigo.email||"").toLowerCase().trim()===email)?antigo:{};
+    return Object.assign({
+      uid:data.uid||("local_"+Date.now()),
+      name:nome,slug,email,bio:"",avatar:"",banner:"",bg:"",video:"",frame:"",music:"",welcome:"Clique aqui",
+      color:"#a855f7",particles:true,particleType:"snow",verified:false,hideViews:false,template:"default",decoration:"",
+      views:0,coins:0,linkwuans:0,inventory:[],purchases:[],history:[],links:[],socials:[],tags:[],embeds:[],isAdmin:email===ADMIN_EMAIL
+    },manter,{uid:data.uid||manter.uid||("local_"+Date.now()),name:nome,slug,email,isAdmin:email===ADMIN_EMAIL});
+  }
+
+  function applyUser(u){
+    writeJSON(USER_KEY,u);
+    const acc=readJSON(ACCOUNTS_KEY,{}); if(u.email)acc[u.email]=u; writeJSON(ACCOUNTS_KEY,acc);
+    try{ if(typeof user!=='undefined'&&user){Object.keys(user).forEach(k=>delete user[k]);Object.assign(user,u);window.user=user;}else{window.user=u;} }catch(e){window.user=u;}
+  }
+
+  function publicPayload(u){return {uid:u.uid||'',name:u.name||'Usuário',slug:u.slug||'usuario',email:u.email||'',bio:u.bio||'',avatar:u.avatar||'',banner:u.banner||'',bg:u.bg||'',video:u.video||'',frame:u.frame||'',music:u.music||'',welcome:u.welcome||'Clique aqui',color:u.color||'#a855f7',particles:u.particles!==false,particleType:u.particleType||'snow',verified:!!u.verified,hideViews:!!u.hideViews,decoration:u.decoration||'',links:Array.isArray(u.links)?u.links:[],socials:Array.isArray(u.socials)?u.socials:[],tags:Array.isArray(u.tags)?u.tags:[],embeds:Array.isArray(u.embeds)?u.embeds:[],updatedAt:Date.now()}}
+  async function saveOnline(u){
+    try{
+      if(!fbReady()||!firebase.firestore)return;
+      const db=firebase.firestore();
+      await db.collection('users').doc(u.uid||u.email||u.slug).set(Object.assign({},u,{updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
+      if(u.slug) await db.collection('profiles').doc(u.slug).set(Object.assign(publicPayload(u),{updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
+    }catch(e){console.warn('saveOnline cadastro',e)}
+  }
+
+  async function cadastrar(e){
+    if(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();}
+    const name=q('#regName')?.value.trim()||'';
+    const email=(q('#regEmail')?.value||'').trim().toLowerCase();
+    const pass=q('#regPass')?.value||'';
+    const pass2=q('#regPass2')?.value||'';
+    const slug=clean((q('#regSlug')?.value||name||email.split('@')[0]));
+    if(!name)return aviso('Digite o nome.');
+    if(!email)return aviso('Digite o e-mail.');
+    if(pass.length<6)return aviso('A senha precisa ter pelo menos 6 caracteres.');
+    if(pass!==pass2)return aviso('As senhas não conferem.');
+    const acc=readJSON(ACCOUNTS_KEY,{});
+    if(acc[email])return aviso('Esse e-mail já existe. Use Login.');
+    let uid='local_'+Date.now();
+    try{
+      if(fbReady()&&firebase.auth){
+        const cred=await firebase.auth().createUserWithEmailAndPassword(email,pass);
+        uid=cred.user.uid;
+      }
+    }catch(err){
+      const code=String(err&&err.code||'');
+      if(code.includes('email-already-in-use')) return aviso('Esse e-mail já existe. Use Login.');
+      // Se o Firebase Auth estiver desativado/instável, continua criando a conta local e salvando no Firestore quando possível.
+      console.warn('Firebase Auth não criou, usando cadastro local:',err);
+    }
+    const u=baseUser({uid,name,email,slug});
+    u.history=[`${new Date().toLocaleString('pt-BR')} — Conta registrada`];
+    applyUser(u);
+    await saveOnline(u);
+    aviso('Conta criada com sucesso!');
+    location.hash='#/dashboard';
+    setTimeout(()=>{try{renderDash()}catch(e){}},100);
+  }
+
+  async function entrar(e){
+    if(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();}
+    const email=(q('#loginEmail')?.value||'').trim().toLowerCase();
+    const pass=q('#loginPass')?.value||'';
+    if(!email)return aviso('Digite o e-mail.');
+    if(!pass)return aviso('Digite a senha.');
+    try{
+      if(fbReady()&&firebase.auth){
+        const cred=await firebase.auth().signInWithEmailAndPassword(email,pass);
+        let data={uid:cred.user.uid,email};
+        try{const snap=await firebase.firestore().collection('users').doc(cred.user.uid).get(); if(snap.exists)data=Object.assign(data,snap.data());}catch(_e){}
+        const u=baseUser(data); applyUser(u); await saveOnline(u); aviso('Login efetuado!'); location.hash='#/dashboard'; setTimeout(()=>{try{renderDash()}catch(e){}},100); return;
+      }
+    }catch(err){console.warn('login firebase falhou',err)}
+    const acc=readJSON(ACCOUNTS_KEY,{});
+    if(acc[email]){applyUser(acc[email]);aviso('Login efetuado!');location.hash='#/dashboard';setTimeout(()=>{try{renderDash()}catch(e){}},100);return;}
+    aviso('Conta não encontrada. Crie uma conta primeiro.');
+  }
+
+  function cloneAndPatch(){
+    const reg=q('#registerForm');
+    if(reg && !reg.__cadastroNovoOK){
+      const n=reg.cloneNode(true); n.__cadastroNovoOK=true; reg.parentNode.replaceChild(n,reg);
+      n.addEventListener('submit',cadastrar,true);
+      const btn=n.querySelector('button'); if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();cadastrar(ev)},true);
+    }
+    const log=q('#loginForm');
+    if(log && !log.__loginNovoOK){
+      const n=log.cloneNode(true); n.__loginNovoOK=true; log.parentNode.replaceChild(n,log);
+      n.addEventListener('submit',entrar,true);
+      const btn=n.querySelector('button'); if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();entrar(ev)},true);
+    }
+  }
+
+  const blocked=['','login','register','dashboard','assets','premium','community','admin','store'];
+  function currentPublicSlug(){
+    const p=(location.pathname||'/').replace(/^\/+|\/+$/g,'').split('/')[0];
+    const ps=clean(p); if(ps&&!blocked.includes(ps))return ps;
+    const h=location.hash||''; const m=h.match(/^#\/([a-z0-9_-]{2,30})$/i); if(m){const hs=clean(m[1]); if(!blocked.includes(hs))return hs;}
+    return '';
+  }
+  function showProfileOnly(){qa('.page').forEach(x=>x.classList.remove('active'));q('#profile')?.classList.add('active');document.body.classList.add('public-profile','is-profile')}
+  async function openProfileDirect(){
+    const slug=currentPublicSlug(); if(!slug)return false;
+    showProfileOnly();
+    const local=readJSON(USER_KEY,{}); if(local.slug===slug){applyUser(local);try{renderProfile()}catch(e){}}
+    try{if(fbReady()&&firebase.firestore){const snap=await firebase.firestore().collection('profiles').doc(slug).get();if(snap.exists){const u=baseUser(Object.assign({},snap.data(),{slug}));applyUser(u);}}}catch(e){console.warn('perfil direto',e)}
+    showProfileOnly(); try{renderProfile()}catch(e){}
+    const back=q('#backToDash'); if(back)back.style.display='none';
+    return true;
+  }
+
+  const oldRoute=window.route||((typeof route!=='undefined')?route:null);
+  window.route=function(){if(currentPublicSlug()){openProfileDirect();return;}document.body.classList.remove('public-profile');if(typeof oldRoute==='function')return oldRoute.apply(this,arguments)};
+  try{route=window.route}catch(e){}
+
+  cloneAndPatch();
+  document.addEventListener('DOMContentLoaded',()=>{cloneAndPatch();openProfileDirect();});
+  window.addEventListener('hashchange',()=>{cloneAndPatch();openProfileDirect();});
+  setTimeout(cloneAndPatch,500);
+  setTimeout(cloneAndPatch,1500);
+  openProfileDirect();
 })();
