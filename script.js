@@ -11635,1401 +11635,506 @@ document.addEventListener("click",(e)=>{
 })();
 
 
-/* ===== DLINKY FIX FINAL LIMPO — LOJA MOLDURAS SEM PISCAR E SEM SUMIR =====
-   Corrige somente a aba Loja > Molduras:
-   - remove o loop antigo que recriava a loja sem parar;
-   - mostra apenas molduras cadastradas no Admin/localStorage;
-   - mantém a aba Molduras depois de reload;
-   - mantém a moldura comprada/equipada salva no dlinkyUser.
+/* bloco antigo da loja removido: ele fazia as abas voltarem sozinhas */
+
+/* ===== DLINKY FIX CIRÚRGICO FINAL — AVATAR REAL NA PREVIEW DA MOLDURA =====
+   Só mexe na imagem/avatar dentro dos cards de Molduras da Loja.
+   Não altera abas, duração, preço, música, perfil, admin, inventário ou compra.
 */
 (function(){
-  if(window.__dlinkyLojaMoldurasSemPiscarFinal) return;
-  window.__dlinkyLojaMoldurasSemPiscarFinal = true;
-
-  const USER_KEY = 'dlinkyUser';
-  const MODE_KEY = 'dlinky_loja_aba_atual';
-  const DUR_KEY = 'dlinky_loja_moldura_duracao';
-  const FRAME_KEYS = ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
-  const DURATIONS = ['3 dias','7 dias','15 dias','Permanente'];
-  const COINS = [
-    ['345 Linkwuans','R$ 30,00',345],
-    ['650 Linkwuans','R$ 50,00',650],
-    ['1450 Linkwuans','R$ 100,00',1450],
-    ['3300 Linkwuans','R$ 200,00',3300]
-  ];
-  const EFFECTS = [
-    ['Neon no Nome','180 Linkwuans','neonName'],
-    ['Nome Brilhante','220 Linkwuans','shineName'],
-    ['Nome Colorido','240 Linkwuans','rainbowName'],
-    ['Ocultar Views','150 Linkwuans','hideViews']
-  ];
-  const OTHER = [
-    ['Cursor Custom','120 Linkwuans','cursor'],
-    ['Tema Cyber','300 Linkwuans','cyber']
-  ];
-
-  let shopMode = normalizeMode(localStorage.getItem(MODE_KEY) || 'coins');
-
-  function $(s,r=document){ return r.querySelector(s); }
-  function $$(s,r=document){ return Array.from(r.querySelectorAll(s)); }
-  function esc(v){ return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function readJSON(k,fb){ try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):fb; }catch(e){ return fb; } }
-  function writeJSON(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
-  function getUser(){
-    const saved = readJSON(USER_KEY,{});
-    try{
-      if(typeof user === 'object' && user){ Object.assign(user,saved); return user; }
-    }catch(e){}
-    return saved;
-  }
-  function saveUserSafe(u){
-    writeJSON(USER_KEY,u||{});
-    try{ if(typeof user === 'object' && user) Object.assign(user,u||{}); }catch(e){}
-  }
-  function toastSafe(t){ try{ if(typeof toast === 'function') toast(t); }catch(e){} }
-  function normalizeMode(v){
-    v = String(v||'').toLowerCase();
-    if(v.includes('mold') || v.includes('frame')) return 'frames';
-    if(v.includes('efe') || v.includes('effect')) return 'effects';
-    if(v.includes('out') || v.includes('other')) return 'other';
-    return 'coins';
-  }
-  function setMode(v){ shopMode = normalizeMode(v); localStorage.setItem(MODE_KEY,shopMode); return shopMode; }
-  function store(){ return $('#tab-store'); }
-  function grid(){ return $('#shopGrid',store()||document) || $('#shopGrid'); }
-  function firstUrl(f){ return String(f?.url || f?.frameUrl || f?.image || f?.img || f?.src || '').trim(); }
-  function onlyNum(v){ const m=String(v??'').match(/\d+/); return m?Number(m[0]):0; }
-  function validImg(v){ return /^(https?:\/\/|data:image\/|assets\/|\.\/|\/)/i.test(String(v||'')) || /\.(png|apng|gif|webp|jpg|jpeg|svg)(\?|#|$)/i.test(String(v||'')); }
-  function frameId(f,i){ return String(f.id || firstUrl(f) || f.name || ('frame_'+i)); }
-  function allFrames(){
-    let arr=[];
-    FRAME_KEYS.forEach(k=>{ const v=readJSON(k,[]); if(Array.isArray(v)) arr=arr.concat(v); });
-    const seen=new Set();
-    return arr.map((f,i)=>({
-      id: frameId(f,i),
-      name: f.name || f.nome || f.title || 'Moldura',
-      desc: f.desc || f.descricao || f.description || 'Moldura cadastrada',
-      price: f.price || f.preco || f.valor || '50 Linkwuans',
-      prices: f.prices || f.precos || f.priceMap || null,
-      url: firstUrl(f)
-    })).filter(f=>f.url && validImg(f.url)).filter(f=>{
-      const key=(f.url+'|'+f.name).toLowerCase();
-      if(seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-  function durationMap(){ return readJSON(DUR_KEY,{}); }
-  function getDuration(id){ const d=durationMap()[id]; return DURATIONS.includes(d)?d:'Permanente'; }
-  function setDuration(id,d){ const m=durationMap(); m[id]=DURATIONS.includes(d)?d:'Permanente'; writeJSON(DUR_KEY,m); }
-  function framePrice(f,d){
-    const map=f?.prices;
-    if(map && map[d] != null){ const n=Number(map[d]); if(Number.isFinite(n) && n>0) return n; }
-    const base=onlyNum(f?.price || 50) || 50;
-    return base;
-  }
-  function avatarUrl(){
-    try{ if(window.__dlinkyGetBestAvatar){ const v=window.__dlinkyGetBestAvatar(); if(v) return v; } }catch(e){}
-    const u=getUser();
-    return String(u.avatar || u.photoURL || localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')) || '').trim();
-  }
-  function activeButtons(mode){
-    const root=store(); if(!root) return;
-    const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
-    $$('.shop-tabs button,.asset-tabs button,[data-shop-tab]',root).forEach(btn=>{
-      const m=normalizeMode(btn.dataset.shopTab || btn.textContent);
-      btn.dataset.shopTab=m;
-      if(labels[m]) btn.textContent=labels[m];
-      btn.classList.toggle('active',m===mode);
-    });
-  }
-  function renderCoins(g){
-    g.className='asset-grid';
-    g.innerHTML=COINS.map(x=>`<div class="asset-card"><div class="asset-preview shop-preview">◈</div><div class="asset-body"><b>${x[0]}</b><small>${x[1]}</small><button class="btn primary small" type="button" data-clean-buy-coin="${x[2]}">Comprar</button></div></div>`).join('');
-  }
-  function renderSimple(g,data){
-    g.className='asset-grid';
-    g.innerHTML=data.map((x,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">✦</div><div class="asset-body"><b>${esc(x[0])}</b><small>${esc(x[1])}</small><button class="btn primary small" type="button" data-clean-buy-item="${i}">Comprar</button></div></div>`).join('');
-  }
-  function renderFrames(g){
-    const frames=allFrames();
-    const av=avatarUrl();
-    g.className='asset-grid frames-shop-grid';
-    window.__dlinkyVisibleFrames = frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices,f.id]);
-    if(!frames.length){
-      g.innerHTML='<div class="panel empty-frames-help"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';
-      return;
-    }
-    g.innerHTML=frames.map((f,i)=>{
-      const d=getDuration(f.id);
-      const p=framePrice(f,d);
-      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-clean-frame-id="${esc(f.id)}" data-base-price="${p}">
-        <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
-          <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
-          <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
-        </div>
-        <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
-        <div class="frame-price">Preço: <b data-price-label="${i}">${p} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}" data-clean-frame-id="${esc(f.id)}">${DURATIONS.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>
-        <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
-      </div>`;
-    }).join('');
-  }
-  function renderShopClean(mode){
-    const g=grid(); if(!g) return;
-    mode=setMode(mode || shopMode);
-    activeButtons(mode);
-    if(mode==='frames') renderFrames(g);
-    else if(mode==='effects') renderSimple(g,EFFECTS);
-    else if(mode==='other') renderSimple(g,OTHER);
-    else renderCoins(g);
-  }
-
-  window.renderShop = function(){ renderShopClean(shopMode); };
-  try{ renderShop = window.renderShop; }catch(e){}
-
-  const oldOpenTab = window.openTab || (typeof openTab === 'function' ? openTab : null);
-  if(typeof oldOpenTab === 'function' && !oldOpenTab.__molduraSemPiscarFinal){
-    const patched=function(id){
-      const r=oldOpenTab.apply(this,arguments);
-      if(id==='store') setTimeout(()=>renderShopClean(shopMode),0);
-      return r;
-    };
-    patched.__molduraSemPiscarFinal=true;
-    window.openTab=patched;
-    try{ openTab=patched; }catch(e){}
-  }
-
-  document.addEventListener('click',function(e){
-    const tab=e.target.closest && e.target.closest('#tab-store [data-shop-tab],#tab-store .shop-tabs button,#tab-store .asset-tabs button');
-    if(tab){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      renderShopClean(tab.dataset.shopTab || tab.textContent);
-      return;
-    }
-    const coin=e.target.closest && e.target.closest('#tab-store [data-clean-buy-coin]');
-    if(coin){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      const v=Number(coin.dataset.cleanBuyCoin||0);
-      if(window.dlinkyOpenPixRecharge) window.dlinkyOpenPixRecharge(v);
-      else { const u=getUser(); u.coins=Number(u.coins||0)+v; u.linkwuans=u.coins; saveUserSafe(u); toastSafe('Linkwuans adicionados.'); }
-      return;
-    }
-    const item=e.target.closest && e.target.closest('#tab-store [data-clean-buy-item]');
-    if(item){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      const data=shopMode==='effects'?EFFECTS:OTHER;
-      const it=data[Number(item.dataset.cleanBuyItem)||0]; if(!it) return;
-      const u=getUser(); u.inventory=Array.isArray(u.inventory)?u.inventory:[];
-      u.inventory.unshift({type:shopMode,name:it[0],value:it[2],duration:'Permanente',date:Date.now()});
-      if(['neonName','shineName','rainbowName','hideViews'].includes(it[2])) u[it[2]]=true;
-      saveUserSafe(u); toastSafe('Item salvo no inventário!');
-      return;
-    }
-  },true);
-
-  document.addEventListener('change',function(e){
-    const sel=e.target.closest && e.target.closest('#tab-store select[data-frame-duration]');
-    if(!sel) return;
-    const id=sel.dataset.cleanFrameId || sel.dataset.frameId || String(sel.dataset.frameDuration||0);
-    setDuration(id,sel.value);
-    const frames=allFrames();
-    const idx=Number(sel.dataset.frameDuration||0);
-    const f=frames[idx];
-    const label=$(`[data-price-label="${idx}"]`,store()||document);
-    if(f && label) label.textContent=framePrice(f,sel.value)+' Linkwuans';
-  },true);
-
-  // reforço para compra do modal: salva no usuário e não deixa sumir no reload
-  window.__dlinkyForceFrameBuyFromModal = function(){
-    const modal=$('#frameBuyModal');
-    if(!modal) return;
-    const idx=Number(modal.dataset.idx||0);
-    const list=window.__dlinkyVisibleFrames||[];
-    const item=list[idx]||[];
-    const name=$('#frameBuyName')?.textContent?.trim() || item[0] || 'Moldura';
-    const url=$('#frameBuyImg')?.getAttribute('src') || item[5] || '';
-    const duration=(modal.dataset.duration || $('#frameBuyDuration')?.textContent || 'Permanente').trim();
-    const price=onlyNum(modal.dataset.price || $('#frameBuyPrice')?.textContent || item[1]);
-    const u=getUser();
-    u.coins=Number(u.coins||u.linkwuans||0); u.linkwuans=u.coins;
-    u.inventory=Array.isArray(u.inventory)?u.inventory:[]; u.purchases=Array.isArray(u.purchases)?u.purchases:[];
-    if(price>0 && u.coins<price){ modal.classList.remove('show'); modal.style.display='none'; toastSafe('Saldo insuficiente em Linkwuans.'); return; }
-    if(price>0) u.coins-=price;
-    u.linkwuans=u.coins;
-    if(url){
-      u.inventory=u.inventory.filter(x=>String(x.url||x.frameUrl||'')!==String(url));
-      u.inventory.unshift({type:'frames',kind:'frame',name,url,frameUrl:url,value:'custom-frame',duration,price:price+' Linkwuans',date:Date.now(),boughtAt:Date.now()});
-      u.frame=url; u.frameUrl=url; u.frameName=name; u.decoration='none';
-    }
-    u.__hasPurchasedFrame=true; u.__hasPurchasedItem=true; u.__cleanNewAccount=false;
-    u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
-    saveUserSafe(u);
-    modal.classList.remove('show'); modal.style.display='none';
-    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
-    try{ if(typeof renderInventory==='function') renderInventory(); }catch(e){}
-    toastSafe('Moldura comprada e salva!');
-  };
-
-  document.addEventListener('click',function(e){
-    if(e.target.closest && e.target.closest('#confirmFrameBuy')){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      window.__dlinkyForceFrameBuyFromModal();
-      return;
-    }
-  },true);
-
-  window.addEventListener('hashchange',function(){ setTimeout(()=>{ if(store()?.classList.contains('active')) renderShopClean(shopMode); },80); });
-  setTimeout(()=>{ if(store()?.classList.contains('active')) renderShopClean(shopMode); },120);
-})();
-
-
-
-/* ===== FIX DEFINITIVO INVENTÁRIO + COMPRA DE MOLDURA SEM SUMIR ===== */
-(function(){
-  if(window.__dlinkyFixInventarioMolduraDefinitivo) return;
-  window.__dlinkyFixInventarioMolduraDefinitivo = true;
-
-  const USER_KEY = "dlinkyUser";
+  if(window.__dlinkyAvatarPreviewMolduraFinal) return;
+  window.__dlinkyAvatarPreviewMolduraFinal = true;
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function esc(v){return String(v ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||"{}")}catch(e){return {}}}
-  function saveUserLocal(u){
-    localStorage.setItem(USER_KEY, JSON.stringify(u||{}));
-    try{ if(typeof user==="object" && user) Object.assign(user,u||{}); }catch(e){}
-  }
-  function toastLocal(t){try{ if(typeof toast==="function") toast(t); }catch(e){}}
-  function onlyNum(v){const m=String(v||"").match(/\d+/);return m?Number(m[0]):0}
 
-  function getVisibleFrameByIndex(idx){
-    const list = window.__dlinkyVisibleFrames || [];
-    const item = list[idx];
-    if(!item) return null;
-    return {
-      name: item[0] || "Moldura",
-      price: item[1] || "0 Linkwuans",
-      desc: item[3] || "",
-      url: item[5] || "",
-      id: item[7] || item[5] || ("frame_"+idx)
-    };
+  function cleanUrl(v){
+    v = String(v || '').trim();
+    if(!v || v === 'none') return '';
+    const m = v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v = m[1];
+    return v.replace(/^['"]|['"]$/g,'').trim();
   }
 
-  function normalizeInventory(u){
-    u.inventory = Array.isArray(u.inventory) ? u.inventory : [];
+  function readUser(){
+    try{
+      const saved = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
+      if(typeof user === 'object' && user){ return Object.assign({}, saved, user); }
+      return saved;
+    }catch(e){
+      try{ if(typeof user === 'object' && user) return user; }catch(err){}
+      return {};
+    }
+  }
 
-    // Se existe moldura equipada, garante que ela também exista no inventário.
-    if(u.frame || u.frameUrl){
-      const url = u.frame || u.frameUrl;
-      const exists = u.inventory.some(it => String(it.url||it.frameUrl||"") === String(url));
-      if(!exists){
-        u.inventory.unshift({
-          type:"frames",
-          kind:"frame",
-          name:u.frameName || "Moldura equipada",
-          value:"custom-frame",
-          url:url,
-          frameUrl:url,
-          duration:"Permanente",
-          price:"Comprado",
-          date:Date.now()
-        });
+  function fromElement(sel){
+    const el = q(sel);
+    if(!el) return '';
+    if(el.tagName === 'IMG') return cleanUrl(el.getAttribute('src'));
+    return cleanUrl(el.style.backgroundImage || getComputedStyle(el).backgroundImage);
+  }
+
+  function bestAvatar(){
+    const u = readUser();
+    const candidates = [
+      u.avatar,
+      u.photo,
+      u.photoURL,
+      u.avatarUrl,
+      localStorage.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')),
+      localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')),
+      fromElement('#dashAvatar'),
+      fromElement('#sideAvatar'),
+      fromElement('#profileAvatar'),
+      fromElement('.profile-avatar'),
+      fromElement('.avatar')
+    ];
+    for(const c of candidates){
+      const v = cleanUrl(c);
+      if(v && !/placeholder|default-avatar|usuario|user-icon/i.test(v)) return v;
+      if(v && /^https?:\/\//i.test(v)) return v;
+    }
+    return cleanUrl(u.avatar || candidates.find(Boolean) || '');
+  }
+
+  function paintAvatarPreview(){
+    const store = q('#tab-store');
+    if(!store) return;
+    const av = bestAvatar();
+    if(!av) return;
+
+    // Mantém salvo para próximos renders sem mexer nos outros dados.
+    try{
+      const u = readUser();
+      if(u && !u.avatar){ u.avatar = av; localStorage.setItem('dlinkyUser', JSON.stringify(u)); }
+      localStorage.setItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'), av);
+    }catch(e){}
+
+    const targets = qa('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', store);
+    targets.forEach(el=>{
+      el.style.setProperty('background-image', 'url("'+av.replace(/"/g,'%22')+'")', 'important');
+      el.style.setProperty('background-size', 'cover', 'important');
+      el.style.setProperty('background-position', 'center', 'important');
+      el.style.setProperty('background-repeat', 'no-repeat', 'important');
+      el.style.setProperty('background-color', 'transparent', 'important');
+      el.style.setProperty('display', 'block', 'important');
+      el.style.setProperty('visibility', 'visible', 'important');
+      el.style.setProperty('opacity', '1', 'important');
+    });
+
+    // Caso algum card tenha perdido o elemento do avatar, recria somente dentro da preview da moldura.
+    qa('.frame-shop-preview,.real-frame-preview,.inv-preview', store).forEach(box=>{
+      const hasFrame = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
+      if(!hasFrame) return;
+      let avatarEl = q('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', box);
+      if(!avatarEl){
+        avatarEl = document.createElement('div');
+        avatarEl.className = 'frame-avatar-demo zyo-person-demo';
+        box.insertBefore(avatarEl, box.firstChild);
       }
-    }
-
-    // Normaliza itens antigos que tinham url em outro campo.
-    u.inventory = u.inventory.map(it=>{
-      if(!it || typeof it!=="object") return it;
-      if(!it.url && it.frameUrl) it.url = it.frameUrl;
-      if(!it.frameUrl && it.url) it.frameUrl = it.url;
-      if((it.url || it.frameUrl) && !it.type) it.type = "frames";
-      return it;
+      avatarEl.style.cssText += ';position:absolute!important;left:50%!important;top:50%!important;width:92px!important;height:92px!important;border-radius:50%!important;transform:translate(-50%,-50%)!important;z-index:1!important;background:url("'+av.replace(/"/g,'%22')+'") center/cover no-repeat!important;';
+      box.style.setProperty('position','relative','important');
+      box.style.setProperty('overflow','hidden','important');
+      const img = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
+      if(img){
+        img.style.setProperty('position','absolute','important');
+        img.style.setProperty('left','50%','important');
+        img.style.setProperty('top','50%','important');
+        img.style.setProperty('transform','translate(-50%,-50%)','important');
+        img.style.setProperty('z-index','2','important');
+        img.style.setProperty('object-fit','contain','important');
+        img.style.setProperty('pointer-events','none','important');
+      }
     });
-
-    // Remove duplicados sem apagar a moldura comprada.
-    const seen = new Set();
-    u.inventory = u.inventory.filter(it=>{
-      const key = String((it.url||it.frameUrl||it.value||"")+"|"+(it.name||"")+"|"+(it.duration||"")).toLowerCase();
-      if(seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    return u;
   }
 
-  function getAvatar(u){
-    try{ if(window.__dlinkyGetBestAvatar){const v=window.__dlinkyGetBestAvatar(); if(v) return v;} }catch(e){}
-    return u.avatar || u.photoURL || "";
-  }
-
-  function renderInventoryFixed(){
-    let u = normalizeInventory(readUser());
-    saveUserLocal(u);
-
-    const grid = q("#inventoryGrid");
-    if(!grid) return;
-
-    const activeTab = (q("#tab-inventory .shop-tabs button.active,#tab-inventory [data-inv-tab].active,#tab-inventory .inventory-tabs button.active")?.textContent || "").toLowerCase();
-    let items = u.inventory || [];
-
-    if(activeTab.includes("moldura")){
-      items = items.filter(it => !!(it.url || it.frameUrl) || String(it.type||"").includes("frame") || String(it.kind||"").includes("frame"));
-    }
-
-    const av = esc(getAvatar(u));
-
-    grid.innerHTML = items.length ? items.map((it,i)=>{
-      const url = esc(it.url || it.frameUrl || "");
-      const isFrame = !!url || String(it.type||"").includes("frame") || String(it.kind||"").includes("frame");
-      const id = esc(it.id || it.url || it.frameUrl || ("inv_"+i));
-      return `<div class="asset-card inv-item-card" data-fixed-inv-card="${id}">
-        <div class="asset-preview shop-preview inv-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:150px;">
-          ${isFrame ? `<span class="inv-avatar-preview zyo-person-demo" style="width:82px;height:82px;border-radius:50%;background:${av?`url('${av}') center/cover no-repeat`:"#dbe1ea"};position:absolute;z-index:1;"></span><img class="inv-frame-preview" src="${url}" alt="${esc(it.name||"moldura")}" style="position:absolute;z-index:2;width:135px;height:135px;object-fit:contain;pointer-events:none;">` : "✦"}
-        </div>
-        <div class="asset-body">
-          <b>${esc(it.name || "Item")}</b>
-          <small>${esc(it.duration || it.type || "item")}</small>
-          ${isFrame ? `<button class="btn primary small" type="button" data-fixed-use-frame="${id}">Usar</button>` : `<button class="btn primary small" type="button" data-use-inv="${i}">Usar</button>`}
-        </div>
-      </div>`;
-    }).join("") : "<p>Você ainda não possui itens no inventário.</p>";
-
-    const count = (u.inventory||[]).length;
-    ["invItemsCount","invCountMini"].forEach(id=>{const el=q("#"+id); if(el) el.textContent=count});
-    ["invCoins","walletCoins","coinCount"].forEach(id=>{const el=q("#"+id); if(el) el.textContent=u.coins||u.linkwuans||0});
-  }
-
-  function applyFrameById(id){
-    let u = normalizeInventory(readUser());
-    const item = (u.inventory||[]).find(it => String(it.id||it.url||it.frameUrl||"") === String(id));
-    if(!item) return;
-    const url = item.url || item.frameUrl || "";
-    if(!url) return;
-    u.frame = url;
-    u.frameUrl = url;
-    u.frameName = item.name || "Moldura";
-    u.decoration = "none";
-    saveUserLocal(u);
-    renderInventoryFixed();
-    try{ if(typeof renderProfile==="function") renderProfile(); }catch(e){}
-    toastLocal("Moldura aplicada!");
-  }
-
-  function saveFramePurchase(idx){
-    const frame = getVisibleFrameByIndex(idx);
-    if(!frame || !frame.url){
-      toastLocal("Não encontrei essa moldura.");
-      return;
-    }
-
-    const card = q(`[data-frame-card="${idx}"]`);
-    const duration = q(`[data-frame-duration="${idx}"]`)?.value || "Permanente";
-    const priceText = q(`[data-price-label="${idx}"]`)?.textContent || frame.price || "0 Linkwuans";
-    const price = onlyNum(priceText);
-
-    let u = normalizeInventory(readUser());
-    u.coins = Number(u.coins || u.linkwuans || 0);
-    u.linkwuans = u.coins;
-    u.purchases = Array.isArray(u.purchases) ? u.purchases : [];
-
-    // Não bloqueia o salvamento local da moldura. Assim ela não some do inventário no teste.
-    if(price > 0 && u.coins >= price){
-      u.coins -= price;
-      u.linkwuans = u.coins;
-    }
-
-    u.inventory = (u.inventory||[]).filter(it => String(it.url||it.frameUrl||"") !== String(frame.url));
-    u.inventory.unshift({
-      id: frame.id,
-      type:"frames",
-      kind:"frame",
-      name:frame.name,
-      value:"custom-frame",
-      url:frame.url,
-      frameUrl:frame.url,
-      duration:duration,
-      price:price+" Linkwuans",
-      date:Date.now(),
-      boughtAt:Date.now()
-    });
-
-    u.frame = frame.url;
-    u.frameUrl = frame.url;
-    u.frameName = frame.name;
-    u.decoration = "none";
-    u.__hasPurchasedFrame = true;
-
-    u.purchases.unshift({
-      id:Date.now(),
-      method:"Linkwuans",
-      status:"Aprovado",
-      value:price+" Linkwuans",
-      date:new Date().toLocaleDateString("pt-BR")
-    });
-
-    saveUserLocal(u);
-    renderInventoryFixed();
-
-    try{ if(typeof renderDash==="function") renderDash(); }catch(e){}
-    toastLocal("Moldura comprada e salva no inventário!");
-  }
-
-  // Compra direto no botão Comprar da aba Molduras.
-  document.addEventListener("click",function(e){
-    const buy = e.target.closest && e.target.closest("#tab-store [data-confirm-frame]");
-    if(buy){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      saveFramePurchase(Number(buy.dataset.confirmFrame||0));
-      return;
-    }
-
-    const use = e.target.closest && e.target.closest("[data-fixed-use-frame]");
-    if(use){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      applyFrameById(use.dataset.fixedUseFrame);
-      return;
-    }
-  },true);
-
-  // Troca/abre inventário e renderiza certo.
-  window.renderInventory = renderInventoryFixed;
-  try{ renderInventory = renderInventoryFixed; }catch(e){}
-
-  const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__fixInventarioMolduraDefinitivo){
-    const patched = function(id){
-      const r = oldOpenTab.apply(this,arguments);
-      if(id === "inventory") setTimeout(renderInventoryFixed,0);
+  // Reaplica após renders antigos da loja sem alterar o render da loja.
+  const oldRenderShop = window.renderShop;
+  if(typeof oldRenderShop === 'function' && !oldRenderShop.__dlinkyAvatarPreviewOnly){
+    const patched = function(){
+      const r = oldRenderShop.apply(this, arguments);
+      requestAnimationFrame(paintAvatarPreview);
+      setTimeout(paintAvatarPreview, 80);
       return r;
     };
-    patched.__fixInventarioMolduraDefinitivo = true;
-    window.openTab = patched;
-    try{ openTab = patched; }catch(e){}
+    patched.__dlinkyAvatarPreviewOnly = true;
+    window.renderShop = patched;
+    try{ renderShop = patched; }catch(e){}
   }
 
-  window.addEventListener("hashchange",()=>setTimeout(renderInventoryFixed,200));
-  setTimeout(renderInventoryFixed,500);
-})();
-
-
-
-/* ===== FIX: MOLDURAS DO ADMIN E INVENTÁRIO NÃO SUMIREM AO ATUALIZAR ===== */
-(function(){
-  if(window.__dlinkyFixPersistenciaMoldurasAdmin) return;
-  window.__dlinkyFixPersistenciaMoldurasAdmin = true;
-
-  const USER_KEY = "dlinkyUser";
-  const FRAMES_KEY = "dlinkyCustomFrames";
-  const FRAMES_BACKUP_KEY = "dlinkyCustomFrames_BACKUP";
-  const USER_BACKUP_KEY = "dlinkyUser_BACKUP";
-
-  function q(s,r=document){return r.querySelector(s)}
-  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function esc(v){return String(v ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
-  function toastLocal(t){try{ if(typeof toast==="function") toast(t); }catch(e){}}
-
-  function readJSON(key, fallback){
-    try{
-      const raw = localStorage.getItem(key);
-      if(!raw) return fallback;
-      const val = JSON.parse(raw);
-      return val ?? fallback;
-    }catch(e){return fallback}
-  }
-
-  function writeJSON(key, val){
-    localStorage.setItem(key, JSON.stringify(val));
-  }
-
-  function getUser(){
-    return readJSON(USER_KEY, {});
-  }
-
-  function saveUserFixed(u){
-    u = u || {};
-    writeJSON(USER_KEY, u);
-    writeJSON(USER_BACKUP_KEY, u);
-    try{ if(typeof user === "object" && user) Object.assign(user,u); }catch(e){}
-  }
-
-  function getFrames(){
-    let frames = readJSON(FRAMES_KEY, []);
-    if(!Array.isArray(frames)) frames = [];
-
-    // Recupera backup caso o código antigo zere as molduras no refresh
-    if(!frames.length){
-      const backup = readJSON(FRAMES_BACKUP_KEY, []);
-      if(Array.isArray(backup) && backup.length){
-        frames = backup;
-        writeJSON(FRAMES_KEY, frames);
-      }
-    }
-
-    return frames.filter(f => f && f.url);
-  }
-
-  function saveFramesFixed(frames){
-    frames = Array.isArray(frames) ? frames.filter(f => f && f.url) : [];
-    writeJSON(FRAMES_KEY, frames);
-    writeJSON(FRAMES_BACKUP_KEY, frames);
-  }
-
-  function normalizeUser(){
-    let u = getUser();
-    const backup = readJSON(USER_BACKUP_KEY, {});
-
-    // Se o inventário sumiu após reload, recupera do backup
-    if((!Array.isArray(u.inventory) || !u.inventory.length) && Array.isArray(backup.inventory) && backup.inventory.length){
-      u.inventory = backup.inventory;
-    }
-
-    // Se a moldura equipada sumiu após reload, recupera do backup
-    if(!u.frame && backup.frame) u.frame = backup.frame;
-    if(!u.frameUrl && backup.frameUrl) u.frameUrl = backup.frameUrl;
-    if(!u.frameName && backup.frameName) u.frameName = backup.frameName;
-
-    u.inventory = Array.isArray(u.inventory) ? u.inventory : [];
-    u.purchases = Array.isArray(u.purchases) ? u.purchases : [];
-
-    // Se tem moldura equipada, garante ela no inventário
-    const equipped = u.frame || u.frameUrl;
-    if(equipped){
-      const exists = u.inventory.some(it => String(it.url || it.frameUrl || "") === String(equipped));
-      if(!exists){
-        u.inventory.unshift({
-          type:"frames",
-          kind:"frame",
-          name:u.frameName || "Moldura equipada",
-          value:"custom-frame",
-          url:equipped,
-          frameUrl:equipped,
-          duration:"Permanente",
-          price:"Comprado",
-          date:Date.now()
-        });
-      }
-    }
-
-    // Normaliza itens antigos
-    u.inventory = u.inventory.map(it=>{
-      if(!it || typeof it !== "object") return it;
-      if(!it.url && it.frameUrl) it.url = it.frameUrl;
-      if(!it.frameUrl && it.url) it.frameUrl = it.url;
-      if((it.url || it.frameUrl) && !it.type) it.type = "frames";
-      return it;
-    });
-
-    // Remove duplicados sem apagar itens
-    const seen = new Set();
-    u.inventory = u.inventory.filter(it=>{
-      const key = String((it.url||it.frameUrl||it.value||"")+"|"+(it.name||"")+"|"+(it.duration||"")).toLowerCase();
-      if(seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    saveUserFixed(u);
-    return u;
-  }
-
-  // Protege contra código antigo fazendo localStorage.setItem("dlinkyCustomFrames", "[]")
-  const nativeSetItem = localStorage.setItem.bind(localStorage);
-  localStorage.setItem = function(key, value){
-    try{
-      if(key === FRAMES_KEY){
-        const incoming = JSON.parse(value || "[]");
-        const backup = readJSON(FRAMES_BACKUP_KEY, []);
-        if(Array.isArray(incoming) && incoming.length === 0 && Array.isArray(backup) && backup.length){
-          value = JSON.stringify(backup);
-        }else if(Array.isArray(incoming) && incoming.length){
-          nativeSetItem(FRAMES_BACKUP_KEY, JSON.stringify(incoming));
-        }
-      }
-
-      if(key === USER_KEY){
-        const incoming = JSON.parse(value || "{}");
-        const backup = readJSON(USER_BACKUP_KEY, {});
-        if(incoming && typeof incoming === "object"){
-          if((!Array.isArray(incoming.inventory) || !incoming.inventory.length) && Array.isArray(backup.inventory) && backup.inventory.length){
-            incoming.inventory = backup.inventory;
-          }
-          if(!incoming.frame && backup.frame) incoming.frame = backup.frame;
-          if(!incoming.frameUrl && backup.frameUrl) incoming.frameUrl = backup.frameUrl;
-          if(!incoming.frameName && backup.frameName) incoming.frameName = backup.frameName;
-          value = JSON.stringify(incoming);
-          nativeSetItem(USER_BACKUP_KEY, value);
-        }
-      }
-    }catch(e){}
-    return nativeSetItem(key, value);
-  };
-
-  function renderAdminFramesFixed(){
-    const box = q("#adminFramesList");
-    if(!box) return;
-
-    const arr = getFrames();
-    box.innerHTML = arr.length ? arr.map((f,i)=>`
-      <div class="admin-item">
-        <img src="${esc(f.url)}" alt="" style="object-fit:contain;">
-        <div>
-          <b>${esc(f.name || "Moldura")}</b><br>
-          <small>${esc(f.price || "20 Linkwuans")} • ${esc(f.desc || "")}</small>
-        </div>
-        <button class="delete" type="button" data-fixed-del-frame="${i}">×</button>
-      </div>
-    `).join("") : "<p>Nenhuma moldura custom adicionada ainda.</p>";
-
-    const giftSelect = q("#giftItemSelect");
-    if(giftSelect){
-      giftSelect.innerHTML = arr.map((f,i)=>`<option value="${i}">${esc(f.name || "Moldura")}</option>`).join("");
-    }
-  }
-
-  function renderInventoryFixed(){
-    const u = normalizeUser();
-    const grid = q("#inventoryGrid");
-    if(!grid) return;
-
-    const avatar = esc(u.avatar || "");
-    const items = u.inventory || [];
-
-    grid.innerHTML = items.length ? items.map((it,i)=>{
-      const url = esc(it.url || it.frameUrl || "");
-      const isFrame = !!url || String(it.type||"").includes("frame") || String(it.kind||"").includes("frame");
-      return `<div class="asset-card inv-item-card">
-        <div class="asset-preview shop-preview inv-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:150px;">
-          ${isFrame ? `<span class="inv-avatar-preview zyo-person-demo" style="width:82px;height:82px;border-radius:50%;background:${avatar?`url('${avatar}') center/cover no-repeat`:"#dbe1ea"};position:absolute;z-index:1;"></span><img class="inv-frame-preview" src="${url}" style="position:absolute;z-index:2;width:135px;height:135px;object-fit:contain;pointer-events:none;">` : "✦"}
-        </div>
-        <div class="asset-body">
-          <b>${esc(it.name || "Item")}</b>
-          <small>${esc(it.duration || it.type || "item")}</small>
-          ${isFrame ? `<button class="btn primary small" type="button" data-fixed-use-inv-frame="${i}">Usar</button>` : ""}
-        </div>
-      </div>`;
-    }).join("") : "<p>Você ainda não possui itens no inventário.</p>";
-
-    ["invItemsCount","invCountMini"].forEach(id=>{const el=q("#"+id); if(el) el.textContent=items.length});
-  }
-
-  document.addEventListener("click", function(e){
-    // Add moldura admin com persistência forte
-    if(e.target && e.target.id === "adminAddFrame"){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-
-      const url = q("#adminFrameUrl")?.value?.trim() || "";
-      if(!url){
-        toastLocal("Coloque a URL da moldura.");
-        return;
-      }
-
-      const arr = getFrames();
-      const base = q("#adminFramePrice")?.value || "20 Linkwuans";
-      const onlyNum = v => {const m=String(v||"").match(/\d+/); return m?Number(m[0]):null};
-      const b = onlyNum(base) || 20;
-
-      arr.unshift({
-        id:"frame_"+Date.now(),
-        name:q("#adminFrameName")?.value || "Moldura personalizada",
-        desc:q("#adminFrameDesc")?.value || "Moldura custom",
-        price:base,
-        url:url,
-        prices:{
-          "3 dias":onlyNum(q("#adminPrice3")?.value)||b,
-          "7 dias":onlyNum(q("#adminPrice7")?.value)||b*2,
-          "15 dias":onlyNum(q("#adminPrice15")?.value)||b*3,
-          "Permanente":onlyNum(q("#adminPricePerm")?.value)||b*2
-        },
-        createdAt:Date.now()
-      });
-
-      saveFramesFixed(arr);
-      renderAdminFramesFixed();
-      toastLocal("Moldura salva e fixa no Admin!");
-      return;
-    }
-
-    if(e.target?.dataset?.fixedDelFrame !== undefined){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      const arr = getFrames();
-      arr.splice(Number(e.target.dataset.fixedDelFrame),1);
-      saveFramesFixed(arr);
-      renderAdminFramesFixed();
-      toastLocal("Moldura removida.");
-      return;
-    }
-
-    if(e.target?.dataset?.fixedUseInvFrame !== undefined){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      const u = normalizeUser();
-      const it = u.inventory[Number(e.target.dataset.fixedUseInvFrame)];
-      if(!it) return;
-      const url = it.url || it.frameUrl;
-      if(url){
-        u.frame = url;
-        u.frameUrl = url;
-        u.frameName = it.name || "Moldura";
-        u.decoration = "none";
-        saveUserFixed(u);
-        renderInventoryFixed();
-        try{ if(typeof renderProfile === "function") renderProfile(); }catch(err){}
-        toastLocal("Moldura aplicada!");
-      }
-      return;
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab],#tab-store [data-frame-duration]')){
+      setTimeout(paintAvatarPreview, 30);
+      setTimeout(paintAvatarPreview, 180);
     }
   }, true);
 
-  // Repassa funções antigas para usarem os dados persistidos
-  window.__dlinkyGetCustomFramesFixed = getFrames;
-  window.__dlinkySaveCustomFramesFixed = saveFramesFixed;
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]')){
+      setTimeout(paintAvatarPreview, 30);
+      setTimeout(paintAvatarPreview, 180);
+    }
+  }, true);
 
-  const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__persistFramesPatched){
-    const patched = function(id){
-      const result = oldOpenTab.apply(this, arguments);
-      if(id === "admin") setTimeout(renderAdminFramesFixed, 0);
-      if(id === "inventory") setTimeout(renderInventoryFixed, 0);
-      return result;
-    };
-    patched.__persistFramesPatched = true;
-    window.openTab = patched;
-    try{ openTab = patched; }catch(e){}
+  const mo = new MutationObserver(function(){
+    const store = q('#tab-store');
+    if(store && store.classList.contains('active')) requestAnimationFrame(paintAvatarPreview);
+  });
+  function startObserve(){ const store=q('#tab-store'); if(store) mo.observe(store,{childList:true,subtree:true}); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserve, {once:true}); else startObserve();
+
+  setTimeout(paintAvatarPreview, 100);
+  setTimeout(paintAvatarPreview, 500);
+  setTimeout(paintAvatarPreview, 1200);
+})();
+
+
+/* ===== FIX CIRÚRGICO: botão Comprar do modal de moldura clicável =====
+   Só corrige o clique do #confirmFrameBuy quando o modal antigo usa dataset.
+   Não mexe em loja, avatar, música, duração nem preço.
+*/
+(function(){
+  if(window.__dlinkyModalComprarAcessivelFix) return;
+  window.__dlinkyModalComprarAcessivelFix = true;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function getTextNumber(s){const m=String(s||'').match(/\d+/);return m?Number(m[0]):0}
+  function readUser(){
+    try{ if(typeof user==='object' && user) return user; }catch(e){}
+    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}
+  }
+  function saveUserSafe(u){
+    try{ if(typeof user==='object' && user) Object.assign(user,u); }catch(e){}
+    localStorage.setItem('dlinkyUser', JSON.stringify(u));
+    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+    try{ if(typeof renderInventory==='function') renderInventory(); }catch(e){}
+    try{ if(typeof applyProfileFrame==='function') applyProfileFrame(); }catch(e){}
+  }
+  function toastSafe(msg){try{ if(typeof toast==='function') toast(msg); }catch(e){} }
+  function closeModal(){
+    const m=q('#frameBuyModal');
+    if(m){m.classList.remove('show');m.style.display='none';}
+  }
+  function itemFromModal(){
+    const m=q('#frameBuyModal');
+    const idx=Number(m?.dataset?.idx||0);
+    const list=window.__dlinkyVisibleFrames||[];
+    let it=list[idx];
+    const name=q('#frameBuyName')?.textContent?.trim()||'Moldura';
+    const img=q('#frameBuyImg')?.getAttribute('src')||'';
+    if(Array.isArray(it)) return {name:it[0]||name,url:it[5]||img};
+    if(it && typeof it==='object') return {name:it.name||name,url:it.url||it.frameUrl||img,id:it.id};
+    return {name,url:img};
   }
 
-  const oldRenderDash = window.renderDash;
-  if(typeof oldRenderDash === "function" && !oldRenderDash.__persistFramesPatched){
-    const patchedDash = function(){
-      normalizeUser();
-      const result = oldRenderDash.apply(this, arguments);
-      setTimeout(renderAdminFramesFixed, 0);
-      setTimeout(renderInventoryFixed, 0);
-      return result;
+  window.__dlinkyForceFrameBuyFromModal = function(){
+    const m=q('#frameBuyModal');
+    if(!m || !m.classList.contains('show')) return;
+
+    const item=itemFromModal();
+    const duration=(m.dataset.duration||q('#frameBuyDuration')?.textContent||'3 dias').trim();
+    const price=Number(m.dataset.price||getTextNumber(q('#frameBuyPrice')?.textContent)||0);
+    const u=readUser();
+    u.coins=Number(u.coins||u.linkwuans||0);
+    u.linkwuans=u.coins;
+    u.inventory=Array.isArray(u.inventory)?u.inventory:[];
+    u.purchases=Array.isArray(u.purchases)?u.purchases:[];
+
+    if(price>0 && u.coins < price){
+      closeModal();
+      toastSafe('Saldo insuficiente em Linkwuans.');
+      return;
+    }
+
+    if(price>0) u.coins -= price;
+    u.linkwuans = u.coins;
+    const url=item.url||'';
+    const invItem={
+      id:item.id||('frame_'+Date.now()),
+      type:'frames',kind:'frame',source:'admin',
+      name:item.name||'Moldura',
+      url:url,frameUrl:url,value:'custom-frame',
+      duration:duration,
+      price:price+' Linkwuans',
+      boughtAt:Date.now(),date:Date.now()
     };
-    patchedDash.__persistFramesPatched = true;
-    window.renderDash = patchedDash;
-    try{ renderDash = patchedDash; }catch(e){}
+    if(url){
+      u.inventory=u.inventory.filter(x=>String(x.url||x.frameUrl||'')!==String(url));
+      u.inventory.unshift(invItem);
+      u.frame=url;
+      u.frameUrl=url;
+      u.frameName=invItem.name;
+      u.decoration='none';
+    }
+    u.__hasPurchasedFrame=true;
+    u.__hasPurchasedItem=true;
+    u.__cleanNewAccount=false;
+    u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
+    saveUserSafe(u);
+    closeModal();
+    toastSafe('Moldura comprada e salva no inventário!');
+  };
+
+  const st=document.createElement('style');
+  st.textContent='#frameBuyModal.show{pointer-events:auto!important;z-index:999999!important}#frameBuyModal.show *{pointer-events:auto!important}#confirmFrameBuy{pointer-events:auto!important;cursor:pointer!important;opacity:1!important;visibility:visible!important}';
+  document.head.appendChild(st);
+})();
+
+
+/* ===== FIX SEGURO FINAL: loja sem travar + preço da moldura sem loop =====
+   Mexe SOMENTE na Loja.
+   Remove a necessidade de MutationObserver pesado e atualiza preço só quando o usuário troca a duração ou abre o modal.
+*/
+(function(){
+  if(window.__dlinkyLojaLevePrecoFixFinal) return;
+  window.__dlinkyLojaLevePrecoFixFinal = true;
+
+  const $ = (s,r=document)=>r.querySelector(s);
+  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  function readJSON(k,fb){
+    try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):fb; }catch(e){ return fb; }
+  }
+  function onlyNum(v){
+    const m=String(v??'').match(/\d+/); return m?Number(m[0]):0;
+  }
+  function clean(v){ return String(v??'').trim().toLowerCase(); }
+  function allFrames(){
+    const keys=['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
+    const out=[];
+    keys.forEach(k=>{ const arr=readJSON(k,[]); if(Array.isArray(arr)) out.push(...arr); });
+    const seen=new Set();
+    return out.filter(f=>{
+      const key=clean(f?.url||f?.frameUrl||f?.id||f?.name);
+      if(!key || seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  }
+  function frameByCard(card,idx){
+    const frames=allFrames();
+    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.frame-img,.real-inv-frame');
+    const src=clean(img?.getAttribute('src')||img?.src||'');
+    if(src){
+      const bySrc=frames.find(f=>clean(f?.url||f?.frameUrl)===src);
+      if(bySrc) return bySrc;
+    }
+    const title=clean(card?.querySelector('.frame-info b,.asset-body b,b')?.textContent||'');
+    if(title){
+      const byName=frames.find(f=>title.includes(clean(f?.name)) || clean(f?.name).includes(title));
+      if(byName) return byName;
+    }
+    return frames[idx] || null;
+  }
+  function priceFor(frame,duration,fallback){
+    if(frame){
+      const maps=[frame.prices,frame.precos,frame.priceMap];
+      for(const map of maps){
+        if(map && map[duration]!=null){
+          const n=Number(map[duration]);
+          if(Number.isFinite(n) && n>0) return n;
+        }
+      }
+      const direct=onlyNum(frame.price||frame.preco||frame.valor);
+      if(direct>0) return direct;
+    }
+    return onlyNum(fallback) || 0;
+  }
+  function updateCard(card){
+    if(!card) return;
+    const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration],select.frame-duration');
+    if(!sel) return;
+    const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||0);
+    const label=card.querySelector('[data-price-label],[data-v3-price],.frame-price b');
+    if(!label) return;
+    const frame=frameByCard(card,idx);
+    const price=priceFor(frame,sel.value,label.textContent);
+    if(price>0){
+      const txt=price+' Linkwuans';
+      if(label.textContent.trim()!==txt) label.textContent=txt;
+    }
+  }
+  function updateVisibleCards(){
+    const store=$('#tab-store');
+    if(!store || !store.classList.contains('active')) return;
+    $$('#tab-store .frame-shop-card,#tab-store [data-frame-card]').forEach(updateCard);
+  }
+  function updateModal(){
+    const modal=$('#frameBuyModal.show');
+    if(!modal) return;
+    const name=clean($('#frameBuyName')?.textContent||'');
+    const dur=($('#frameBuyDuration')?.textContent||modal.dataset.duration||'3 dias').trim();
+    const img=clean($('#frameBuyImg')?.getAttribute('src')||'');
+    const frames=allFrames();
+    const frame=frames.find(f=>clean(f?.url||f?.frameUrl)===img) || frames.find(f=>name && clean(f?.name)===name);
+    const label=$('#frameBuyPrice');
+    if(!label) return;
+    const price=priceFor(frame,dur,label.textContent||modal.dataset.price);
+    if(price>0){
+      const txt=price+' Linkwuans';
+      if(label.textContent.trim()!==txt) label.textContent=txt;
+      modal.dataset.price=String(price);
+    }
   }
 
-  // Restaura assim que abre o site
-  getFrames();
-  normalizeUser();
-  setTimeout(renderAdminFramesFixed, 300);
-  setTimeout(renderInventoryFixed, 300);
+  document.addEventListener('change',function(e){
+    const sel=e.target && e.target.closest && e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration],#tab-store select.frame-duration');
+    if(!sel) return;
+    updateCard(sel.closest('.frame-shop-card,[data-frame-card],.asset-card'));
+  },true);
+
+  document.addEventListener('click',function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]')){
+      const btn=e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]');
+      updateCard(btn.closest('.frame-shop-card,[data-frame-card],.asset-card'));
+      setTimeout(updateModal,30);
+      setTimeout(updateModal,120);
+    }
+    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){
+      setTimeout(updateVisibleCards,80);
+    }
+  },true);
+
+  // Atualiza só algumas vezes quando entra na loja. Não fica em loop observando o HTML.
+  window.addEventListener('hashchange',()=>setTimeout(updateVisibleCards,120));
+  setTimeout(updateVisibleCards,300);
 })();
 
 
 
-/* ===== RESET LIMPO + CORREÇÃO ABAS LOJA/INVENTÁRIO ===== */
+/* ===== FIX FINAL LIMPO: ABAS DA LOJA NÃO VOLTAM SOZINHAS ===== */
 (function(){
-  if(window.__dlinkyResetLimpoTabsMolduras) return;
-  window.__dlinkyResetLimpoTabsMolduras = true;
+  if(window.__dlinkyAbasLojaFixFinalLimpo) return;
+  window.__dlinkyAbasLojaFixFinalLimpo = true;
 
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
-  function read(k,fb){try{return JSON.parse(localStorage.getItem(k)||'')}catch(e){return fb}}
-  function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
-  function msg(t){try{ if(typeof toast==="function") toast(t); }catch(e){}}
-
-  function cleanLocalStorageFrames(){
-    // remove molduras/inventário fantasma e backups que estavam voltando no reload
-    [
-      'dlinkyCustomFrames',
-      'dlinkyCustomFrames_BACKUP',
-      'dlinkyAdminGifts'
-    ].forEach(k=>localStorage.removeItem(k));
-
-    const u = read('dlinkyUser',{});
-    if(u && typeof u === 'object'){
-      u.inventory = [];
-      u.frame = '';
-      u.frameUrl = '';
-      u.frameName = '';
-      u.decoration = u.decoration === 'none' ? 'none' : (u.decoration || 'none');
-      write('dlinkyUser',u);
-      localStorage.setItem('dlinkyUser_BACKUP',JSON.stringify(u));
-      try{ if(typeof user==="object" && user) Object.assign(user,u); }catch(e){}
-    }
+  function norm(mode){
+    mode=String(mode||'').toLowerCase();
+    if(mode.includes('mold')||mode.includes('frame')) return 'frames';
+    if(mode.includes('efe')||mode.includes('effect')) return 'effects';
+    if(mode.includes('out')||mode.includes('other')) return 'other';
+    return 'coins';
   }
 
-  // Faz uma vez só por versão deste fix
-  if(localStorage.getItem('__dlinkyCleanFrames_v4') !== '1'){
-    cleanLocalStorageFrames();
-    localStorage.setItem('__dlinkyCleanFrames_v4','1');
-  }
-
-  window.dlinkyLimparMoldurasBugadas = function(){
-    localStorage.removeItem('__dlinkyCleanFrames_v4');
-    cleanLocalStorageFrames();
-    msg('Molduras bugadas removidas.');
-    setTimeout(()=>location.reload(),400);
-  };
-
-  function getFrames(){
+  function frames(){
     try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]').filter(f=>f&&f.url)}catch(e){return []}
   }
 
-  function saveFrames(arr){
-    localStorage.setItem('dlinkyCustomFrames',JSON.stringify((arr||[]).filter(f=>f&&f.url)));
+  function userData(){
+    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}
   }
 
-  function currentUser(){
-    const u=read('dlinkyUser',{});
-    try{ if(typeof user==="object" && user) Object.assign(user,u); }catch(e){}
-    return u;
+  function setActive(mode){
+    mode=norm(mode);
+    const store=q('#tab-store');
+    if(!store) return;
+    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',store).forEach(btn=>{
+      const bmode=norm(btn.dataset.shopTab||btn.textContent);
+      btn.dataset.shopTab=bmode;
+      btn.classList.toggle('active', bmode===mode);
+    });
   }
 
-  function saveUser(u){
-    write('dlinkyUser',u);
-    localStorage.setItem('dlinkyUser_BACKUP',JSON.stringify(u));
-    try{ if(typeof user==="object" && user) Object.assign(user,u); }catch(e){}
-  }
-
-  function renderShopFixed(){
+  function renderFixed(mode){
     const grid=q('#shopGrid');
     if(!grid) return;
-
-    const active=q('#tab-store [data-shop-tab].active');
-    const mode=(active?.dataset?.shopTab)||window.shopMode||'coins';
+    mode=norm(mode);
     try{ shopMode=mode; }catch(e){}
     window.shopMode=mode;
+    setActive(mode);
 
     if(mode==='frames'){
-      const frames=getFrames();
+      const fs=frames();
       grid.classList.add('frames-shop-grid');
-      if(!frames.length){
+      if(!fs.length){
         window.__dlinkyVisibleFrames=[];
-        grid.innerHTML=`<div class="panel empty-frames-help"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura no Admin para aparecer aqui.</p></div>`;
+        grid.innerHTML='<div class="panel empty-frames-help"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';
         return;
       }
-
-      const u=currentUser();
+      const u=userData();
       const avatar=esc(u.avatar||'');
-      window.__dlinkyVisibleFrames = frames.map((f,i)=>[
-        f.name||'Moldura personalizada',
-        f.price||'20 Linkwuans',
-        'custom-'+i,
-        f.desc||'Moldura custom',
-        'Disponível',
-        f.url||'',
-        f.prices||null,
-        f.id||f.url||('frame_'+i)
-      ]);
-
+      window.__dlinkyVisibleFrames=fs.map((f,i)=>[f.name||'Moldura personalizada',f.price||'20 Linkwuans','custom-'+i,f.desc||'Moldura custom','Disponível',f.url||'',f.prices||null,f.id||f.url||('frame_'+i)]);
       grid.innerHTML=window.__dlinkyVisibleFrames.map((x,i)=>{
-        const base=String(x[1]).match(/\d+/)?.[0]||20;
-        return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
+        return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}">
           <div class="frame-shop-preview real-frame-preview">
             <div class="frame-avatar-demo zyo-person-demo" style="background-image:${avatar?`url('${avatar}')`:'none'}!important"></div>
             <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
           </div>
           <div class="frame-info clean-info"><b>${esc(x[0])}</b><small>${esc(x[3])}</small></div>
-          <div class="frame-price">Preço: <b data-price-label="${i}">${esc(x[1])}</b></div>
-          <select class="frame-duration" data-frame-duration="${i}">
-            <option>3 dias</option><option>7 dias</option><option>15 dias</option><option>Permanente</option>
-          </select>
-          <div class="frame-actions"><button class="btn primary small" type="button" data-clean-buy-frame="${i}">Comprar</button></div>
+          <div class="frame-price">Preço: <b>${esc(x[1])}</b></div>
+          <select class="frame-duration"><option>3 dias</option><option>7 dias</option><option>15 dias</option><option>Permanente</option></select>
+          <div class="frame-actions"><button class="btn primary small" type="button" data-v3-buy-frame="${i}">Comprar</button></div>
         </div>`;
       }).join('');
       return;
     }
 
     grid.classList.remove('frames-shop-grid');
-    const data=(typeof shopData!=='undefined' && shopData[mode]) ? shopData[mode] : [];
-    grid.innerHTML=data.length ? data.map((x,i)=>`<div class="asset-card">
+
+    const safe={
+      coins:[['345 Linkwuans','R$ 30,00',345],['650 Linkwuans','R$ 50,00',650],['1450 Linkwuans','R$ 100,00',1450],['3300 Linkwuans','R$ 200,00',3300]],
+      effects:[['Neon no Nome','180 Linkwuans','neonName'],['Nome Brilhante','220 Linkwuans','shineName'],['Nome Colorido','240 Linkwuans','rainbowName'],['Ocultar Views','150 Linkwuans','hideViews']],
+      other:[['Cursor Custom','120 Linkwuans','cursor'],['Tema Cyber','300 Linkwuans','cyber']]
+    };
+    let data=[];
+    try{ if(typeof shopData!=='undefined' && shopData && Array.isArray(shopData[mode])) data=shopData[mode]; }catch(e){}
+    if(!data.length) data=safe[mode]||[];
+
+    grid.innerHTML=data.length?data.map((it,i)=>`<div class="asset-card">
       <div class="asset-preview shop-preview">${mode==='coins'?'◈':'✦'}</div>
-      <div class="asset-body"><b>${esc(x[0])}</b><small>${esc(x[1])}</small><button class="btn primary small" data-buy-shop="${i}">Comprar</button></div>
-    </div>`).join('') : '<p>Nada cadastrado aqui.</p>';
+      <div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1]||'')}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}">Comprar</button></div>
+    </div>`).join(''):'<p>Nada cadastrado nessa aba.</p>';
   }
 
-  function renderAdminFramesFixed(){
-    const box=q('#adminFramesList');
-    if(!box) return;
-    const arr=getFrames();
-    box.innerHTML=arr.length ? arr.map((f,i)=>`<div class="admin-item">
-      <img src="${esc(f.url)}" alt="" style="object-fit:contain">
-      <div><b>${esc(f.name||'Moldura')}</b><br><small>${esc(f.price||'20 Linkwuans')} • ${esc(f.desc||'')}</small></div>
-      <button class="delete" type="button" data-clean-del-frame="${i}">×</button>
-    </div>`).join('') : '<p>Nenhuma moldura custom adicionada ainda.</p>';
-  }
-
-  function renderInventoryFixed(){
-    const grid=q('#inventoryGrid');
-    if(!grid) return;
-    const u=currentUser();
-    const inv=Array.isArray(u.inventory)?u.inventory:[];
-    const avatar=esc(u.avatar||'');
-    grid.innerHTML=inv.length ? inv.map((it,i)=>{
-      const url=esc(it.url||it.frameUrl||'');
-      return `<div class="asset-card inv-item-card">
-        <div class="asset-preview shop-preview inv-preview" style="position:relative;display:grid;place-items:center;min-height:150px;overflow:hidden">
-          ${url?`<span class="inv-avatar-preview zyo-person-demo" style="width:82px;height:82px;border-radius:50%;background:${avatar?`url('${avatar}') center/cover no-repeat`:'#ddd'};position:absolute;z-index:1"></span><img class="inv-frame-preview" src="${url}" style="position:absolute;z-index:2;width:135px;height:135px;object-fit:contain;pointer-events:none">`:'✦'}
-        </div>
-        <div class="asset-body"><b>${esc(it.name||'Item')}</b><small>${esc(it.duration||'item')}</small>${url?`<button class="btn primary small" type="button" data-clean-use-frame="${i}">Usar</button>`:''}</div>
-      </div>`;
-    }).join('') : '<p>Você ainda não possui itens no inventário.</p>';
-    ['invItemsCount','invCountMini'].forEach(id=>{const el=q('#'+id);if(el)el.textContent=inv.length});
-  }
-
-  // clique nas abas da LOJA só mexe na loja
+  // Clique simples: não usa pointerdown, não usa MutationObserver, não fica voltando sozinho.
   document.addEventListener('click',function(e){
-    const tab=e.target.closest('#tab-store [data-shop-tab]');
-    if(tab){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      qa('#tab-store [data-shop-tab]').forEach(b=>b.classList.toggle('active',b===tab));
-      try{ shopMode=tab.dataset.shopTab; }catch(err){}
-      window.shopMode=tab.dataset.shopTab;
-      renderShopFixed();
-      return;
-    }
-
-    // clique nas abas do INVENTÁRIO nunca troca aba da loja
-    const invTab=e.target.closest('#tab-inventory [data-shop-tab], #tab-inventory [data-inv-tab], #tab-inventory .shop-tabs button');
-    if(invTab){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      qa('#tab-inventory .shop-tabs button, #tab-inventory [data-shop-tab], #tab-inventory [data-inv-tab]').forEach(b=>b.classList.toggle('active',b===invTab));
-      renderInventoryFixed();
-      return;
-    }
-
-    if(e.target && e.target.id==='adminAddFrame'){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      const url=q('#adminFrameUrl')?.value?.trim()||'';
-      if(!url){msg('Cole a URL da moldura.');return;}
-      const arr=getFrames();
-      arr.unshift({
-        id:'frame_'+Date.now(),
-        name:q('#adminFrameName')?.value||'Moldura personalizada',
-        desc:q('#adminFrameDesc')?.value||'Moldura custom',
-        price:q('#adminFramePrice')?.value||'20 Linkwuans',
-        url:url,
-        createdAt:Date.now()
-      });
-      saveFrames(arr);
-      renderAdminFramesFixed();
-      renderShopFixed();
-      msg('Moldura cadastrada.');
-      return;
-    }
-
-    const del=e.target.closest('[data-clean-del-frame]');
-    if(del){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      const arr=getFrames(); arr.splice(+del.dataset.cleanDelFrame,1); saveFrames(arr);
-      renderAdminFramesFixed(); renderShopFixed();
-      msg('Moldura removida.');
-      return;
-    }
-
-    const buy=e.target.closest('[data-clean-buy-frame]');
-    if(buy){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      const item=(window.__dlinkyVisibleFrames||[])[+buy.dataset.cleanBuyFrame];
-      if(!item||!item[5])return;
-      const u=currentUser();
-      u.inventory=Array.isArray(u.inventory)?u.inventory:[];
-      u.inventory=u.inventory.filter(it=>String(it.url||it.frameUrl||'')!==String(item[5]));
-      u.inventory.unshift({type:'frames',kind:'frame',name:item[0],url:item[5],frameUrl:item[5],duration:q(`[data-frame-duration="${buy.dataset.cleanBuyFrame}"]`)?.value||'Permanente',price:q(`[data-price-label="${buy.dataset.cleanBuyFrame}"]`)?.textContent||item[1],date:Date.now()});
-      u.frame=item[5]; u.frameUrl=item[5]; u.frameName=item[0]; u.decoration='none';
-      saveUser(u);
-      renderInventoryFixed();
-      msg('Moldura comprada e salva no inventário.');
-      return;
-    }
-
-    const use=e.target.closest('[data-clean-use-frame]');
-    if(use){
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      const u=currentUser(); const it=(u.inventory||[])[+use.dataset.cleanUseFrame]; if(!it)return;
-      u.frame=it.url||it.frameUrl||''; u.frameUrl=u.frame; u.frameName=it.name||'Moldura'; u.decoration='none';
-      saveUser(u); msg('Moldura aplicada.');
-      return;
-    }
-  },true);
-
-  // troca de duração sem conflito
-  document.addEventListener('change',function(e){
-    const sel=e.target.closest('#tab-store [data-frame-duration]');
-    if(!sel)return;
-    e.stopPropagation();
-  },true);
-
-  // sobrescreve as funções finais para não voltar o bug antigo
-  window.renderShop=renderShopFixed;
-  window.renderInventory=renderInventoryFixed;
-  try{ renderShop=renderShopFixed; renderInventory=renderInventoryFixed; }catch(e){}
-
-  const oldOpenTab=window.openTab;
-  if(typeof oldOpenTab==='function' && !oldOpenTab.__cleanTabsFixed){
-    const patched=function(id){
-      const r=oldOpenTab.apply(this,arguments);
-      setTimeout(()=>{
-        if(id==='store')renderShopFixed();
-        if(id==='inventory')renderInventoryFixed();
-        if(id==='admin')renderAdminFramesFixed();
-      },0);
-      return r;
-    };
-    patched.__cleanTabsFixed=true;
-    window.openTab=patched;
-    try{openTab=patched}catch(e){}
-  }
-
-  setTimeout(()=>{renderAdminFramesFixed();renderInventoryFixed();renderShopFixed();},400);
-})();
-
-
-
-/* ===== FIX ÚNICO: INVENTÁRIO SÓ MOSTRA MOLDURA QUE EXISTE NO ADMIN ===== */
-(function(){
-  if(window.__dlinkyFixInventarioSoAdmin) return;
-  window.__dlinkyFixInventarioSoAdmin = true;
-
-  const q=(s,r=document)=>r.querySelector(s);
-  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-
-  function readJSON(k,fb){
-    try{return JSON.parse(localStorage.getItem(k)||"")}catch(e){return fb}
-  }
-  function writeJSON(k,v){
-    localStorage.setItem(k,JSON.stringify(v));
-  }
-  function cleanUrl(v){
-    return String(v||"").trim();
-  }
-  function toastFix(t){
-    try{ if(typeof toast==="function") toast(t); }catch(e){}
-  }
-
-  function adminFrames(){
-    const arr = readJSON("dlinkyCustomFrames", []);
-    return Array.isArray(arr) ? arr.filter(f=>f && cleanUrl(f.url)) : [];
-  }
-
-  function syncInventoryWithAdmin(){
-    const frames = adminFrames();
-    const allowed = new Set(frames.map(f=>cleanUrl(f.url)));
-
-    const u = readJSON("dlinkyUser", {});
-    if(!u || typeof u !== "object") return u;
-
-    const oldInv = Array.isArray(u.inventory) ? u.inventory : [];
-
-    // Se não existe no Admin, remove do inventário.
-    u.inventory = oldInv.filter(it=>{
-      const url = cleanUrl(it && (it.url || it.frameUrl));
-      if(!url) return false;
-      return allowed.has(url);
-    });
-
-    // Se a moldura equipada não existe no Admin, desequipa.
-    const equipped = cleanUrl(u.frame || u.frameUrl);
-    if(equipped && !allowed.has(equipped)){
-      u.frame = "";
-      u.frameUrl = "";
-      u.frameName = "";
-      u.decoration = "none";
-    }
-
-    writeJSON("dlinkyUser", u);
-    writeJSON("dlinkyUser_BACKUP", u);
-
-    try{
-      if(typeof user==="object" && user) Object.assign(user,u);
-    }catch(e){}
-
-    return u;
-  }
-
-  function renderInventoryOnlyAdmin(){
-    const u = syncInventoryWithAdmin();
-    const grid = q("#inventoryGrid");
-    if(!grid) return;
-
-    const inv = Array.isArray(u.inventory) ? u.inventory : [];
-    const avatar = cleanUrl(u.avatar);
-
-    if(!inv.length){
-      grid.innerHTML = "<p>Você ainda não possui itens no inventário.</p>";
-    }else{
-      grid.innerHTML = inv.map((it,i)=>{
-        const url = cleanUrl(it.url || it.frameUrl);
-        return `<div class="asset-card inv-item-card">
-          <div class="asset-preview shop-preview inv-preview" style="position:relative;display:grid;place-items:center;min-height:150px;overflow:hidden">
-            <span class="inv-avatar-preview zyo-person-demo" style="width:82px;height:82px;border-radius:50%;background:${avatar?`url('${avatar}') center/cover no-repeat`:"#ddd"};position:absolute;z-index:1"></span>
-            <img class="inv-frame-preview" src="${url}" style="position:absolute;z-index:2;width:135px;height:135px;object-fit:contain;pointer-events:none">
-          </div>
-          <div class="asset-body">
-            <b>${String(it.name||"Moldura").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}</b>
-            <small>${String(it.duration||"item").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}</small>
-            <button class="btn primary small" type="button" data-use-admin-frame="${i}">Usar</button>
-          </div>
-        </div>`;
-      }).join("");
-    }
-
-    ["invItemsCount","invCountMini"].forEach(id=>{
-      const el=q("#"+id);
-      if(el) el.textContent = inv.length;
-    });
-  }
-
-  // Quando abrir inventário, limpa antes de mostrar.
-  const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__inventarioSoAdmin){
-    const patched = function(id){
-      const r = oldOpenTab.apply(this, arguments);
-      if(id === "inventory"){
-        setTimeout(renderInventoryOnlyAdmin, 0);
-        setTimeout(renderInventoryOnlyAdmin, 250);
-      }
-      if(id === "store" || id === "admin"){
-        setTimeout(syncInventoryWithAdmin, 0);
-      }
-      return r;
-    };
-    patched.__inventarioSoAdmin = true;
-    window.openTab = patched;
-    try{ openTab = patched; }catch(e){}
-  }
-
-  // Bloqueia o código antigo de recriar item fantasma no inventário.
-  const nativeSetItem = localStorage.setItem.bind(localStorage);
-  localStorage.setItem = function(key,value){
-    if(key === "dlinkyUser"){
-      try{
-        const u = JSON.parse(value || "{}");
-        const frames = adminFrames();
-        const allowed = new Set(frames.map(f=>cleanUrl(f.url)));
-
-        if(u && typeof u === "object"){
-          u.inventory = Array.isArray(u.inventory) ? u.inventory.filter(it=>{
-            const url = cleanUrl(it && (it.url || it.frameUrl));
-            return url && allowed.has(url);
-          }) : [];
-
-          const equipped = cleanUrl(u.frame || u.frameUrl);
-          if(equipped && !allowed.has(equipped)){
-            u.frame = "";
-            u.frameUrl = "";
-            u.frameName = "";
-            u.decoration = "none";
-          }
-
-          value = JSON.stringify(u);
-        }
-      }catch(e){}
-    }
-    return nativeSetItem(key,value);
-  };
-
-  document.addEventListener("click",function(e){
-    const b = e.target.closest && e.target.closest("[data-use-admin-frame]");
-    if(!b) return;
-
+    const tab=e.target.closest&&e.target.closest('#tab-store [data-shop-tab]');
+    if(!tab) return;
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
+    renderFixed(tab.dataset.shopTab||tab.textContent);
+  },true);
 
-    const u = syncInventoryWithAdmin();
-    const it = (u.inventory||[])[Number(b.dataset.useAdminFrame)];
-    if(!it) return;
+  window.renderShop=function(){renderFixed(window.shopMode||shopMode||'coins')};
+  try{renderShop=window.renderShop}catch(e){}
 
-    const url = cleanUrl(it.url || it.frameUrl);
-    if(!url) return;
-
-    u.frame = url;
-    u.frameUrl = url;
-    u.frameName = it.name || "Moldura";
-    u.decoration = "none";
-
-    writeJSON("dlinkyUser", u);
-    writeJSON("dlinkyUser_BACKUP", u);
-    try{ if(typeof user==="object" && user) Object.assign(user,u); }catch(e){}
-    toastFix("Moldura aplicada.");
-    renderInventoryOnlyAdmin();
-  }, true);
-
-  // Botão de emergência pelo console: dlinkyLimparInventarioFantasma()
-  window.dlinkyLimparInventarioFantasma = function(){
-    const u = readJSON("dlinkyUser", {});
-    if(u && typeof u === "object"){
-      u.inventory = [];
-      u.frame = "";
-      u.frameUrl = "";
-      u.frameName = "";
-      u.decoration = "none";
-      writeJSON("dlinkyUser", u);
-      writeJSON("dlinkyUser_BACKUP", u);
-      try{ if(typeof user==="object" && user) Object.assign(user,u); }catch(e){}
-    }
-    renderInventoryOnlyAdmin();
-    toastFix("Inventário fantasma limpo.");
-  };
-
-  window.renderInventory = renderInventoryOnlyAdmin;
-  try{ renderInventory = renderInventoryOnlyAdmin; }catch(e){}
-
-  // Roda ao carregar para apagar a moldura fantasma imediatamente.
-  setTimeout(syncInventoryWithAdmin, 100);
-  setTimeout(renderInventoryOnlyAdmin, 500);
-})();
-
-
-
-/* ===== FIX SIMPLES: ABAS DA LOJA CLICÁVEIS SEM VOLTAR SOZINHAS ===== */
-(function(){
-  if(window.__dlinkyFixAbasLojaClicavel) return;
-  window.__dlinkyFixAbasLojaClicavel = true;
-
-  const q=(s,r=document)=>r.querySelector(s);
-  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
-
-  function getFrames(){
-    try{return JSON.parse(localStorage.getItem("dlinkyCustomFrames")||"[]").filter(f=>f&&f.url)}catch(e){return []}
-  }
-
-  function getUser(){
-    try{return JSON.parse(localStorage.getItem("dlinkyUser")||"{}")}catch(e){return {}}
-  }
-
-  function getMode(){
-    const active = q("#tab-store [data-shop-tab].active");
-    return active?.dataset?.shopTab || window.shopMode || "coins";
-  }
-
-  function setMode(mode){
-    mode = mode || "coins";
-    try{ shopMode = mode; }catch(e){}
-    window.shopMode = mode;
-    qa("#tab-store [data-shop-tab]").forEach(b=>{
-      b.classList.toggle("active", b.dataset.shopTab === mode);
-    });
-  }
-
-  function renderShopSafe(mode){
-    const grid = q("#shopGrid");
-    if(!grid) return;
-
-    mode = mode || getMode();
-    setMode(mode);
-
-    if(mode === "frames"){
-      const frames = getFrames();
-      grid.classList.add("frames-shop-grid");
-
-      if(!frames.length){
-        window.__dlinkyVisibleFrames = [];
-        grid.innerHTML = `<div class="panel empty-frames-help">
-          <h2>Nenhuma moldura cadastrada</h2>
-          <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
-        </div>`;
-        return;
-      }
-
-      const u = getUser();
-      const avatar = esc(u.avatar || "");
-
-      window.__dlinkyVisibleFrames = frames.map((f,i)=>[
-        f.name || "Moldura personalizada",
-        f.price || "20 Linkwuans",
-        "custom-"+i,
-        f.desc || "Moldura custom",
-        "Disponível",
-        f.url || "",
-        f.prices || null,
-        f.id || f.url || ("frame_"+i)
-      ]);
-
-      grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
-        const base = String(x[1]).match(/\d+/)?.[0] || 20;
-        return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
-          <div class="frame-shop-preview real-frame-preview">
-            <div class="frame-avatar-demo zyo-person-demo" style="background-image:${avatar?`url('${avatar}')`:"none"}!important"></div>
-            <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
-          </div>
-          <div class="frame-info clean-info"><b>${esc(x[0])}</b><small>${esc(x[3])}</small></div>
-          <div class="frame-price">Preço: <b data-price-label="${i}">${esc(x[1])}</b></div>
-          <select class="frame-duration" data-frame-duration="${i}">
-            <option>3 dias</option>
-            <option>7 dias</option>
-            <option>15 dias</option>
-            <option>Permanente</option>
-          </select>
-          <div class="frame-actions">
-            <button class="btn primary small" type="button" data-clean-buy-frame="${i}">Comprar</button>
-          </div>
-        </div>`;
-      }).join("");
-      return;
-    }
-
-    grid.classList.remove("frames-shop-grid");
-
-    const fallback = {
-      coins:[["345 Linkwuans","R$ 30,00"],["650 Linkwuans","R$ 50,00"],["1450 Linkwuans","R$ 100,00"],["3300 Linkwuans","R$ 200,00"]],
-      effects:[["Neon no Nome","180 Linkwuans"],["Nome Brilhante","220 Linkwuans"],["Nome Colorido","240 Linkwuans"],["Ocultar Views","150 Linkwuans"]],
-      other:[["Cursor Custom","120 Linkwuans"],["Tema Cyber","300 Linkwuans"]],
-      badges:[]
-    };
-
-    let data = [];
-    try{
-      if(typeof shopData !== "undefined" && shopData && Array.isArray(shopData[mode])) data = shopData[mode];
-    }catch(e){}
-    if(!data.length && fallback[mode]) data = fallback[mode];
-
-    grid.innerHTML = data.length ? data.map((x,i)=>`<div class="asset-card">
-      <div class="asset-preview shop-preview">${mode==="coins"?"◈":"✦"}</div>
-      <div class="asset-body">
-        <b>${esc(x[0])}</b>
-        <small>${esc(x[1]||"")}</small>
-        <button class="btn primary small" type="button" data-buy-shop="${i}">Comprar</button>
-      </div>
-    </div>`).join("") : "<p>Nada cadastrado aqui.</p>";
-  }
-
-  // IMPORTANTE: sem stopImmediatePropagation aqui, para não travar os cliques.
-  document.addEventListener("click", function(e){
-    const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
-    if(!tab) return;
-
-    e.preventDefault();
-    setMode(tab.dataset.shopTab || "coins");
-    renderShopSafe(tab.dataset.shopTab || "coins");
-  }, false);
-
-  // Substitui renderShop sem loop/MutationObserver.
-  window.renderShop = function(){
-    renderShopSafe(getMode());
-  };
-  try{ renderShop = window.renderShop; }catch(e){}
-
-  const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__fixAbasLojaClicavel){
-    const patched = function(id){
-      const r = oldOpenTab.apply(this, arguments);
-      if(id === "store") setTimeout(()=>renderShopSafe(getMode()), 0);
+  const oldOpen=window.openTab;
+  if(typeof oldOpen==='function' && !oldOpen.__dlinkyAbasLojaFixFinalLimpo){
+    const patched=function(id){
+      const r=oldOpen.apply(this,arguments);
+      if(id==='store') setTimeout(()=>renderFixed(window.shopMode||shopMode||'coins'),0);
       return r;
     };
-    patched.__fixAbasLojaClicavel = true;
-    window.openTab = patched;
-    try{ openTab = patched; }catch(e){}
+    patched.__dlinkyAbasLojaFixFinalLimpo=true;
+    window.openTab=patched;
+    try{openTab=patched}catch(e){}
   }
+})();
 
-  setTimeout(()=>renderShopSafe(getMode()), 500);
+/* ===== FIX: INVENTÁRIO NÃO MOSTRA MOLDURA QUE NÃO EXISTE NO ADMIN ===== */
+(function(){
+  if(window.__dlinkyInventarioSoAdminFinal) return;
+  window.__dlinkyInventarioSoAdminFinal=true;
+
+  function read(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function cleanUrl(v){return String(v||'').trim()}
+  function sync(){
+    const admin=(read('dlinkyCustomFrames',[])||[]).filter(f=>f&&f.url).map(f=>cleanUrl(f.url));
+    const allowed=new Set(admin);
+    const u=read('dlinkyUser',{});
+    if(!u||typeof u!=='object')return;
+    u.inventory=Array.isArray(u.inventory)?u.inventory.filter(it=>allowed.has(cleanUrl(it.url||it.frameUrl))):[];
+    const equipped=cleanUrl(u.frame||u.frameUrl);
+    if(equipped && !allowed.has(equipped)){
+      u.frame='';u.frameUrl='';u.frameName='';u.decoration='none';
+    }
+    write('dlinkyUser',u);
+    try{if(typeof user==='object'&&user)Object.assign(user,u)}catch(e){}
+  }
+  sync();
+  setTimeout(sync,500);
 })();
