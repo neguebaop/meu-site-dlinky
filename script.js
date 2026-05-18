@@ -12026,3 +12026,107 @@ document.addEventListener("click",(e)=>{
   window.addEventListener('hashchange',()=>setTimeout(()=>renderStable(),150));
   setTimeout(()=>renderStable(),500);
 })();
+
+
+/* ===== FIX FINAL: aba Molduras ativa correta + avatar real no preview da moldura ===== */
+(function(){
+  if(window.__dlinkyShopTabAvatarFinalFix) return;
+  window.__dlinkyShopTabAvatarFinalFix = true;
+
+  const $=(s,r=document)=>r.querySelector(s);
+  const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+  function read(k,fb){try{const v=JSON.parse(localStorage.getItem(k)||'');return v??fb}catch(e){return fb}}
+  function userObj(){try{return (typeof user!=='undefined' && user) ? user : read('dlinkyUser',{})}catch(e){return read('dlinkyUser',{})}}
+  function getAvatar(){
+    const u=userObj();
+    let av = u.avatar || u.photoURL || u.photo || '';
+    const keys=[];
+    const slug=(u.slug||'').trim();
+    const email=(u.email||'').trim();
+    if(email) keys.push('dlinky_avatar_clean_'+email,'dlinkyAvatarPreserve_'+email);
+    if(slug) keys.push('dlinky_avatar_clean_'+slug,'dlinkyAvatarPreserve_'+slug);
+    keys.push('dlinky_avatar_clean_local','dlinkyAvatarPreserve_local');
+    for(const k of keys){ if(!av){ try{av=localStorage.getItem(k)||''}catch(e){} } }
+    const img=$('#profileAvatar'); if(!av && img && img.src) av=img.src;
+    const dash=$('#dashAvatar') || $('#sideAvatar');
+    if(!av && dash){
+      const bg=(dash.style.backgroundImage||'').match(/url\(["']?(.*?)["']?\)/);
+      if(bg) av=bg[1];
+    }
+    return av || '';
+  }
+  function forceActive(mode){
+    if(!mode) mode='frames';
+    $$('.shop-tabs [data-shop-tab]').forEach(btn=>{
+      const on=(btn.dataset.shopTab||'')===mode;
+      btn.classList.toggle('active',on);
+      if(on) btn.setAttribute('aria-selected','true'); else btn.removeAttribute('aria-selected');
+    });
+    window.__dlinkyStableShopMode=mode;
+    try{
+      localStorage.setItem('dlinkyShopStableTab',mode);
+      localStorage.setItem('dlinkyShopTabFixed',mode);
+      localStorage.setItem('dlinkyShopTab',mode);
+    }catch(e){}
+  }
+  function applyAvatarToFramePreviews(){
+    const av=getAvatar();
+    if(!av) return;
+    $$('.frame-avatar-demo,.real-inv-avatar,.zyo-person-demo,.inv-avatar-preview').forEach(el=>{
+      el.style.backgroundImage='url("'+av.replace(/"/g,'%22')+'")';
+      el.style.backgroundSize='cover';
+      el.style.backgroundPosition='center';
+    });
+  }
+  function afterRender(mode){
+    forceActive(mode);
+    applyAvatarToFramePreviews();
+    setTimeout(()=>{forceActive(mode);applyAvatarToFramePreviews();},40);
+    setTimeout(()=>{forceActive(mode);applyAvatarToFramePreviews();},180);
+    setTimeout(()=>{forceActive(mode);applyAvatarToFramePreviews();},600);
+  }
+
+  // Intercepta cliques das abas ANTES dos outros scripts para não deixar uma aba marcar outra.
+  document.addEventListener('pointerdown',function(e){
+    const btn=e.target && e.target.closest && e.target.closest('.shop-tabs [data-shop-tab]');
+    if(!btn) return;
+    const mode=btn.dataset.shopTab||'coins';
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    forceActive(mode);
+    if(typeof window.renderShop==='function') { try{ window.renderShop(); }catch(err){} }
+    afterRender(mode);
+  },true);
+  document.addEventListener('click',function(e){
+    const btn=e.target && e.target.closest && e.target.closest('.shop-tabs [data-shop-tab]');
+    if(!btn) return;
+    const mode=btn.dataset.shopTab||'coins';
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    forceActive(mode);
+    if(typeof window.renderShop==='function') { try{ window.renderShop(); }catch(err){} }
+    afterRender(mode);
+  },true);
+
+  // Envelopa renderShop só para corrigir visual da aba ativa e avatar depois que qualquer render acabar.
+  const oldRenderShop = window.renderShop;
+  window.renderShop=function(){
+    const mode=window.__dlinkyStableShopMode || localStorage.getItem('dlinkyShopStableTab') || localStorage.getItem('dlinkyShopTabFixed') || localStorage.getItem('dlinkyShopTab') || 'coins';
+    let r;
+    try{ if(typeof oldRenderShop==='function') r=oldRenderShop.apply(this,arguments); }catch(e){}
+    afterRender(mode);
+    return r;
+  };
+  try{ renderShop=window.renderShop; }catch(e){}
+
+  // Observa mudanças de classe e desfaz quando outro script marcar Efeitos por engano.
+  const observer=new MutationObserver(()=>{
+    if(!$('#tab-store')?.classList.contains('active')) return;
+    const mode=window.__dlinkyStableShopMode || localStorage.getItem('dlinkyShopStableTab') || localStorage.getItem('dlinkyShopTabFixed');
+    if(mode) { forceActive(mode); applyAvatarToFramePreviews(); }
+  });
+  function start(){ const tabs=$('.shop-tabs'); if(tabs) observer.observe(tabs,{attributes:true,childList:true,subtree:true,attributeFilter:['class']}); }
+  document.addEventListener('DOMContentLoaded',start);
+  setTimeout(start,300);
+  setTimeout(()=>{ const mode=localStorage.getItem('dlinkyShopStableTab'); if(mode) afterRender(mode); },500);
+})();
