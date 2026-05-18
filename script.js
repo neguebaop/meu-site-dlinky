@@ -12380,3 +12380,222 @@ document.addEventListener("click",(e)=>{
     try{ if(typeof user==='object' && user) Object.assign(user,u); }catch(e){}
   }
 })();
+
+
+
+/* ===== RESET TOTAL DE MOLDURAS ANTIGAS: ADMIN + LOJA + INVENTÁRIO ===== */
+(function(){
+  if(window.__dlinkyResetTotalMoldurasAntigas) return;
+  window.__dlinkyResetTotalMoldurasAntigas = true;
+
+  const RESET_VERSION = "v_reset_frames_2026_05_18_01";
+
+  function read(k,fb){
+    try{
+      const raw = localStorage.getItem(k);
+      if(!raw) return fb;
+      const val = JSON.parse(raw);
+      return val ?? fb;
+    }catch(e){return fb}
+  }
+
+  function write(k,v){
+    try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){}
+  }
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+
+  function cleanUser(){
+    const u = read("dlinkyUser", {});
+    if(!u || typeof u !== "object") return;
+
+    // zera tudo que seja moldura antiga/comprada/equipada
+    u.inventory = [];
+    u.frame = "";
+    u.frameUrl = "";
+    u.frameName = "";
+    u.frameDesc = "";
+    u.activeFrameId = "";
+    u.equippedFrame = "";
+    u.selectedFrame = "";
+    u.currentFrame = "";
+    u.decoration = "none";
+
+    write("dlinkyUser", u);
+    write("dlinkyUser_BACKUP", u);
+
+    try{
+      if(typeof user === "object" && user){
+        Object.assign(user,u);
+      }
+    }catch(e){}
+  }
+
+  function cleanFramesStorage(){
+    [
+      "dlinkyCustomFrames",
+      "dlinkyCustomFrames_BACKUP",
+      "dlinkyFrames",
+      "dlinkyFrames_BACKUP",
+      "dlinkyFrameVault",
+      "dlinkyFrameVault_BACKUP",
+      "dlinkyAdminGifts",
+      "dlinkyAdminGifts_BACKUP",
+      "dlinkyLastGoodFrameUrl",
+      "dlinkyEquippedFrame",
+      "dlinkySelectedFrame",
+      "dlinkyCurrentFrame"
+    ].forEach(k=>{
+      try{ localStorage.removeItem(k); }catch(e){}
+    });
+
+    // recria vazio para o Admin começar limpo
+    write("dlinkyCustomFrames", []);
+    write("dlinkyAdminGifts", []);
+  }
+
+  function renderStoreFramesEmpty(){
+    const grid = q("#shopGrid");
+    if(!grid) return;
+
+    const active = q("#tab-store [data-shop-tab].active");
+    const mode = active?.dataset?.shopTab;
+
+    if(mode === "frames" || /molduras?/i.test(active?.textContent || "")){
+      window.__dlinkyVisibleFrames = [];
+      grid.classList.add("frames-shop-grid");
+      grid.innerHTML = `<div class="panel empty-frames-help">
+        <h2>Nenhuma moldura cadastrada</h2>
+        <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
+      </div>`;
+    }
+  }
+
+  function renderInventoryEmpty(){
+    const grid = q("#inventoryGrid");
+    if(grid){
+      grid.innerHTML = "<p>Você ainda não possui itens no inventário.</p>";
+    }
+
+    ["invItemsCount","invCountMini"].forEach(id=>{
+      const el = q("#"+id);
+      if(el) el.textContent = "0";
+    });
+  }
+
+  function renderAdminEmpty(){
+    const box = q("#adminFramesList");
+    if(box){
+      box.innerHTML = "<p>Nenhuma moldura custom adicionada ainda.</p>";
+    }
+  }
+
+  function fullClean(){
+    cleanFramesStorage();
+    cleanUser();
+    renderStoreFramesEmpty();
+    renderInventoryEmpty();
+    renderAdminEmpty();
+  }
+
+  // roda uma vez nesta versão
+  if(localStorage.getItem("__dlinkyResetTotalMoldurasAntigas") !== RESET_VERSION){
+    fullClean();
+    localStorage.setItem("__dlinkyResetTotalMoldurasAntigas", RESET_VERSION);
+  }
+
+  // botão de emergência pelo console:
+  // dlinkyResetarMolduras()
+  window.dlinkyResetarMolduras = function(){
+    localStorage.removeItem("__dlinkyResetTotalMoldurasAntigas");
+    fullClean();
+    try{ if(typeof toast === "function") toast("Molduras antigas apagadas."); }catch(e){}
+    setTimeout(()=>location.reload(), 400);
+  };
+
+  // impede qualquer código antigo de salvar de volta inventário/moldura antiga
+  const nativeSetItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key,value){
+    try{
+      if(key === "dlinkyUser"){
+        const u = JSON.parse(value || "{}");
+        if(u && typeof u === "object"){
+          u.inventory = [];
+          u.frame = "";
+          u.frameUrl = "";
+          u.frameName = "";
+          u.frameDesc = "";
+          u.activeFrameId = "";
+          u.equippedFrame = "";
+          u.selectedFrame = "";
+          u.currentFrame = "";
+          if(u.decoration && String(u.decoration).includes("frame")) u.decoration = "none";
+          value = JSON.stringify(u);
+        }
+      }
+
+      // enquanto o Admin estiver vazio, mantém os depósitos antigos vazios
+      if([
+        "dlinkyFrames",
+        "dlinkyFrameVault",
+        "dlinkyCustomFrames_BACKUP",
+        "dlinkyFrames_BACKUP",
+        "dlinkyFrameVault_BACKUP"
+      ].includes(key)){
+        value = "[]";
+      }
+    }catch(e){}
+
+    return nativeSetItem(key,value);
+  };
+
+  // sobrescreve inventário para não renderizar item fantasma
+  window.renderInventory = function(){
+    cleanUser();
+    renderInventoryEmpty();
+  };
+  try{ renderInventory = window.renderInventory; }catch(e){}
+
+  const oldOpenTab = window.openTab;
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__resetTotalMoldurasAntigas){
+    const patched = function(id){
+      const r = oldOpenTab.apply(this, arguments);
+
+      if(id === "inventory"){
+        setTimeout(()=>{cleanUser(); renderInventoryEmpty();}, 0);
+        setTimeout(()=>{cleanUser(); renderInventoryEmpty();}, 250);
+      }
+
+      if(id === "admin"){
+        setTimeout(renderAdminEmpty, 0);
+      }
+
+      if(id === "store"){
+        setTimeout(renderStoreFramesEmpty, 0);
+      }
+
+      return r;
+    };
+    patched.__resetTotalMoldurasAntigas = true;
+    window.openTab = patched;
+    try{ openTab = patched; }catch(e){}
+  }
+
+  document.addEventListener("click", function(e){
+    const invTab = e.target.closest && e.target.closest("#tab-inventory [data-shop-tab], #tab-inventory .shop-tabs button, #tab-inventory [data-inv-tab]");
+    if(invTab){
+      setTimeout(()=>{cleanUser(); renderInventoryEmpty();}, 0);
+      setTimeout(()=>{cleanUser(); renderInventoryEmpty();}, 200);
+    }
+
+    const storeFrameTab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
+    if(storeFrameTab && (storeFrameTab.dataset.shopTab === "frames" || /molduras?/i.test(storeFrameTab.textContent||""))){
+      setTimeout(renderStoreFramesEmpty, 0);
+      setTimeout(renderStoreFramesEmpty, 200);
+    }
+  }, true);
+
+  setTimeout(fullClean, 300);
+  setTimeout(fullClean, 1000);
+})();
