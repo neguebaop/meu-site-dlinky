@@ -1,4 +1,22 @@
 const $=(s,root=document)=>root.querySelector(s);const $$=(s,root=document)=>[...root.querySelectorAll(s)];
+/* ===== FIX LINK DIRETO: /slug abre perfil sem piscar página inicial ===== */
+(function(){
+  try{
+    const path=(location.pathname||'/').replace(/^\/+/,'').split('/')[0];
+    const reserved=['','index.html','login','register','dashboard','assets','premium','community'];
+    if(path && !reserved.includes(path.toLowerCase())){
+      window.__dlinkyDirectProfileSlug=decodeURIComponent(path).toLowerCase();
+      const hideLanding=()=>{
+        document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+        const profile=document.getElementById('profile');
+        if(profile) profile.classList.add('active');
+      };
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',hideLanding,{once:true});
+      else hideLanding();
+    }
+  }catch(e){}
+})();
+
 const icons={Instagram:'fa-brands fa-instagram',TikTok:'fa-brands fa-tiktok',Discord:'fa-brands fa-discord',YouTube:'fa-brands fa-youtube',Spotify:'fa-brands fa-spotify',WhatsApp:'fa-brands fa-whatsapp',Twitch:'fa-brands fa-twitch',Steam:'fa-brands fa-steam',Github:'fa-brands fa-github',Roblox:'fa-solid fa-square',Telegram:'fa-brands fa-telegram',X:'fa-brands fa-x-twitter'};
 const presetUrls={
   bg1:'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1600&q=80',
@@ -14,7 +32,7 @@ function loadUser(){try{return {...defaultUser,...JSON.parse(localStorage.getIte
 function saveUser(){localStorage.setItem('dlinkyUser',JSON.stringify(user));renderDash();toast('Salvo com sucesso!')}
 function addHistory(t){user.history=[`${new Date().toLocaleString('pt-BR')} — ${t}`,...(user.history||[])].slice(0,20);localStorage.setItem('dlinkyUser',JSON.stringify(user))}
 function toast(t){const el=$('#toast');el.textContent=t;el.className='show';setTimeout(()=>el.className='',2200)}
-function route(){const h=location.hash||'#/';$$('.page').forEach(p=>p.classList.remove('active'));if(h==='#/'||h==='#'){ $('#landing').classList.add('active')}else if(h==='#/register'){ $('#auth').classList.add('active');$('#registerForm').style.display='block';$('#loginForm').style.display='none'}else if(h==='#/login'){ $('#auth').classList.add('active');$('#registerForm').style.display='none';$('#loginForm').style.display='block'}else if(h==='#/dashboard'){ $('#dashboard').classList.add('active');renderDash()}else if(h==='#/profile'||h==='#/'+user.slug){ $('#profile').classList.add('active');renderProfile()}else if(h==='#/assets'){simple('Linky Assets','No painel existe uma área com backgrounds, banners, decorações e músicas prontas para aplicar no perfil.')}else if(h==='#/premium'){simple('Premium Dlinky','Aqui você poderá vender decorações, backgrounds, músicas, selo verificado, esconder views e remover marca.')}else{simple('Comunidade Dlinky','Página de comunidade em construção.')}}
+function route(){const __pathSlug=window.__dlinkyDirectProfileSlug||'';const h=location.hash||(__pathSlug?'#/'+__pathSlug:'#/');$$('.page').forEach(p=>p.classList.remove('active'));if((h==='#/'||h==='#')&&!__pathSlug){ $('#landing').classList.add('active')}else if(h==='#/register'){ $('#auth').classList.add('active');$('#registerForm').style.display='block';$('#loginForm').style.display='none'}else if(h==='#/login'){ $('#auth').classList.add('active');$('#registerForm').style.display='none';$('#loginForm').style.display='block'}else if(h==='#/dashboard'){ $('#dashboard').classList.add('active');renderDash()}else if(h==='#/profile'||h==='#/'+user.slug||(__pathSlug&&h==='#/'+__pathSlug)){ if(__pathSlug){user.slug=__pathSlug;} $('#profile').classList.add('active');renderProfile()}else if(h==='#/assets'){simple('Linky Assets','No painel existe uma área com backgrounds, banners, decorações e músicas prontas para aplicar no perfil.')}else if(h==='#/premium'){simple('Premium Dlinky','Aqui você poderá vender decorações, backgrounds, músicas, selo verificado, esconder views e remover marca.')}else{simple('Comunidade Dlinky','Página de comunidade em construção.')}}
 function simple(t,p){$('#simple').classList.add('active');$('#simpleTitle').textContent=t;$('#simpleText').textContent=p}
 window.addEventListener('hashchange',route);route();
 document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g){location.hash='#/'+g.dataset.goto}const tab=e.target.closest('[data-tab]');if(tab){openTab(tab.dataset.tab)}const ac=e.target.closest('[data-action]');if(ac){if(ac.dataset.action==='openSide')$('.sidebar').classList.add('open');if(ac.dataset.action==='closeSide')$('.sidebar').classList.remove('open');if(ac.dataset.action==='toggleTheme')document.body.classList.toggle('light')}});
