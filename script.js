@@ -10540,3 +10540,145 @@ document.addEventListener("click",(e)=>{
   else boot();
 
 })();
+
+/* ===== DLINKY FIX FINAL — salvar nome livre + música sem apagar/bugar ===== */
+(function(){
+  if(window.__dlinkyFixNomeLivreMusica) return;
+  window.__dlinkyFixNomeLivreMusica = true;
+
+  const USER_KEY = 'dlinkyUser';
+
+  function q(s,r=document){ return r.querySelector(s); }
+  function readUser(){
+    try{return JSON.parse(localStorage.getItem(USER_KEY)||'{}')}catch(e){return {}}
+  }
+  function cleanSlugSafe(v){
+    return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario';
+  }
+  function writeUser(u){
+    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    try{
+      if(typeof user !== 'undefined' && user){
+        Object.keys(user).forEach(k=>delete user[k]);
+        Object.assign(user,u);
+      }
+    }catch(e){}
+    try{
+      if(window.user){
+        Object.keys(window.user).forEach(k=>delete window.user[k]);
+        Object.assign(window.user,u);
+      }
+    }catch(e){}
+  }
+  function currentUid(){
+    try{return window.firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.uid}catch(e){return null}
+  }
+  async function saveOnline(u){
+    try{
+      if(!window.firebase || !firebase.firestore || !currentUid()) return;
+      const uid=currentUid();
+      const payload={...u,uid,email:(firebase.auth().currentUser.email||u.email||'').toLowerCase().trim(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+      await firebase.firestore().collection('users').doc(uid).set(payload,{merge:true});
+      if(payload.slug){
+        await firebase.firestore().collection('profiles').doc(payload.slug).set({
+          uid:payload.uid||uid,
+          name:payload.name||'Usuário',
+          slug:payload.slug,
+          email:payload.email||'',
+          bio:payload.bio||'',
+          avatar:payload.avatar||'',
+          banner:payload.banner||'',
+          bg:payload.bg||'',
+          video:payload.video||'',
+          frame:payload.frame||'',
+          music:payload.music||'',
+          welcome:payload.welcome||'',
+          color:payload.color||'#a855f7',
+          particles:payload.particles!==false,
+          particleType:payload.particleType||'snow',
+          verified:!!payload.verified,
+          tags:Array.isArray(payload.tags)?payload.tags:[],
+          links:Array.isArray(payload.links)?payload.links:[],
+          socials:Array.isArray(payload.socials)?payload.socials:[],
+          embeds:Array.isArray(payload.embeds)?payload.embeds:[],
+          decoration:payload.decoration||'',
+          updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+        },{merge:true});
+      }
+    }catch(err){console.warn('Dlinky salvar conta Firebase:',err)}
+  }
+  function saveAccountManual(ev){
+    const btn = ev && ev.target && ev.target.closest && ev.target.closest('#saveAccount');
+    if(!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+
+    const old=readUser();
+    const name=(q('#cfgName')?.value||'').trim() || old.name || 'Usuário';
+    const slug=cleanSlugSafe(q('#cfgSlug')?.value || old.slug || name);
+    const bio=q('#cfgBio')?.value ?? old.bio ?? '';
+    const music=(q('#cfgMusic')?.value||'').trim();
+    const welcome=(q('#cfgWelcome')?.value||'').trim() || 'Clique aqui';
+
+    const merged={...old,name,slug,bio,music,welcome};
+    writeUser(merged);
+    window.__dlinkyManualAccountSaved={until:Date.now()+6000,data:merged};
+
+    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+    try{ if(typeof toast==='function') toast('Salvo com sucesso!'); }catch(e){}
+
+    saveOnline(merged);
+    setTimeout(()=>{writeUser({...readUser(),...merged}); saveOnline({...readUser(),...merged});},800);
+    setTimeout(()=>{writeUser({...readUser(),...merged}); saveOnline({...readUser(),...merged});},2200);
+  }
+
+  document.addEventListener('click', saveAccountManual, true);
+
+  const oldRenderDash = window.renderDash || (typeof renderDash==='function'?renderDash:null);
+  if(typeof oldRenderDash==='function' && !oldRenderDash.__nomeLivrePatch){
+    const patched=function(){
+      const r=oldRenderDash.apply(this,arguments);
+      const recent=window.__dlinkyManualAccountSaved;
+      if(recent && Date.now()<recent.until && recent.data){
+        const d=recent.data;
+        if(q('#cfgName') && document.activeElement!==q('#cfgName')) q('#cfgName').value=d.name||'';
+        if(q('#cfgSlug') && document.activeElement!==q('#cfgSlug')) q('#cfgSlug').value=d.slug||'';
+        if(q('#cfgBio') && document.activeElement!==q('#cfgBio')) q('#cfgBio').value=d.bio||'';
+        if(q('#cfgMusic') && document.activeElement!==q('#cfgMusic')) q('#cfgMusic').value=d.music||'';
+        if(q('#cfgWelcome') && document.activeElement!==q('#cfgWelcome')) q('#cfgWelcome').value=d.welcome||'Clique aqui';
+      }
+      return r;
+    };
+    patched.__nomeLivrePatch=true;
+    window.renderDash=patched;
+    try{renderDash=patched}catch(e){}
+  }
+
+  // Música: não recarrega o áudio se a URL não mudou e não deixa render apagar o src do nada.
+  const oldRenderProfile = window.renderProfile || (typeof renderProfile==='function'?renderProfile:null);
+  if(typeof oldRenderProfile==='function' && !oldRenderProfile.__musicPatch){
+    const patchedProfile=function(){
+      const beforeMusic=(readUser().music||'').trim();
+      const audioBefore=q('#profileAudio');
+      const oldSrc=audioBefore?audioBefore.getAttribute('src'):'';
+      const r=oldRenderProfile.apply(this,arguments);
+      const audio=q('#profileAudio');
+      const music=(readUser().music||beforeMusic||'').trim();
+      if(audio){
+        if(music){
+          if((audio.getAttribute('src')||'')!==music){
+            audio.src=music;
+            audio.load();
+          }
+        }else if(oldSrc){
+          audio.removeAttribute('src');
+        }
+      }
+      return r;
+    };
+    patchedProfile.__musicPatch=true;
+    window.renderProfile=patchedProfile;
+    try{renderProfile=patchedProfile}catch(e){}
+  }
+})();
