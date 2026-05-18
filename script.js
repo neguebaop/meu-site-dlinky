@@ -9172,7 +9172,7 @@ document.addEventListener("click",(e)=>{
   function normalizeFrame(raw,i){const url=String(raw?.url||raw?.frameUrl||'').trim();const price=num(raw?.price??raw?.basePrice??raw?.prices?.['3 dias']??20)||20;const prices=Object.assign({},raw?.prices||{});['3 dias','7 dias','15 dias','Permanente'].forEach(k=>{prices[k]=num(prices[k])||0});if(!prices['3 dias'])prices['3 dias']=price;if(!prices['7 dias'])prices['7 dias']=Math.round(price*1.5);if(!prices['15 dias'])prices['15 dias']=Math.round(price*2);if(!prices['Permanente'])prices['Permanente']=Math.round(price*3);return {id:String(raw?.id||slug(url||raw?.name||i)),name:String(raw?.name||raw?.title||'Moldura'),desc:String(raw?.desc||raw?.description||''),url,price,prices};}
   function allFrames(){const src=[...read(FRAMES_KEY,[]),...read(OLD_FRAMES_KEY,[]),...(userData().customFrames||[])];const map=new Map();src.forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const arr=[...map.values()];write(FRAMES_KEY,arr);write(OLD_FRAMES_KEY,arr);const u=userData();u.customFrames=arr;write(USER_KEY,u);return arr;}
   function saveFrames(arr){const map=new Map();(Array.isArray(arr)?arr:[]).forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const clean=[...map.values()];write(FRAMES_KEY,clean);write(OLD_FRAMES_KEY,clean);const u=userData();u.customFrames=clean;saveUser(u);return clean;}
-  function framePrice(f,d='3 dias'){const p=Number(f?.prices?.[d]);if(Number.isFinite(p)&&p>0)return p;return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
+  function framePrice(f,d='3 dias'){return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
   function frameUrl(it){return String(it?.url||it?.frameUrl||'').trim();}
   function isFrameItem(it){return !!(it&&frameUrl(it)&&/frame|moldur/i.test(String(it.type||it.kind||it.name||'frame')));}
   function itemId(it){return String(it?.id||slug(frameUrl(it)||it?.name));}
@@ -11699,7 +11699,7 @@ document.addEventListener("click",(e)=>{
   function durationMap(){return readJSON(DUR_KEY,{})}
   function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
   function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
-  function priceFor(frame,dur){const p=Number(frame?.prices?.[dur]);if(Number.isFinite(p)&&p>0)return p;return priceNumber(frame?.price);}
+  function priceFor(frame,dur){ return priceNumber(frame.price); }
   function getAvatar(){
     return String((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||'').trim();
   }
@@ -11858,6 +11858,45 @@ document.addEventListener("click",(e)=>{
 
   window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
   setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
+})();
+
+
+/* ===== FIX FINAL SOMENTE LOJA: preço não aumenta + avatar real no preview ===== */
+(function(){
+  const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  function num(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
+  function frames(){
+    try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch(e){return []}
+  }
+  function avatar(){return (window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||''}
+  function apply(){
+    const store=q('#tab-store'); if(!store||!store.classList.contains('active'))return;
+    const av=avatar();
+    if(av){
+      qa('.frame-avatar-demo,.real-inv-avatar,.zyo-person-demo',store).forEach(el=>{
+        el.style.backgroundImage='url("'+av.replace(/"/g,'%22')+'")';
+        el.style.backgroundSize='cover';
+        el.style.backgroundPosition='center';
+        el.style.backgroundColor='transparent';
+      });
+    }
+    const arr=frames();
+    qa('[data-price-label],[data-v3-price]',store).forEach((el,i)=>{
+      const card=el.closest('[data-frame-card]');
+      const idx=Number(card?.dataset?.frameCard ?? i);
+      const f=arr[idx];
+      const p=num(f?.price||f?.prices?.['3 dias']||el.textContent||40);
+      el.textContent=p+' Linkwuans';
+    });
+  }
+  document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]'))setTimeout(apply,0)},true);
+  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]'))setTimeout(apply,80)},true);
+  const oldRS=window.renderShop;
+  if(typeof oldRS==='function'&&!oldRS.__dlinkyPriceAvatarFix){
+    const patched=function(){const r=oldRS.apply(this,arguments);setTimeout(apply,0);setTimeout(apply,80);return r};
+    patched.__dlinkyPriceAvatarFix=true; window.renderShop=patched; try{renderShop=patched}catch(e){}
+  }
+  setTimeout(apply,200);
 })();
 
 
@@ -12105,120 +12144,63 @@ document.addEventListener("click",(e)=>{
 })();
 
 
-/* ===== FIX SEGURO FINAL: loja sem travar + preço da moldura sem loop =====
-   Mexe SOMENTE na Loja.
-   Remove a necessidade de MutationObserver pesado e atualiza preço só quando o usuário troca a duração ou abre o modal.
+/* ===== FIX SEGURO FINAL: loja sem travar + comprar usa preço visível =====
+   Base restaurada antes do bug da loja. Este bloco só corrige o clique/valor da compra.
+   Não altera avatar, música, admin, molduras cadastradas ou perfil.
 */
 (function(){
-  if(window.__dlinkyLojaLevePrecoFixFinal) return;
-  window.__dlinkyLojaLevePrecoFixFinal = true;
+  if(window.__dlinkySafeStoreClickPriceFinal) return;
+  window.__dlinkySafeStoreClickPriceFinal = true;
 
-  const $ = (s,r=document)=>r.querySelector(s);
-  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+  function q(s,r=document){ return r.querySelector(s); }
+  function n(txt){ const m=String(txt||'').match(/\d+/); return m?Number(m[0]):0; }
+  function show(el){ if(el){ el.classList.add('show'); el.style.display='flex'; el.style.pointerEvents='auto'; } }
+  function getFrameFromVisible(idx){
+    const list = window.__dlinkyVisibleFrames || [];
+    const it = list[Number(idx)];
+    if(Array.isArray(it)) return {name:it[0]||'Moldura', url:it[5]||'', id:it[7]||it[5]||idx};
+    if(it && typeof it === 'object') return {name:it.name||'Moldura', url:it.url||it.frameUrl||'', id:it.id||it.url||idx};
+    return {name:'Moldura', url:'', id:idx};
+  }
 
-  function readJSON(k,fb){
-    try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):fb; }catch(e){ return fb; }
-  }
-  function onlyNum(v){
-    const m=String(v??'').match(/\d+/); return m?Number(m[0]):0;
-  }
-  function clean(v){ return String(v??'').trim().toLowerCase(); }
-  function allFrames(){
-    const keys=['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
-    const out=[];
-    keys.forEach(k=>{ const arr=readJSON(k,[]); if(Array.isArray(arr)) out.push(...arr); });
-    const seen=new Set();
-    return out.filter(f=>{
-      const key=clean(f?.url||f?.frameUrl||f?.id||f?.name);
-      if(!key || seen.has(key)) return false;
-      seen.add(key); return true;
-    });
-  }
-  function frameByCard(card,idx){
-    const frames=allFrames();
-    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.frame-img,.real-inv-frame');
-    const src=clean(img?.getAttribute('src')||img?.src||'');
-    if(src){
-      const bySrc=frames.find(f=>clean(f?.url||f?.frameUrl)===src);
-      if(bySrc) return bySrc;
-    }
-    const title=clean(card?.querySelector('.frame-info b,.asset-body b,b')?.textContent||'');
-    if(title){
-      const byName=frames.find(f=>title.includes(clean(f?.name)) || clean(f?.name).includes(title));
-      if(byName) return byName;
-    }
-    return frames[idx] || null;
-  }
-  function priceFor(frame,duration,fallback){
-    if(frame){
-      const maps=[frame.prices,frame.precos,frame.priceMap];
-      for(const map of maps){
-        if(map && map[duration]!=null){
-          const n=Number(map[duration]);
-          if(Number.isFinite(n) && n>0) return n;
-        }
-      }
-      const direct=onlyNum(frame.price||frame.preco||frame.valor);
-      if(direct>0) return direct;
-    }
-    return onlyNum(fallback) || 0;
-  }
-  function updateCard(card){
-    if(!card) return;
-    const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration],select.frame-duration');
-    if(!sel) return;
-    const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||0);
-    const label=card.querySelector('[data-price-label],[data-v3-price],.frame-price b');
-    if(!label) return;
-    const frame=frameByCard(card,idx);
-    const price=priceFor(frame,sel.value,label.textContent);
-    if(price>0){
-      const txt=price+' Linkwuans';
-      if(label.textContent.trim()!==txt) label.textContent=txt;
-    }
-  }
-  function updateVisibleCards(){
-    const store=$('#tab-store');
-    if(!store || !store.classList.contains('active')) return;
-    $$('#tab-store .frame-shop-card,#tab-store [data-frame-card]').forEach(updateCard);
-  }
-  function updateModal(){
-    const modal=$('#frameBuyModal.show');
+  document.addEventListener('click', function(e){
+    const btn = e.target && e.target.closest && e.target.closest('#tab-store [data-confirm-frame], #tab-store [data-v3-buy-frame]');
+    if(!btn) return;
+
+    const idx = btn.dataset.confirmFrame ?? btn.dataset.v3BuyFrame ?? 0;
+    const card = btn.closest('.frame-shop-card, .asset-card, [data-frame-card]');
+    const sel = card && card.querySelector('[data-frame-duration], [data-v3-duration]');
+    const duration = (sel && sel.value) || '3 dias';
+    const priceText = (card && (card.querySelector('[data-price-label], [data-v3-price], .frame-price b')||{}).textContent) || '0';
+    const price = n(priceText);
+    const frame = getFrameFromVisible(idx);
+
+    const modal = q('#frameBuyModal');
     if(!modal) return;
-    const name=clean($('#frameBuyName')?.textContent||'');
-    const dur=($('#frameBuyDuration')?.textContent||modal.dataset.duration||'3 dias').trim();
-    const img=clean($('#frameBuyImg')?.getAttribute('src')||'');
-    const frames=allFrames();
-    const frame=frames.find(f=>clean(f?.url||f?.frameUrl)===img) || frames.find(f=>name && clean(f?.name)===name);
-    const label=$('#frameBuyPrice');
-    if(!label) return;
-    const price=priceFor(frame,dur,label.textContent||modal.dataset.price);
-    if(price>0){
-      const txt=price+' Linkwuans';
-      if(label.textContent.trim()!==txt) label.textContent=txt;
-      modal.dataset.price=String(price);
-    }
-  }
 
-  document.addEventListener('change',function(e){
-    const sel=e.target && e.target.closest && e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration],#tab-store select.frame-duration');
-    if(!sel) return;
-    updateCard(sel.closest('.frame-shop-card,[data-frame-card],.asset-card'));
-  },true);
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
 
-  document.addEventListener('click',function(e){
-    if(e.target && e.target.closest && e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]')){
-      const btn=e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]');
-      updateCard(btn.closest('.frame-shop-card,[data-frame-card],.asset-card'));
-      setTimeout(updateModal,30);
-      setTimeout(updateModal,120);
-    }
-    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){
-      setTimeout(updateVisibleCards,80);
-    }
-  },true);
+    const nameEl=q('#frameBuyName'); if(nameEl) nameEl.textContent = frame.name;
+    const durEl=q('#frameBuyDuration'); if(durEl) durEl.textContent = duration;
+    const typeEl=q('#frameBuyType'); if(typeEl) typeEl.textContent = duration === 'Permanente' ? 'Permanente' : 'Normal';
+    const priceEl=q('#frameBuyPrice'); if(priceEl) priceEl.textContent = price + ' Linkwuans';
+    const img=q('#frameBuyImg'); if(img && frame.url) img.src = frame.url;
 
-  // Atualiza só algumas vezes quando entra na loja. Não fica em loop observando o HTML.
-  window.addEventListener('hashchange',()=>setTimeout(updateVisibleCards,120));
-  setTimeout(updateVisibleCards,300);
+    try{
+      const u = (typeof user === 'object' && user) ? user : JSON.parse(localStorage.getItem('dlinkyUser')||'{}');
+      const av=q('#frameBuyAvatar'); if(av && u.avatar) av.style.backgroundImage = 'url("'+String(u.avatar).replace(/"/g,'%22')+'")';
+      const us=q('#frameBuyUser'); if(us) us.textContent = u.name || 'Usuário';
+    }catch(_){ }
+
+    modal.dataset.idx = idx;
+    modal.dataset.duration = duration;
+    modal.dataset.price = String(price);
+    show(modal);
+  }, true);
+
+  const st=document.createElement('style');
+  st.textContent = '#frameBuyModal.show{pointer-events:auto!important;z-index:999999!important}#frameBuyModal.show *{pointer-events:auto!important}#confirmFrameBuy{pointer-events:auto!important;opacity:1!important;visibility:visible!important;cursor:pointer!important}';
+  document.head.appendChild(st);
 })();
