@@ -10293,3 +10293,243 @@ document.addEventListener("click",(e)=>{
   document.addEventListener('pointerup',e=>{if(drag){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();} drag=false;},true);
   setTimeout(()=>{ensure();window.renderInventory();applyProfile();},400);
 })();
+
+
+/* =========================================================
+   DLINKY GLOBAL FIREBASE — MOLDURAS/SELOS/PRESENTES ONLINE
+   Adicionado sem remover nada do código original.
+   Faz o Admin salvar catálogo global no Firestore para aparecer para todos.
+   ========================================================= */
+(function(){
+  'use strict';
+  if(window.__DLINKY_GLOBAL_FIREBASE_CATALOG__) return;
+  window.__DLINKY_GLOBAL_FIREBASE_CATALOG__ = true;
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCPmjhOSXXNaVXXXdrAK9Y77fqxCoLv7Wo",
+    authDomain: "dlinky.firebaseapp.com",
+    projectId: "dlinky",
+    storageBucket: "dlinky.firebasestorage.app",
+    messagingSenderId: "856690547155",
+    appId: "1:856690547155:web:6444b8a4be23ee5a6d7726"
+  };
+
+  const KEYS = {
+    frames: 'dlinkyCustomFrames',
+    framesOld: 'dlinkyFrames',
+    selos: 'dlinkyCleanAdminSelosCatalog',
+    gifts: 'dlinkyAdminGifts',
+    grants: 'dlinkyAdminGrants'
+  };
+
+  let syncingFromCloud = false;
+  let saveTimer = null;
+
+  function log(){ try{ console.log.apply(console, ['[Dlinky Global]'].concat([].slice.call(arguments))); }catch(e){} }
+  function readJSON(key, fallback){ try{ const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }catch(e){ return fallback; } }
+  function writeJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
+  function arr(v){ return Array.isArray(v) ? v : []; }
+  function cleanUrl(v){ return String(v || '').trim(); }
+  function hash(v){ let h=0; String(v||'').split('').forEach(ch=>{ h=((h<<5)-h+ch.charCodeAt(0))|0; }); return Math.abs(h).toString(36); }
+  function cleanSlug(v){ return String(v||'item').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,60) || 'item'; }
+
+  function notify(msg){
+    try{ if(typeof toast === 'function') return toast(msg); }catch(e){}
+    log(msg);
+  }
+
+  function normalizeFrame(f){
+    if(!f) return null;
+    const url = cleanUrl(f.url || f.frameUrl || f.image || f.src);
+    if(!url) return null;
+    const name = String(f.name || f.title || 'Moldura').trim() || 'Moldura';
+    const price = Number(String(f.price || f.basePrice || (f.prices && f.prices['3 dias']) || 20).replace(/[^0-9.,-]/g,'').replace(',','.')) || 20;
+    const prices = Object.assign({}, f.prices || {});
+    prices['3 dias'] = Number(prices['3 dias'] || price) || price;
+    prices['7 dias'] = Number(prices['7 dias'] || Math.round(price * 1.5));
+    prices['15 dias'] = Number(prices['15 dias'] || Math.round(price * 2));
+    prices['Permanente'] = Number(prices['Permanente'] || Math.round(price * 3));
+    return {
+      id: String(f.id || 'frame_' + hash(url)),
+      name,
+      desc: String(f.desc || f.description || '').trim(),
+      price,
+      prices,
+      url,
+      type: 'frame',
+      updatedAtLocal: f.updatedAtLocal || Date.now()
+    };
+  }
+
+  function normalizeSelo(s){
+    if(!s) return null;
+    const url = cleanUrl(s.url || s.img || s.image || s.src);
+    if(!url) return null;
+    const name = String(s.name || s.nome || 'Selo').trim() || 'Selo';
+    return {
+      id: String(s.id || s.seloId || 'selo_' + cleanSlug(name) + '_' + hash(url)),
+      name,
+      desc: String(s.desc || s.description || '').trim(),
+      price: Number(s.price || s.preco || 120) || 120,
+      url,
+      type: 'selo',
+      size: Number(s.size || s.tamanho || 32) || 32,
+      updatedAtLocal: s.updatedAtLocal || Date.now()
+    };
+  }
+
+  function uniqueByUrl(list, normalizer){
+    const map = new Map();
+    arr(list).forEach(item=>{
+      const clean = normalizer(item);
+      if(!clean) return;
+      map.set(clean.url.toLowerCase(), clean);
+    });
+    return Array.from(map.values());
+  }
+
+  function getLocalCatalogs(){
+    const frames = uniqueByUrl([
+      ...arr(readJSON(KEYS.frames, [])),
+      ...arr(readJSON(KEYS.framesOld, []))
+    ], normalizeFrame);
+
+    const selos = uniqueByUrl(readJSON(KEYS.selos, []), normalizeSelo);
+    const gifts = arr(readJSON(KEYS.gifts, []));
+    const grants = arr(readJSON(KEYS.grants, []));
+
+    return { frames, selos, gifts, grants };
+  }
+
+  function setLocalCatalogs(data){
+    syncingFromCloud = true;
+    try{
+      const frames = uniqueByUrl(data && data.frames, normalizeFrame);
+      const selos = uniqueByUrl(data && data.selos, normalizeSelo);
+      const gifts = arr(data && data.gifts);
+      const grants = arr(data && data.grants);
+
+      writeJSON(KEYS.frames, frames);
+      writeJSON(KEYS.framesOld, frames);
+      writeJSON(KEYS.selos, selos);
+      writeJSON(KEYS.gifts, gifts);
+      writeJSON(KEYS.grants, grants);
+    }finally{
+      setTimeout(()=>{ syncingFromCloud = false; }, 120);
+    }
+
+    refreshScreens();
+  }
+
+  function refreshScreens(){
+    setTimeout(()=>{
+      try{ if(typeof renderAdminList === 'function') renderAdminList(); }catch(e){}
+      try{ if(typeof renderAdminSelos === 'function') renderAdminSelos(); }catch(e){}
+      try{ if(typeof renderShop === 'function') renderShop(); }catch(e){}
+      try{ if(typeof renderInventory === 'function') renderInventory(); }catch(e){}
+      try{ if(typeof renderDash === 'function') renderDash(); }catch(e){}
+    }, 80);
+  }
+
+  function readyFirebase(){
+    return !!(window.firebase && firebase.apps && firebase.firestore);
+  }
+
+  function initFirebase(){
+    if(!readyFirebase()) return false;
+    try{ if(!firebase.apps.length) firebase.initializeApp(firebaseConfig); }catch(e){}
+    return true;
+  }
+
+  function catalogRef(){
+    if(!initFirebase()) return null;
+    return firebase.firestore().collection('dlinky_global').doc('catalogs');
+  }
+
+  async function uploadCatalogNow(reason){
+    if(syncingFromCloud) return;
+    const ref = catalogRef();
+    if(!ref) return;
+    const data = getLocalCatalogs();
+    try{
+      await ref.set(Object.assign({}, data, {
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || 'local',
+        reason: reason || 'local-change'
+      }), { merge: true });
+      log('catálogo salvo online');
+    }catch(e){
+      console.warn('[Dlinky Global] erro ao salvar online:', e);
+    }
+  }
+
+  function scheduleUpload(reason){
+    if(syncingFromCloud) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>uploadCatalogNow(reason), 650);
+  }
+
+  function patchLocalStorage(){
+    if(window.__DLINKY_GLOBAL_FIREBASE_STORAGE_PATCH__) return;
+    window.__DLINKY_GLOBAL_FIREBASE_STORAGE_PATCH__ = true;
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    const originalRemoveItem = localStorage.removeItem.bind(localStorage);
+
+    localStorage.setItem = function(key, value){
+      const result = originalSetItem(key, value);
+      if(!syncingFromCloud && Object.values(KEYS).includes(key)){
+        scheduleUpload('set-' + key);
+      }
+      return result;
+    };
+
+    localStorage.removeItem = function(key){
+      const result = originalRemoveItem(key);
+      if(!syncingFromCloud && Object.values(KEYS).includes(key)){
+        scheduleUpload('remove-' + key);
+      }
+      return result;
+    };
+  }
+
+  function startSnapshot(){
+    const ref = catalogRef();
+    if(!ref) return false;
+
+    try{
+      ref.onSnapshot(async snap=>{
+        if(snap.exists){
+          setLocalCatalogs(snap.data() || {});
+          log('catálogo carregado online');
+        }else{
+          await uploadCatalogNow('first-create');
+        }
+      }, err=>console.warn('[Dlinky Global] snapshot erro:', err));
+      return true;
+    }catch(e){
+      console.warn('[Dlinky Global] snapshot falhou:', e);
+      return false;
+    }
+  }
+
+  function boot(){
+    patchLocalStorage();
+
+    let tries = 0;
+    const timer = setInterval(()=>{
+      tries++;
+      if(startSnapshot()){
+        clearInterval(timer);
+        setTimeout(()=>uploadCatalogNow('boot-sync'), 1200);
+      }
+      if(tries > 30){
+        clearInterval(timer);
+        console.warn('[Dlinky Global] Firebase não iniciou. Verifique se os scripts firebase estão no index.html.');
+      }
+    }, 500);
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+
+})();
