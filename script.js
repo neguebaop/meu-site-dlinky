@@ -11776,3 +11776,113 @@ document.addEventListener("click",(e)=>{
   window.addEventListener('hashchange',()=>setTimeout(()=>{if($('#tab-store')?.classList.contains('active') && $('.shop-tabs [data-shop-tab="other"].active')) renderOutrosSelos();},250));
   setTimeout(()=>{if($('#tab-store')?.classList.contains('active') && $('.shop-tabs [data-shop-tab="other"].active')) renderOutrosSelos();},500);
 })();
+
+/* ===== FIX FINAL: restaurar molduras do inventário para Admin/Loja sem mexer nos selos ===== */
+(function(){
+  if(window.__dlinkyRestoreFramesFromInventoryFix) return;
+  window.__dlinkyRestoreFramesFromInventoryFix = true;
+
+  const $=(s,r=document)=>r.querySelector(s);
+  const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const USER_KEY='dlinkyUser';
+  const FRAMES_KEY='dlinkyCustomFrames';
+
+  function readJSON(k,fb){try{const v=JSON.parse(localStorage.getItem(k)||'');return v??fb}catch(e){return fb}}
+  function writeJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+  function userObj(){try{return (typeof user!=='undefined'&&user)?user:readJSON(USER_KEY,{})}catch(e){return readJSON(USER_KEY,{})}}
+  function frames(){const arr=readJSON(FRAMES_KEY,[]);return Array.isArray(arr)?arr:[]}
+  function saveFrames(arr){writeJSON(FRAMES_KEY,arr)}
+  function num(v){const m=String(v||'').match(/\d+/);return m?Number(m[0]):40}
+  function priceFor(f,d){const b=num(f.price||40); if(f.prices&&f.prices[d]!=null)return Number(f.prices[d]); if(d==='Permanente')return b*2; if(d==='15 dias')return b*3; if(d==='7 dias')return Math.max(b,Math.round(b*1.5)); return b;}
+  function toastMsg(t){try{if(typeof toast==='function')return toast(t)}catch(e){} console.log(t)}
+
+  function framesFromInventory(){
+    const u=userObj();
+    const inv=Array.isArray(u.inventory)?u.inventory:[];
+    return inv.filter(it=>{
+      if(!it || !it.url) return false;
+      const txt=((it.type||'')+' '+(it.name||'')+' '+(it.value||'')).toLowerCase();
+      return txt.includes('frame') || txt.includes('moldura') || it.url.match(/\.(gif|png|apng|webp|jpg|jpeg)(\?|$)/i);
+    }).map((it,i)=>{
+      const base=num(it.price||40);
+      return {
+        id:it.id||it.value||('restored-'+i+'-'+Date.now()),
+        name:it.name||'Moldura restaurada',
+        desc:it.desc||it.description||'Moldura já existente no inventário',
+        price:(base||40)+' Linkwuans',
+        url:it.url,
+        prices:it.prices||{'3 dias':base||40,'7 dias':Math.max(base||40,Math.round((base||40)*1.5)),'15 dias':(base||40)*3,'Permanente':(base||40)*2},
+        restoredFromInventory:true
+      };
+    });
+  }
+
+  function syncFrames(){
+    const current=frames().filter(f=>f && f.url);
+    const byUrl=new Map(current.map(f=>[String(f.url),f]));
+    framesFromInventory().forEach(f=>{ if(f.url && !byUrl.has(String(f.url))) byUrl.set(String(f.url),f); });
+    const merged=Array.from(byUrl.values());
+    if(merged.length!==current.length) saveFrames(merged);
+    return merged;
+  }
+
+  function renderAdminFramesFixed(){
+    const list=$('#adminFramesList'); if(!list) return;
+    const arr=syncFrames();
+    list.innerHTML=arr.length?arr.map((f,i)=>`<div class="admin-item admin-frame-row"><img src="${esc(f.url)}" alt="${esc(f.name||'Moldura')}"><div><b>${esc(f.name||'Moldura')}</b><br><small>${esc(f.price||'40 Linkwuans')} • ${esc(f.desc||'Moldura cadastrada')}</small></div><button class="delete" type="button" data-restore-del-frame="${i}">×</button></div>`).join(''):'<p>Nenhuma moldura custom adicionada ainda.</p>';
+    const sel=$('#giftItemSelect');
+    if(sel) sel.innerHTML='<option value="">Selecione uma moldura da loja</option>'+arr.map((f,i)=>`<option value="${i}">${esc(f.name||'Moldura')} — ${priceFor(f,'3 dias')} Linkwuans</option>`).join('');
+  }
+
+  function renderFramesShopFixed(){
+    const grid=$('#shopGrid'); if(!grid) return;
+    const arr=syncFrames();
+    $$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')==='frames'));
+    try{localStorage.setItem('dlinkyShopTab','frames');localStorage.setItem('dlinkyShopTabFixed','frames')}catch(e){}
+    grid.className='asset-grid frames-shop-grid';
+    if(!arr.length){
+      grid.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';
+      window.__dlinkyVisibleFrames=[];
+      return;
+    }
+    const av=esc((userObj().avatar)||'');
+    window.__dlinkyVisibleFrames=arr.map((f,i)=>[f.name||'Moldura',f.price||'40 Linkwuans','custom-'+i,f.desc||'Moldura cadastrada','Disponível',f.url||'']);
+    grid.innerHTML=arr.map((f,i)=>{const d=f.__duration||'3 dias';return `<div class="asset-card frame-shop-card custom-only-frame" data-frame-card="${i}" data-base-price="${num(f.price||40)}"><div class="asset-preview inv-preview real-inv-preview frame-shop-preview real-frame-preview"><span class="real-inv-avatar frame-avatar-demo zyo-person-demo" style="background-image:url('${av}')"></span><img class="real-inv-frame frame-img big" src="${esc(f.url)}" alt="${esc(f.name||'Moldura')}"></div><div class="asset-body frame-info clean-info"><b>${esc(f.name||'Moldura')}</b><small>${esc(f.desc||'Moldura cadastrada')}</small><div class="frame-price">Preço: <b data-price-label="${i}" data-v3-price="${i}">${priceFor(f,d)} Linkwuans</b></div><select class="frame-duration" data-frame-duration="${i}" data-v3-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select><button class="btn primary small" type="button" data-confirm-frame="${i}" data-v3-buy-frame="${i}">Comprar</button></div></div>`}).join('');
+  }
+
+  // Intercepta só a aba Molduras, para ela não mostrar vazio quando a moldura existe no inventário.
+  window.addEventListener('pointerdown',function(e){
+    const btn=e.target&&e.target.closest&&e.target.closest('.shop-tabs [data-shop-tab="frames"]');
+    if(!btn) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    renderFramesShopFixed();
+  },true);
+  window.addEventListener('click',function(e){
+    const btn=e.target&&e.target.closest&&e.target.closest('.shop-tabs [data-shop-tab="frames"]');
+    if(!btn) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    renderFramesShopFixed();
+  },true);
+
+  document.addEventListener('click',function(e){
+    const del=e.target&&e.target.closest&&e.target.closest('[data-restore-del-frame]');
+    if(!del) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    const arr=syncFrames(); arr.splice(Number(del.dataset.restoreDelFrame),1); saveFrames(arr); renderAdminFramesFixed(); toastMsg('Moldura removida da loja.');
+  },true);
+
+  const oldRenderAdmin=window.renderAdminList;
+  window.renderAdminList=function(){try{if(typeof oldRenderAdmin==='function')oldRenderAdmin()}catch(e){} renderAdminFramesFixed();};
+  try{renderAdminList=window.renderAdminList}catch(e){}
+
+  const oldRenderShop=window.renderShop;
+  window.renderShop=function(){
+    const active=$('.shop-tabs [data-shop-tab="frames"].active');
+    if(active){renderFramesShopFixed();return;}
+    try{if(typeof oldRenderShop==='function')return oldRenderShop.apply(this,arguments)}catch(e){}
+  };
+  try{renderShop=window.renderShop}catch(e){}
+
+  setTimeout(()=>{syncFrames();renderAdminFramesFixed();if($('#tab-store')?.classList.contains('active') && $('.shop-tabs [data-shop-tab="frames"].active')) renderFramesShopFixed();},300);
+})();
