@@ -54,51 +54,8 @@ const presetUrls={
   banner2:'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
   avatar1:'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif'
 };
-const defaultUser={name:'linkroubadao',slug:'linkroubadao',email:'',bio:'o mundo esta perdido. Eu serei a salvaçao',avatar:presetUrls.avatar1,banner:presetUrls.banner1,bg:presetUrls.bg1,video:'',frame:'',music:'',welcome:'Clique aqui',color:'#a855f7',particles:true,particleType:'snow',verified:true,hideViews:false,template:'default',decoration:'purple-ring',views:0,links:[{name:'Instagram',url:'https://instagram.com/'},{name:'TikTok',url:'https://tiktok.com/'},{name:'Discord',url:'https://discord.com/'},{name:'YouTube',url:'https://youtube.com/'}],socials:[{name:'Instagram',url:'https://instagram.com/',on:true},{name:'Spotify',url:'https://spotify.com/',on:true},{name:'TikTok',url:'https://tiktok.com/',on:true},{name:'Discord',url:'https://discord.com/',on:false},{name:'YouTube',url:'https://youtube.com/',on:false}],history:['Conta criada no Dlinky','Tema roxo aplicado','Sistema de decorações ativado']};
+const defaultUser={name:'linkroubadao',slug:'linkroubadao',email:'',bio:'o mundo esta perdido. Eu serei a salvaçao',avatar:'',banner:'',bg:'',video:'',frame:'',music:'',welcome:'Clique aqui',color:'#a855f7',particles:true,particleType:'snow',verified:true,hideViews:false,template:'default',decoration:'purple-ring',views:0,links:[{name:'Instagram',url:'https://instagram.com/'},{name:'TikTok',url:'https://tiktok.com/'},{name:'Discord',url:'https://discord.com/'},{name:'YouTube',url:'https://youtube.com/'}],socials:[{name:'Instagram',url:'https://instagram.com/',on:true},{name:'Spotify',url:'https://spotify.com/',on:true},{name:'TikTok',url:'https://tiktok.com/',on:true},{name:'Discord',url:'https://discord.com/',on:false},{name:'YouTube',url:'https://youtube.com/',on:false}],history:['Conta criada no Dlinky','Tema roxo aplicado','Sistema de decorações ativado']};
 let user=loadUser();let assetMode='backgrounds';
-
-/* ===== RESET MÍNIMO DE MOLDURAS ANTIGAS — NÃO MEXE NA LOJA ===== */
-(function(){
-  const RESET_KEY = "__dlinky_reset_molduras_antigas_minimo_v2";
-  if(localStorage.getItem(RESET_KEY) === "1") return;
-
-  function safeJSON(k, fallback){
-    try{return JSON.parse(localStorage.getItem(k) || JSON.stringify(fallback));}
-    catch(e){return fallback;}
-  }
-
-  // limpa só os dados antigos de moldura/inventário
-  localStorage.setItem("dlinkyCustomFrames", "[]");
-  localStorage.removeItem("dlinkyCustomFrames_BACKUP");
-  localStorage.removeItem("dlinkyFrames");
-  localStorage.removeItem("dlinkyFrames_BACKUP");
-  localStorage.removeItem("dlinkyFrameVault");
-  localStorage.removeItem("dlinkyFrameVault_BACKUP");
-  localStorage.removeItem("dlinkyAdminGifts");
-  localStorage.removeItem("dlinkyAdminGifts_BACKUP");
-  localStorage.removeItem("dlinkyLastGoodFrameUrl");
-  localStorage.removeItem("dlinkyEquippedFrame");
-  localStorage.removeItem("dlinkySelectedFrame");
-  localStorage.removeItem("dlinkyCurrentFrame");
-
-  const u = safeJSON("dlinkyUser", {});
-  if(u && typeof u === "object"){
-    u.inventory = [];
-    u.frame = "";
-    u.frameUrl = "";
-    u.frameName = "";
-    u.frameDesc = "";
-    u.activeFrameId = "";
-    u.equippedFrame = "";
-    u.selectedFrame = "";
-    u.currentFrame = "";
-    if(String(u.decoration || "").includes("frame")) u.decoration = "none";
-    localStorage.setItem("dlinkyUser", JSON.stringify(u));
-    try{ user = {...user, ...u}; }catch(e){}
-  }
-
-  localStorage.setItem(RESET_KEY, "1");
-})();
 
 function loadUser(){try{return {...defaultUser,...JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}}catch{return {...defaultUser}}}
 function saveUser(){localStorage.setItem('dlinkyUser',JSON.stringify(user));renderDash();toast('Salvo com sucesso!')}
@@ -145,7 +102,7 @@ $('#saveImages').onclick=()=>{
   user.video=novoVideo;
   if(novaFrame) user.frame=novaFrame;
 
-  if(user.avatar) localStorage.setItem('dlinkyAvatarPreserve_'+(user.email||user.slug||'local'),user.avatar);
+  
 
   addHistory('Imagens/fundos alterados');
   saveUser();
@@ -167,8 +124,8 @@ if(sessionStorage.getItem(__entryKey)==='1'){
 }else{
   $('#entryOverlay').classList.remove('hidden');
 }
-$('#profileName').textContent=user.name;$('#profileSlug2').textContent='@'+user.slug;$('#profileBio').textContent=user.bio||'';$('#verifiedBadge').style.display=user.verified?'inline':'none';$('#profileViews').style.display=user.hideViews?'none':'inline-block';$('#profileViews').textContent=`👁 ${user.views||0} views`;const __avatarClean=user.avatar||localStorage.getItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'))||'';
-if(__avatarClean){user.avatar=__avatarClean;localStorage.setItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'),__avatarClean);}
+$('#profileName').textContent=user.name;$('#profileSlug2').textContent='@'+user.slug;$('#profileBio').textContent=user.bio||'';$('#verifiedBadge').style.display=user.verified?'inline':'none';$('#profileViews').style.display=user.hideViews?'none':'inline-block';$('#profileViews').textContent=`👁 ${user.views||0} views`;const __avatarClean=user.avatar||'';
+if(__avatarClean){user.avatar=__avatarClean;}
 setBg($('#profileAvatar'),__avatarClean);setBg($('#profileBanner'),user.banner);setBg($('#profileBg'),user.bg);const vid=$('#profileVideo');vid.classList.remove('show');vid.removeAttribute('src');if(user.video){vid.src=user.video;vid.load();vid.classList.add('show');vid.play().catch(()=>{})}$('#profileFrame').src=user.frame||'';$('#profileFrame').style.display=user.frame?'block':'none';const deco=$('#avatarDecoration');deco.className='avatar-decoration '+(user.decoration||'none');$('#profileLinks').innerHTML=(user.links||[]).map(l=>`<a target="_blank" href="${safeUrl(l.url)}">${escapeHtml(l.name)}</a>`).join('');$('#profileSocials').innerHTML=(user.socials||[]).filter(s=>s.on).map(s=>`<a class="social-icon brand-${String(s.name||'link').toLowerCase().replace(/[^a-z0-9]/g,'')}" target="_blank" title="${s.name}" href="${safeUrl(s.url)}"><i class="${icons[s.name]||'fa-solid fa-link'}"></i></a>`).join('');const audio=$('#profileAudio'); if(audio){ const ms=user.music||''; if(audio.getAttribute('src')!==ms){ audio.src=ms; audio.load(); } } createProfileParticles(user.particleType||'snow')}
 $('#entryOverlay').onclick=()=>{
   const __entryKey='dlinky_entry_ok_'+(user.slug||user.email||'local');
