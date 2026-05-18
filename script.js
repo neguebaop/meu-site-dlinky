@@ -9172,7 +9172,7 @@ document.addEventListener("click",(e)=>{
   function normalizeFrame(raw,i){const url=String(raw?.url||raw?.frameUrl||'').trim();const price=num(raw?.price??raw?.basePrice??raw?.prices?.['3 dias']??20)||20;const prices=Object.assign({},raw?.prices||{});['3 dias','7 dias','15 dias','Permanente'].forEach(k=>{prices[k]=num(prices[k])||0});if(!prices['3 dias'])prices['3 dias']=price;if(!prices['7 dias'])prices['7 dias']=Math.round(price*1.5);if(!prices['15 dias'])prices['15 dias']=Math.round(price*2);if(!prices['Permanente'])prices['Permanente']=Math.round(price*3);return {id:String(raw?.id||slug(url||raw?.name||i)),name:String(raw?.name||raw?.title||'Moldura'),desc:String(raw?.desc||raw?.description||''),url,price,prices};}
   function allFrames(){const src=[...read(FRAMES_KEY,[]),...read(OLD_FRAMES_KEY,[]),...(userData().customFrames||[])];const map=new Map();src.forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const arr=[...map.values()];write(FRAMES_KEY,arr);write(OLD_FRAMES_KEY,arr);const u=userData();u.customFrames=arr;write(USER_KEY,u);return arr;}
   function saveFrames(arr){const map=new Map();(Array.isArray(arr)?arr:[]).forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const clean=[...map.values()];write(FRAMES_KEY,clean);write(OLD_FRAMES_KEY,clean);const u=userData();u.customFrames=clean;saveUser(u);return clean;}
-  function framePrice(f,d='3 dias'){return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
+  function framePrice(f,d='3 dias'){const p=Number(f?.prices?.[d]);if(Number.isFinite(p)&&p>0)return p;return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
   function frameUrl(it){return String(it?.url||it?.frameUrl||'').trim();}
   function isFrameItem(it){return !!(it&&frameUrl(it)&&/frame|moldur/i.test(String(it.type||it.kind||it.name||'frame')));}
   function itemId(it){return String(it?.id||slug(frameUrl(it)||it?.name));}
@@ -11699,7 +11699,7 @@ document.addEventListener("click",(e)=>{
   function durationMap(){return readJSON(DUR_KEY,{})}
   function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
   function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
-  function priceFor(frame,dur){ return priceNumber(frame.price); }
+  function priceFor(frame,dur){const p=Number(frame?.prices?.[dur]);if(Number.isFinite(p)&&p>0)return p;return priceNumber(frame?.price);}
   function getAvatar(){
     return String((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||'').trim();
   }
@@ -11858,45 +11858,6 @@ document.addEventListener("click",(e)=>{
 
   window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
   setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
-})();
-
-
-/* ===== FIX FINAL SOMENTE LOJA: preço não aumenta + avatar real no preview ===== */
-(function(){
-  const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-  function num(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
-  function frames(){
-    try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch(e){return []}
-  }
-  function avatar(){return (window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||''}
-  function apply(){
-    const store=q('#tab-store'); if(!store||!store.classList.contains('active'))return;
-    const av=avatar();
-    if(av){
-      qa('.frame-avatar-demo,.real-inv-avatar,.zyo-person-demo',store).forEach(el=>{
-        el.style.backgroundImage='url("'+av.replace(/"/g,'%22')+'")';
-        el.style.backgroundSize='cover';
-        el.style.backgroundPosition='center';
-        el.style.backgroundColor='transparent';
-      });
-    }
-    const arr=frames();
-    qa('[data-price-label],[data-v3-price]',store).forEach((el,i)=>{
-      const card=el.closest('[data-frame-card]');
-      const idx=Number(card?.dataset?.frameCard ?? i);
-      const f=arr[idx];
-      const p=num(f?.price||f?.prices?.['3 dias']||el.textContent||40);
-      el.textContent=p+' Linkwuans';
-    });
-  }
-  document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]'))setTimeout(apply,0)},true);
-  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]'))setTimeout(apply,80)},true);
-  const oldRS=window.renderShop;
-  if(typeof oldRS==='function'&&!oldRS.__dlinkyPriceAvatarFix){
-    const patched=function(){const r=oldRS.apply(this,arguments);setTimeout(apply,0);setTimeout(apply,80);return r};
-    patched.__dlinkyPriceAvatarFix=true; window.renderShop=patched; try{renderShop=patched}catch(e){}
-  }
-  setTimeout(apply,200);
 })();
 
 
@@ -12141,4 +12102,81 @@ document.addEventListener("click",(e)=>{
   const st=document.createElement('style');
   st.textContent='#frameBuyModal.show{pointer-events:auto!important;z-index:999999!important}#frameBuyModal.show *{pointer-events:auto!important}#confirmFrameBuy{pointer-events:auto!important;cursor:pointer!important;opacity:1!important;visibility:visible!important}';
   document.head.appendChild(st);
+})();
+
+
+/* ===== FIX CIRÚRGICO FINAL: Linkwuans da moldura sem piscar =====
+   Só sincroniza o preço do card/modal com os preços cadastrados no Admin.
+   Não mexe em avatar, música, perfil, admin, abas ou HTML da loja.
+*/
+(function(){
+  if(window.__dlinkyLinkwuansSemPiscarFinal) return;
+  window.__dlinkyLinkwuansSemPiscarFinal = true;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function read(k,fb){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(fb))}catch(e){return fb}}
+  function num(v){const m=String(v||'').match(/\d+/);return m?Number(m[0]):0}
+  function norm(v){return String(v||'').trim().toLowerCase()}
+  function frames(){
+    const list=[];
+    ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'].forEach(k=>{
+      const arr=read(k,[]); if(Array.isArray(arr)) list.push(...arr);
+    });
+    const seen=new Set();
+    return list.filter(f=>{
+      const key=norm(f?.url||f?.frameUrl||f?.id||f?.name);
+      if(!key||seen.has(key))return false; seen.add(key); return true;
+    });
+  }
+  function priceOf(f,dur,fallback){
+    const p=Number(f?.prices?.[dur]);
+    if(Number.isFinite(p)&&p>0)return p;
+    const p2=Number(f?.precos?.[dur]);
+    if(Number.isFinite(p2)&&p2>0)return p2;
+    if(dur==='Permanente'){
+      const pp=Number(f?.prices?.Permanente||f?.precos?.Permanente);
+      if(Number.isFinite(pp)&&pp>0)return pp;
+    }
+    return num(f?.price||f?.preco||f?.valor||fallback||0);
+  }
+  function frameForCard(card,idx){
+    const arr=frames();
+    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.real-inv-frame,.frame-img');
+    const src=norm(img?.getAttribute?.('src')||img?.src||'');
+    if(src){const by=arr.find(f=>norm(f?.url||f?.frameUrl)===src); if(by)return by;}
+    return arr[idx] || null;
+  }
+  function sync(){
+    const store=q('#tab-store');
+    if(!store || !store.classList.contains('active')) return;
+    qa('[data-frame-card],.frame-shop-card,.asset-card',store).forEach((card,i)=>{
+      const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration]');
+      if(!sel) return;
+      const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||i);
+      const f=frameForCard(card,idx);
+      const label=card.querySelector('[data-price-label],[data-v3-price]');
+      if(!label) return;
+      const price=priceOf(f,sel.value,label.textContent);
+      if(price>0) label.textContent=price+' Linkwuans';
+    });
+    const m=q('#frameBuyModal.show');
+    if(m){
+      const name=q('#frameBuyName')?.textContent?.trim();
+      const dur=q('#frameBuyDuration')?.textContent?.trim()||m.dataset.duration||'3 dias';
+      const img=norm(q('#frameBuyImg')?.getAttribute('src')||'');
+      const f=frames().find(x=>norm(x?.url||x?.frameUrl)===img) || frames().find(x=>norm(x?.name)===norm(name));
+      const label=q('#frameBuyPrice');
+      if(label){
+        const price=priceOf(f,dur,label.textContent);
+        if(price>0){ label.textContent=price+' Linkwuans'; m.dataset.price=String(price); }
+      }
+    }
+  }
+  document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration]')){sync();setTimeout(sync,30);setTimeout(sync,160);}},true);
+  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame],#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){setTimeout(sync,30);setTimeout(sync,160);setTimeout(sync,350);}},true);
+  const mo=new MutationObserver(()=>sync());
+  function start(){const s=q('#tab-store');if(s)mo.observe(s,{childList:true,subtree:true});sync();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+  setTimeout(sync,200);setTimeout(sync,800);
 })();
