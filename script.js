@@ -11887,142 +11887,347 @@ document.addEventListener("click",(e)=>{
   setTimeout(()=>{syncFrames();renderAdminFramesFixed();if($('#tab-store')?.classList.contains('active') && $('.shop-tabs [data-shop-tab="frames"].active')) renderFramesShopFixed();},300);
 })();
 
-/* ===== FIX DEFINITIVO: abas da loja não pulam sozinhas ===== */
+
+/* ===== DLINKY HOTFIX SEGURO — restaura avatar/perfil sem mexer na loja/música ===== */
 (function(){
-  if(window.__dlinkyShopTabsNeverJumpFix) return;
-  window.__dlinkyShopTabsNeverJumpFix = true;
+  if(window.__DLINKY_RESTAURA_PERFIL_SEGURO_1805__) return;
+  window.__DLINKY_RESTAURA_PERFIL_SEGURO_1805__ = true;
 
-  const $=(s,r=document)=>r.querySelector(s);
-  const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
-  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const USER_KEY='dlinkyUser';
-  const FRAMES_KEY='dlinkyCustomFrames';
-  const SEL_KEYS=['dlinkyCleanAdminSelosCatalog','dlinkyAdminSelos','dlinkyCustomSelos','dlinkySelos'];
+  const USER_KEY = 'dlinkyUser';
+  const BACKUP_PREFIX = 'dlinkySafeProfileBackup_';
+  const q = (s,r=document)=>r.querySelector(s);
 
-  function read(k,fb){try{const v=JSON.parse(localStorage.getItem(k)||'');return v??fb}catch(e){return fb}}
-  function write(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
-  function userObj(){try{return (typeof user!=='undefined'&&user)?user:read(USER_KEY,{})}catch(e){return read(USER_KEY,{})}}
-  function saveUserObj(u){write(USER_KEY,u);try{if(typeof user!=='undefined'&&user)Object.assign(user,u)}catch(e){}}
-  function num(v){const m=String(v||'').match(/\d+/);return m?Number(m[0]):40}
-  function priceForFrame(f,d){const b=num(f.price||40);if(f.prices&&f.prices[d]!=null)return Number(f.prices[d]);if(d==='Permanente')return b*2;if(d==='15 dias')return b*3;if(d==='7 dias')return Math.max(b,Math.round(b*1.5));return b}
-  function toastMsg(t){try{if(typeof toast==='function')return toast(t)}catch(e){}console.log(t)}
-
-  function frames(){
-    const saved=Array.isArray(read(FRAMES_KEY,[]))?read(FRAMES_KEY,[]):[];
-    const u=userObj();
-    const inv=Array.isArray(u.inventory)?u.inventory:[];
-    const map=new Map();
-    saved.filter(f=>f&&f.url).forEach(f=>map.set(String(f.url),f));
-    inv.filter(it=>it&&it.url).forEach((it,i)=>{
-      const txt=((it.type||'')+' '+(it.name||'')+' '+(it.value||'')).toLowerCase();
-      if(!(txt.includes('frame')||txt.includes('moldura')||String(it.url).match(/\.(gif|png|apng|webp|jpg|jpeg)(\?|$)/i))) return;
-      if(!map.has(String(it.url))){
-        const b=num(it.price||40);
-        map.set(String(it.url),{id:it.id||it.value||('inv-'+i),name:it.name||'Moldura',desc:it.desc||'Moldura do inventário',price:b+' Linkwuans',url:it.url,prices:it.prices||{'3 dias':b,'7 dias':Math.max(b,Math.round(b*1.5)),'15 dias':b*3,'Permanente':b*2},restoredFromInventory:true});
-      }
-    });
-    const arr=Array.from(map.values());
-    if(arr.length!==saved.filter(f=>f&&f.url).length) write(FRAMES_KEY,arr);
-    return arr;
+  function cleanSlug(v){
+    return String(v||'usuario')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9_-]/g,'')
+      .slice(0,30) || 'usuario';
   }
 
-  function selos(){
-    const map=new Map();
-    SEL_KEYS.forEach(k=>{
-      const arr=read(k,[]);
-      if(Array.isArray(arr)) arr.forEach((s,i)=>{
-        if(!s) return;
-        const id=String(s.id||s.seloId||s.url||s.img||s.image||s.name||s.nome||i);
-        map.set(id,{...s,id});
-      });
-    });
-    return Array.from(map.values());
+  function readJSON(k,fb){
+    try{
+      const raw = localStorage.getItem(k);
+      if(!raw) return fb;
+      const v = JSON.parse(raw);
+      return v && typeof v === 'object' ? v : fb;
+    }catch(e){ return fb; }
   }
 
-  function setActive(mode){
-    $$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===mode));
-    window.__dlinkyStableShopMode=mode;
-    try{localStorage.setItem('dlinkyShopTab',mode);localStorage.setItem('dlinkyShopTabFixed',mode);localStorage.setItem('dlinkyShopStableTab',mode)}catch(e){}
+  function writeJSON(k,v){
+    try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){}
   }
 
-  function renderCoins(grid){
-    const data=[['345 Linkwuans','R$ 30,00',345],['650 Linkwuans','R$ 50,00',650],['1450 Linkwuans','R$ 100,00',1450],['3300 Linkwuans','R$ 200,00',3300]];
-    grid.className='asset-grid';
-    grid.innerHTML=data.map((it,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">◈</div><div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}" data-buy-shop="${i}">Comprar</button></div></div>`).join('');
-  }
-  function renderEffects(grid){
-    const data=[['Neon no Nome','180 Linkwuans','neonName'],['Nome Brilhante','220 Linkwuans','shineName'],['Nome Colorido','240 Linkwuans','rainbowName'],['Ocultar Views','150 Linkwuans','hideViews']];
-    grid.className='asset-grid';
-    grid.innerHTML=data.map((it,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">✦</div><div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}" data-buy-shop="${i}">Comprar</button></div></div>`).join('');
-  }
-  function renderFrames(grid){
-    const arr=frames();
-    setActive('frames');
-    grid.className='asset-grid frames-shop-grid';
-    if(!arr.length){grid.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return;}
-    const av=esc(userObj().avatar||'');
-    window.__dlinkyVisibleFrames=arr.map((f,i)=>[f.name||'Moldura',f.price||'40 Linkwuans','custom-'+i,f.desc||'Moldura cadastrada','Disponível',f.url||'']);
-    grid.innerHTML=arr.map((f,i)=>{const d=f.__duration||'3 dias';return `<div class="asset-card frame-shop-card custom-only-frame" data-frame-card="${i}" data-base-price="${num(f.price||40)}"><div class="asset-preview inv-preview real-inv-preview frame-shop-preview real-frame-preview"><span class="real-inv-avatar frame-avatar-demo zyo-person-demo" style="background-image:url('${av}')"></span><img class="real-inv-frame frame-img big" src="${esc(f.url)}" alt="${esc(f.name||'Moldura')}"></div><div class="asset-body frame-info clean-info"><b>${esc(f.name||'Moldura')}</b><small>${esc(f.desc||'Moldura cadastrada')}</small><div class="frame-price">Preço: <b data-price-label="${i}" data-v3-price="${i}">${priceForFrame(f,d)} Linkwuans</b></div><select class="frame-duration" data-frame-duration="${i}" data-v3-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select><button class="btn primary small" type="button" data-confirm-frame="${i}" data-v3-buy-frame="${i}">Comprar</button></div></div>`}).join('');
-  }
-  function renderOther(grid){
-    const arr=selos();
-    setActive('other');
-    grid.className='asset-grid dlinky-selos-shop-grid';
-    if(!arr.length){grid.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';return;}
-    const u=userObj();
-    const owned=new Set([...(Array.isArray(u.selosOwned)?u.selosOwned:[]),...(Array.isArray(read('dlinkyOwnedSelosClean',[]))?read('dlinkyOwnedSelosClean',[]):[])].map(String));
-    grid.innerHTML=arr.map(s=>{const id=String(s.id);const url=s.url||s.img||s.image||'';const name=s.name||s.nome||'Selo';const desc=s.desc||s.description||'Selo personalizado';const price=Number(s.price||s.preco||120)||120;return `<div class="asset-card dlinky-selo-shop-card"><div class="asset-preview shop-preview">${url?`<img src="${esc(url)}" alt="${esc(name)}" style="max-width:80px;max-height:80px;object-fit:contain">`:'🏷️'}</div><div class="asset-body"><b>${esc(name)}</b><small>${esc(desc)}</small><small>${price} Linkwuans</small><button class="btn primary small" type="button" data-clean-buy-selo="${esc(id)}">${owned.has(id)?'Comprado':'Comprar'}</button></div></div>`}).join('');
+  function currentUser(){
+    return readJSON(USER_KEY,{});
   }
 
-  function renderStable(mode){
-    const grid=$('#shopGrid');
-    if(!grid || !$('#tab-store')?.classList.contains('active')) return;
-    mode=mode||window.__dlinkyStableShopMode||localStorage.getItem('dlinkyShopStableTab')||localStorage.getItem('dlinkyShopTabFixed')||localStorage.getItem('dlinkyShopTab')||'coins';
-    setActive(mode);
-    if(mode==='frames') return renderFrames(grid);
-    if(mode==='other') return renderOther(grid);
-    if(mode==='effects') return renderEffects(grid);
-    return renderCoins(grid);
+  function backupKey(u){
+    const id = (u.email || u.slug || u.name || 'local').toLowerCase().trim();
+    return BACKUP_PREFIX + cleanSlug(id.replace('@','_'));
   }
 
-  function lockFor(mode){
-    window.__dlinkyStableShopMode=mode;
-    setActive(mode);
-    renderStable(mode);
-    [60,160,350,700,1200,2200,4000].forEach(ms=>setTimeout(()=>renderStable(mode),ms));
+  function isBadName(n){
+    const v = String(n||'').trim().toLowerCase();
+    return !v || v === 'usuário' || v === 'usuario';
   }
 
-  document.addEventListener('pointerdown',function(e){
-    const btn=e.target&&e.target.closest&&e.target.closest('.shop-tabs [data-shop-tab]');
-    if(!btn) return;
-    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    lockFor(btn.dataset.shopTab||'coins');
-  },true);
-  document.addEventListener('click',function(e){
-    const btn=e.target&&e.target.closest&&e.target.closest('.shop-tabs [data-shop-tab]');
-    if(!btn) return;
-    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    lockFor(btn.dataset.shopTab||'coins');
-  },true);
+  function goodFields(u){
+    return !!(
+      (u && u.avatar) ||
+      (u && u.banner) ||
+      (u && u.bg) ||
+      (u && u.video) ||
+      (u && u.frame) ||
+      (u && u.music) ||
+      (u && u.bio) ||
+      (u && !isBadName(u.name))
+    );
+  }
 
-  const oldRenderShop=window.renderShop;
-  window.renderShop=function(){
-    const mode=window.__dlinkyStableShopMode||localStorage.getItem('dlinkyShopStableTab')||localStorage.getItem('dlinkyShopTabFixed')||localStorage.getItem('dlinkyShopTab');
-    if($('#tab-store')?.classList.contains('active') && mode) { renderStable(mode); return; }
-    try{if(typeof oldRenderShop==='function') return oldRenderShop.apply(this,arguments)}catch(e){}
-  };
-  try{renderShop=window.renderShop}catch(e){}
+  function saveBackup(u){
+    if(!u || !goodFields(u)) return;
+    const old = readJSON(backupKey(u),{});
+    const merged = Object.assign({}, old, u, { backupAt: Date.now() });
+    writeJSON(backupKey(merged), merged);
 
-  const mo=new MutationObserver(()=>{
-    if(!$('#tab-store')?.classList.contains('active')) return;
-    const mode=window.__dlinkyStableShopMode||localStorage.getItem('dlinkyShopStableTab');
-    if(mode){
-      $$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===mode));
+    // backup extra por slug, ajuda quando muda email/conta
+    if(merged.slug) writeJSON(BACKUP_PREFIX + cleanSlug(merged.slug), merged);
+  }
+
+  function findBackup(u){
+    const tries = [
+      backupKey(u||{}),
+      BACKUP_PREFIX + cleanSlug((u&&u.slug)||''),
+      BACKUP_PREFIX + cleanSlug((u&&u.name)||'')
+    ].filter(Boolean);
+
+    for(const k of tries){
+      const b = readJSON(k,null);
+      if(b && goodFields(b)) return b;
     }
+
+    // procura qualquer backup bom recente
+    try{
+      let best = null;
+      for(let i=0;i<localStorage.length;i++){
+        const k = localStorage.key(i);
+        if(!k || !k.startsWith(BACKUP_PREFIX)) continue;
+        const b = readJSON(k,null);
+        if(!b || !goodFields(b)) continue;
+        if(!best || Number(b.backupAt||0) > Number(best.backupAt||0)) best = b;
+      }
+      return best;
+    }catch(e){}
+    return null;
+  }
+
+  function mergeSafe(incoming){
+    const u = Object.assign({}, incoming || {});
+    const b = findBackup(u);
+
+    if(b){
+      ['avatar','banner','bg','video','frame','music','welcome','bio','color','particleType','decoration'].forEach(k=>{
+        if((u[k] === undefined || u[k] === null || u[k] === '') && b[k]) u[k] = b[k];
+      });
+
+      if(isBadName(u.name) && !isBadName(b.name)) u.name = b.name;
+      if((!u.slug || cleanSlug(u.slug)==='usuario') && b.slug) u.slug = b.slug;
+
+      if(!Array.isArray(u.socials) || !u.socials.length) u.socials = Array.isArray(b.socials) ? b.socials : u.socials;
+      if(!Array.isArray(u.links) || !u.links.length) u.links = Array.isArray(b.links) ? b.links : u.links;
+      if(!Array.isArray(u.tags) || !u.tags.length) u.tags = Array.isArray(b.tags) ? b.tags : u.tags;
+      if(!Array.isArray(u.embeds) || !u.embeds.length) u.embeds = Array.isArray(b.embeds) ? b.embeds : u.embeds;
+      if(!Array.isArray(u.inventory) || !u.inventory.length) u.inventory = Array.isArray(b.inventory) ? b.inventory : u.inventory;
+    }
+
+    if(!u.name) u.name = 'Usuário';
+    if(!u.slug) u.slug = cleanSlug(u.name);
+    return u;
+  }
+
+  function setGlobalUser(u){
+    const merged = mergeSafe(u);
+    saveBackup(merged);
+
+    try{
+      localStorage.setItem(USER_KEY, JSON.stringify(merged));
+    }catch(e){}
+
+    try{
+      if(typeof user !== 'undefined' && user){
+        Object.keys(user).forEach(k=>delete user[k]);
+        Object.assign(user, merged);
+      }
+    }catch(e){}
+
+    try{
+      if(window.user){
+        Object.keys(window.user).forEach(k=>delete window.user[k]);
+        Object.assign(window.user, merged);
+      }
+    }catch(e){}
+
+    return merged;
+  }
+
+  // Protege contra Firebase/timers antigos salvando "Usuário" ou avatar vazio por cima.
+  try{
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function(key, value){
+      if(key === USER_KEY){
+        try{
+          const incoming = JSON.parse(value || '{}');
+          const merged = mergeSafe(incoming);
+          value = JSON.stringify(merged);
+          saveBackup(merged);
+        }catch(e){}
+      }
+      return originalSetItem(key, value);
+    };
+  }catch(e){}
+
+  function paintProfile(){
+    const u = setGlobalUser(currentUser());
+
+    const nameEl = q('#profileName');
+    const slugEl = q('#profileSlug2');
+    const bioEl = q('#profileBio');
+    const avEl = q('#profileAvatar');
+    const banner = q('#profileBanner');
+    const bg = q('#profileBg');
+    const frame = q('#profileFrame');
+    const welcome = q('#welcomeText');
+    const audio = q('#profileAudio');
+
+    if(nameEl) nameEl.textContent = u.name || 'Usuário';
+    if(slugEl) slugEl.textContent = '@' + (u.slug || 'usuario');
+    if(welcome) welcome.textContent = u.welcome || 'Clique aqui';
+
+    if(bioEl){
+      bioEl.textContent = u.bio || '';
+      bioEl.style.display = u.bio ? 'block' : 'none';
+      bioEl.style.visibility = 'visible';
+      bioEl.style.opacity = '1';
+    }
+
+    if(avEl){
+      if(u.avatar){
+        avEl.src = u.avatar;
+        avEl.style.display = 'block';
+      }else{
+        avEl.removeAttribute('src');
+        avEl.style.display = 'none';
+      }
+    }
+
+    if(banner) banner.style.backgroundImage = u.banner ? `url("${u.banner}")` : '';
+    if(bg) bg.style.backgroundImage = u.bg ? `url("${u.bg}")` : '';
+
+    if(frame){
+      frame.src = u.frame || '';
+      frame.style.display = u.frame ? 'block' : 'none';
+    }
+
+    if(audio && u.music && audio.getAttribute('src') !== u.music){
+      audio.src = u.music;
+      try{ audio.load(); }catch(e){}
+    }
+  }
+
+  function paintDashFields(){
+    const u = setGlobalUser(currentUser());
+    const map = {
+      '#cfgName': u.name || '',
+      '#cfgSlug': u.slug || '',
+      '#cfgBio': u.bio || '',
+      '#cfgMusic': u.music || '',
+      '#cfgWelcome': u.welcome || 'Clique aqui',
+      '#cfgAvatar': u.avatar || '',
+      '#cfgBanner': u.banner || '',
+      '#cfgBg': u.bg || '',
+      '#cfgVideo': u.video || '',
+      '#cfgFrame': u.frame || '',
+      '#customName': u.name || '',
+      '#customBio': u.bio || ''
+    };
+
+    Object.entries(map).forEach(([sel,val])=>{
+      const el = q(sel);
+      if(!el) return;
+      if(document.activeElement === el) return;
+      el.value = val;
+    });
+  }
+
+  // tenta recuperar do perfil público do Firebase se o local estiver vazio
+  let publicFetchDone = false;
+  async function fetchPublicProfileIfNeeded(){
+    if(publicFetchDone) return;
+    publicFetchDone = true;
+
+    try{
+      if(!window.firebase || !firebase.firestore) return;
+      const u = currentUser();
+      const slug = cleanSlug(window.__dlinkyDirectProfileSlug || u.slug || (location.pathname||'').replace(/^\/+/,'').split('/')[0] || '');
+      if(!slug || slug === 'usuario') return;
+
+      const snap = await firebase.firestore().collection('profiles').doc(slug).get();
+      if(!snap.exists) return;
+
+      const data = snap.data() || {};
+      const merged = setGlobalUser(Object.assign({}, u, data, { slug: data.slug || slug }));
+      saveBackup(merged);
+
+      paintProfile();
+      paintDashFields();
+    }catch(e){}
+  }
+
+  function patchSaveButtons(){
+    document.addEventListener('click',function(e){
+      const btn = e.target && e.target.closest && e.target.closest('#saveAccount,#saveImages,#saveCustom,#saveUploads');
+      if(!btn) return;
+      setTimeout(()=>{
+        const u = currentUser();
+        const patch = {};
+        if(q('#cfgName') && q('#cfgName').value.trim()) patch.name = q('#cfgName').value.trim();
+        if(q('#cfgSlug') && q('#cfgSlug').value.trim()) patch.slug = cleanSlug(q('#cfgSlug').value);
+        if(q('#cfgBio')) patch.bio = q('#cfgBio').value;
+        if(q('#customName') && q('#customName').value.trim()) patch.name = q('#customName').value.trim();
+        if(q('#customBio')) patch.bio = q('#customBio').value;
+        if(q('#cfgMusic')) patch.music = q('#cfgMusic').value.trim();
+        if(q('#cfgWelcome')) patch.welcome = q('#cfgWelcome').value.trim() || 'Clique aqui';
+        if(q('#cfgAvatar') && q('#cfgAvatar').value.trim()) patch.avatar = q('#cfgAvatar').value.trim();
+        if(q('#cfgBanner') && q('#cfgBanner').value.trim()) patch.banner = q('#cfgBanner').value.trim();
+        if(q('#cfgBg') && q('#cfgBg').value.trim()) patch.bg = q('#cfgBg').value.trim();
+        if(q('#cfgVideo')) patch.video = q('#cfgVideo').value.trim();
+        if(q('#cfgFrame') && q('#cfgFrame').value.trim()) patch.frame = q('#cfgFrame').value.trim();
+
+        const merged = setGlobalUser(Object.assign({}, u, patch));
+        saveBackup(merged);
+        paintProfile();
+        paintDashFields();
+      },50);
+    },true);
+  }
+
+  const oldRenderDash = window.renderDash || (typeof renderDash === 'function' ? renderDash : null);
+  if(typeof oldRenderDash === 'function' && !oldRenderDash.__dlinkyRestaurarPerfilSeguro){
+    const patched = function(){
+      const r = oldRenderDash.apply(this, arguments);
+      paintDashFields();
+      return r;
+    };
+    patched.__dlinkyRestaurarPerfilSeguro = true;
+    window.renderDash = patched;
+    try{ renderDash = patched; }catch(e){}
+  }
+
+  const oldRenderProfile = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
+  if(typeof oldRenderProfile === 'function' && !oldRenderProfile.__dlinkyRestaurarPerfilSeguro){
+    const patched = function(){
+      const r = oldRenderProfile.apply(this, arguments);
+      paintProfile();
+      fetchPublicProfileIfNeeded();
+      return r;
+    };
+    patched.__dlinkyRestaurarPerfilSeguro = true;
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+
+  patchSaveButtons();
+
+  document.addEventListener('input',function(e){
+    if(!e.target) return;
+    if(['cfgName','cfgSlug','cfgBio','cfgMusic','cfgWelcome','cfgAvatar','cfgBanner','cfgBg','cfgVideo','cfgFrame','customName','customBio'].includes(e.target.id)){
+      const u = currentUser();
+      const patch = {};
+      if(e.target.id === 'cfgName' || e.target.id === 'customName') patch.name = e.target.value.trim();
+      if(e.target.id === 'cfgSlug') patch.slug = cleanSlug(e.target.value);
+      if(e.target.id === 'cfgBio' || e.target.id === 'customBio') patch.bio = e.target.value;
+      if(e.target.id === 'cfgMusic') patch.music = e.target.value.trim();
+      if(e.target.id === 'cfgWelcome') patch.welcome = e.target.value.trim() || 'Clique aqui';
+      if(e.target.id === 'cfgAvatar') patch.avatar = e.target.value.trim();
+      if(e.target.id === 'cfgBanner') patch.banner = e.target.value.trim();
+      if(e.target.id === 'cfgBg') patch.bg = e.target.value.trim();
+      if(e.target.id === 'cfgVideo') patch.video = e.target.value.trim();
+      if(e.target.id === 'cfgFrame') patch.frame = e.target.value.trim();
+      const merged = setGlobalUser(Object.assign({}, u, patch));
+      saveBackup(merged);
+    }
+  },true);
+
+  window.addEventListener('hashchange',()=>{
+    setTimeout(()=>{ paintDashFields(); paintProfile(); fetchPublicProfileIfNeeded(); },120);
   });
-  const start=()=>{const t=$('.shop-tabs'); if(t) mo.observe(t,{attributes:true,childList:true,subtree:true,attributeFilter:['class']});};
-  document.addEventListener('DOMContentLoaded',start);
-  setTimeout(start,300);
-  window.addEventListener('hashchange',()=>setTimeout(()=>renderStable(),150));
-  setTimeout(()=>renderStable(),500);
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    setTimeout(()=>{ setGlobalUser(currentUser()); paintDashFields(); paintProfile(); fetchPublicProfileIfNeeded(); },150);
+  });
+
+  setTimeout(()=>{ setGlobalUser(currentUser()); paintDashFields(); paintProfile(); fetchPublicProfileIfNeeded(); },300);
+  setTimeout(()=>{ paintDashFields(); paintProfile(); },1200);
 })();
