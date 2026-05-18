@@ -9207,7 +9207,7 @@ document.addEventListener("click",(e)=>{
   window.renderDash=function(){if(typeof oldRenderDash==='function')oldRenderDash();setTimeout(()=>{counters();renderAdminFrames();if($('#tab-store')?.classList.contains('active'))renderShop();if($('#tab-inventory')?.classList.contains('active'))renderInventory();applyProfileFrame()},0)}; try{renderDash=window.renderDash}catch(e){}
   window.openTab=function(id){if(typeof oldOpenTab==='function')oldOpenTab(id);if(id==='store')setTimeout(renderShop,0);if(id==='inventory')setTimeout(renderInventory,0);if(id==='admin')setTimeout(renderAdminFrames,0);if(id==='profile')setTimeout(applyProfileFrame,0)}; try{openTab=window.openTab}catch(e){}
 
-  document.addEventListener('click',function(e){const shop=e.target.closest?.('[data-shop-tab]');if(shop){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();shopMode=shop.dataset.shopTab||'coins';renderShop();return}const inv=e.target.closest?.('[data-inv-filter]');if(inv){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();invMode=inv.dataset.invFilter||'todos';renderInventory();return}const add=e.target.closest?.('#adminAddFrame');if(add){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();addFrame();return}const del=e.target.closest?.('[data-v3-del-frame]');if(del){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const arr=allFrames();arr.splice(Number(del.dataset.v3DelFrame),1);saveFrames(arr);sanitize();renderAdminFrames();renderShop();renderInventory();applyProfileFrame();return}const bn=e.target.closest?.('[data-v3-buy-normal]');if(bn){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);const it=data[Number(bn.dataset.v3BuyNormal)];if(!it)return;const u=userData();if(shopMode==='coins'){if(window.dlinkyOpenPixRecharge){window.dlinkyOpenPixRecharge(Number(it[2]||0));return}u.coins+=Number(it[2]||0);saveUser(u);counters();toastSafe('Linkwuans adicionados.');return}u.inventory.unshift({type:shopMode,kind:shopMode,name:it[0],value:it[2],duration:'Permanente',source:'shop',date:Date.now()});u.__hasPurchasedItem=true;u.__cleanNewAccount=false;if(['neonName','shineName','rainbowName','hideViews'].includes(it[2]))u[it[2]]=true;saveUser(u);counters();renderInventory();toastSafe('Item comprado e salvo no inventário!');return}const bf=e.target.closest?.('[data-v3-buy-frame]');if(bf){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openFrameBuy(bf.dataset.v3BuyFrame);return}if(e.target.closest?.('#confirmFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();confirmFrameBuy();return}if(e.target.closest?.('#closeFrameBuy,#cancelFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();closeFrameBuy();return}const use=e.target.closest?.('[data-v3-use-inv],[data-v3-use-effect]');if(use){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();useInventory(use.dataset.v3UseInv??use.dataset.v3UseEffect);return}const adj=e.target.closest?.('[data-v3-adjust-inv]');if(adj){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openAdjust(adj.dataset.v3AdjustInv);return}if(e.target.closest?.('#saveFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();saveAdjust();return}if(e.target.closest?.('#resetFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();resetAdjust();return}if(e.target.closest?.('#closeFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const m=$('#frameAdjustModal');if(m){m.classList.remove('show');m.style.display='none'}return}},true);
+  document.addEventListener('click',function(e){const shop=e.target.closest?.('[data-shop-tab]');if(shop){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();shopMode=shop.dataset.shopTab||'coins';renderShop();return}const inv=e.target.closest?.('[data-inv-filter]');if(inv){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();invMode=inv.dataset.invFilter||'todos';renderInventory();return}const add=e.target.closest?.('#adminAddFrame');if(add){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();addFrame();return}const del=e.target.closest?.('[data-v3-del-frame]');if(del){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const arr=allFrames();arr.splice(Number(del.dataset.v3DelFrame),1);saveFrames(arr);sanitize();renderAdminFrames();renderShop();renderInventory();applyProfileFrame();return}const bn=e.target.closest?.('[data-v3-buy-normal]');if(bn){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);const it=data[Number(bn.dataset.v3BuyNormal)];if(!it)return;const u=userData();if(shopMode==='coins'){if(window.dlinkyOpenPixRecharge){window.dlinkyOpenPixRecharge(Number(it[2]||0));return}u.coins+=Number(it[2]||0);saveUser(u);counters();toastSafe('Linkwuans adicionados.');return}u.inventory.unshift({type:shopMode,kind:shopMode,name:it[0],value:it[2],duration:'Permanente',source:'shop',date:Date.now()});u.__hasPurchasedItem=true;u.__cleanNewAccount=false;if(['neonName','shineName','rainbowName','hideViews'].includes(it[2]))u[it[2]]=true;saveUser(u);counters();renderInventory();toastSafe('Item comprado e salvo no inventário!');return}const bf=e.target.closest?.('[data-v3-buy-frame]');if(bf){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openFrameBuy(bf.dataset.v3BuyFrame);return}if(e.target.closest?.('#confirmFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(window.__dlinkyForceFrameBuyFromModal){window.__dlinkyForceFrameBuyFromModal();}else{confirmFrameBuy();}return}if(e.target.closest?.('#closeFrameBuy,#cancelFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();closeFrameBuy();return}const use=e.target.closest?.('[data-v3-use-inv],[data-v3-use-effect]');if(use){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();useInventory(use.dataset.v3UseInv??use.dataset.v3UseEffect);return}const adj=e.target.closest?.('[data-v3-adjust-inv]');if(adj){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openAdjust(adj.dataset.v3AdjustInv);return}if(e.target.closest?.('#saveFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();saveAdjust();return}if(e.target.closest?.('#resetFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();resetAdjust();return}if(e.target.closest?.('#closeFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const m=$('#frameAdjustModal');if(m){m.classList.remove('show');m.style.display='none'}return}},true);
   document.addEventListener('change',function(e){const sel=e.target.closest?.('[data-v3-duration]');if(!sel)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const i=Number(sel.dataset.v3Duration), f=allFrames()[i];const lab=$(`[data-v3-price="${i}"]`);if(lab&&f)lab.textContent=framePrice(f,sel.value)+' Linkwuans'},true);
   document.addEventListener('input',function(e){if(['adjustX','adjustY','adjustScale','adjustRotate'].includes(e.target?.id))updateAdjustPreview()},true);
 
@@ -12049,4 +12049,96 @@ document.addEventListener("click",(e)=>{
   setTimeout(paintAvatarPreview, 100);
   setTimeout(paintAvatarPreview, 500);
   setTimeout(paintAvatarPreview, 1200);
+})();
+
+
+/* ===== FIX CIRÚRGICO: botão Comprar do modal de moldura clicável =====
+   Só corrige o clique do #confirmFrameBuy quando o modal antigo usa dataset.
+   Não mexe em loja, avatar, música, duração nem preço.
+*/
+(function(){
+  if(window.__dlinkyModalComprarAcessivelFix) return;
+  window.__dlinkyModalComprarAcessivelFix = true;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function getTextNumber(s){const m=String(s||'').match(/\d+/);return m?Number(m[0]):0}
+  function readUser(){
+    try{ if(typeof user==='object' && user) return user; }catch(e){}
+    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}
+  }
+  function saveUserSafe(u){
+    try{ if(typeof user==='object' && user) Object.assign(user,u); }catch(e){}
+    localStorage.setItem('dlinkyUser', JSON.stringify(u));
+    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+    try{ if(typeof renderInventory==='function') renderInventory(); }catch(e){}
+    try{ if(typeof applyProfileFrame==='function') applyProfileFrame(); }catch(e){}
+  }
+  function toastSafe(msg){try{ if(typeof toast==='function') toast(msg); }catch(e){} }
+  function closeModal(){
+    const m=q('#frameBuyModal');
+    if(m){m.classList.remove('show');m.style.display='none';}
+  }
+  function itemFromModal(){
+    const m=q('#frameBuyModal');
+    const idx=Number(m?.dataset?.idx||0);
+    const list=window.__dlinkyVisibleFrames||[];
+    let it=list[idx];
+    const name=q('#frameBuyName')?.textContent?.trim()||'Moldura';
+    const img=q('#frameBuyImg')?.getAttribute('src')||'';
+    if(Array.isArray(it)) return {name:it[0]||name,url:it[5]||img};
+    if(it && typeof it==='object') return {name:it.name||name,url:it.url||it.frameUrl||img,id:it.id};
+    return {name,url:img};
+  }
+
+  window.__dlinkyForceFrameBuyFromModal = function(){
+    const m=q('#frameBuyModal');
+    if(!m || !m.classList.contains('show')) return;
+
+    const item=itemFromModal();
+    const duration=(m.dataset.duration||q('#frameBuyDuration')?.textContent||'3 dias').trim();
+    const price=Number(m.dataset.price||getTextNumber(q('#frameBuyPrice')?.textContent)||0);
+    const u=readUser();
+    u.coins=Number(u.coins||u.linkwuans||0);
+    u.linkwuans=u.coins;
+    u.inventory=Array.isArray(u.inventory)?u.inventory:[];
+    u.purchases=Array.isArray(u.purchases)?u.purchases:[];
+
+    if(price>0 && u.coins < price){
+      closeModal();
+      toastSafe('Saldo insuficiente em Linkwuans.');
+      return;
+    }
+
+    if(price>0) u.coins -= price;
+    u.linkwuans = u.coins;
+    const url=item.url||'';
+    const invItem={
+      id:item.id||('frame_'+Date.now()),
+      type:'frames',kind:'frame',source:'admin',
+      name:item.name||'Moldura',
+      url:url,frameUrl:url,value:'custom-frame',
+      duration:duration,
+      price:price+' Linkwuans',
+      boughtAt:Date.now(),date:Date.now()
+    };
+    if(url){
+      u.inventory=u.inventory.filter(x=>String(x.url||x.frameUrl||'')!==String(url));
+      u.inventory.unshift(invItem);
+      u.frame=url;
+      u.frameUrl=url;
+      u.frameName=invItem.name;
+      u.decoration='none';
+    }
+    u.__hasPurchasedFrame=true;
+    u.__hasPurchasedItem=true;
+    u.__cleanNewAccount=false;
+    u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
+    saveUserSafe(u);
+    closeModal();
+    toastSafe('Moldura comprada e salva no inventário!');
+  };
+
+  const st=document.createElement('style');
+  st.textContent='#frameBuyModal.show{pointer-events:auto!important;z-index:999999!important}#frameBuyModal.show *{pointer-events:auto!important}#confirmFrameBuy{pointer-events:auto!important;cursor:pointer!important;opacity:1!important;visibility:visible!important}';
+  document.head.appendChild(st);
 })();
