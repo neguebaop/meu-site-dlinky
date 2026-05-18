@@ -12422,3 +12422,260 @@ document.addEventListener("click",(e)=>{
   `;
   document.head.appendChild(css);
 })();
+
+
+/* ===== FIREBASE FRAMES FIX: molduras do Admin 100% online ===== */
+(function(){
+  if(window.__dlinkyFirebaseFramesFixV1) return;
+  window.__dlinkyFirebaseFramesFixV1 = true;
+
+  const PROJECT_ID = "dlinky-45df5";
+  const API_KEY = "AIzaSyBQDC8YM_6tJKyF2irGmOiW8NYHeJkHdFI";
+  const FRAMES_URL =
+    "https://firestore.googleapis.com/v1/projects/" +
+    PROJECT_ID +
+    "/databases/(default)/documents/dlinky/frames?key=" +
+    API_KEY;
+
+  const q=(s,r=document)=>r.querySelector(s);
+  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  function safeParse(v,fb){
+    try{return JSON.parse(v || JSON.stringify(fb));}catch(e){return fb;}
+  }
+
+  function getLocalFrames(){
+    const arr = safeParse(localStorage.getItem("dlinkyCustomFrames"), []);
+    return Array.isArray(arr) ? arr.filter(f=>f && f.url) : [];
+  }
+
+  function setLocalFrames(frames){
+    frames = Array.isArray(frames) ? frames.filter(f=>f && f.url) : [];
+    localStorage.setItem("dlinkyCustomFrames", JSON.stringify(frames));
+    try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
+  }
+
+  function loadFramesOnlineSync(){
+    try{
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", FRAMES_URL, false);
+      xhr.send(null);
+
+      if(xhr.status >= 200 && xhr.status < 300){
+        const doc = JSON.parse(xhr.responseText || "{}");
+        const str = doc?.fields?.frames?.stringValue || "[]";
+        const frames = safeParse(str, []);
+        if(Array.isArray(frames)){
+          setLocalFrames(frames);
+          return frames;
+        }
+      }
+
+      if(xhr.status === 404){
+        saveFramesOnlineSync(getLocalFrames());
+      }
+    }catch(e){
+      console.warn("Dlinky frames: erro ao carregar molduras online", e);
+    }
+
+    return getLocalFrames();
+  }
+
+  function saveFramesOnlineSync(frames){
+    frames = Array.isArray(frames) ? frames.filter(f=>f && f.url) : [];
+    setLocalFrames(frames);
+
+    try{
+      const xhr = new XMLHttpRequest();
+      xhr.open("PATCH", FRAMES_URL, false);
+      xhr.setRequestHeader("Content-Type","application/json");
+      xhr.send(JSON.stringify({
+        fields:{
+          frames:{stringValue:JSON.stringify(frames)},
+          updatedAt:{timestampValue:new Date().toISOString()}
+        }
+      }));
+
+      if(!(xhr.status >= 200 && xhr.status < 300)){
+        console.warn("Dlinky frames: erro salvando online", xhr.status, xhr.responseText);
+      }
+    }catch(e){
+      console.warn("Dlinky frames: falha salvando online", e);
+    }
+  }
+
+  function renderFramesStore(){
+    const grid = q("#shopGrid");
+    if(!grid) return;
+
+    const active = q("#tab-store [data-shop-tab].active");
+    const mode = active?.dataset?.shopTab || window.shopMode || (typeof shopMode !== "undefined" ? shopMode : "");
+
+    if(mode !== "frames") return;
+
+    const frames = loadFramesOnlineSync();
+    grid.classList.add("frames-shop-grid");
+
+    if(!frames.length){
+      window.__dlinkyVisibleFrames = [];
+      grid.innerHTML = `<div class="panel empty-frames-help">
+        <h2>Nenhuma moldura cadastrada</h2>
+        <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
+      </div>`;
+      return;
+    }
+
+    const av = (typeof user === "object" && user && user.avatar) ? user.avatar : "";
+    window.__dlinkyVisibleFrames = frames.map((f,i)=>[
+      f.name || "Moldura personalizada",
+      f.price || "20 Linkwuans",
+      "custom-"+i,
+      f.desc || "Moldura enviada pelo admin",
+      "Disponível",
+      f.url || ""
+    ]);
+
+    grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
+      const base = String(x[1]).match(/\d+/)?.[0] || 20;
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
+        <div class="frame-shop-preview real-frame-preview">
+          <div class="frame-avatar-demo zyo-person-demo" style="background-image:url('${String(av).replace(/'/g,"%27")}')!important"></div>
+          <img class="frame-img big" src="${String(x[5]).replace(/"/g,"&quot;")}" alt="${String(x[0]).replace(/"/g,"&quot;")}">
+        </div>
+        <div class="frame-info clean-info">
+          <b>${x[0]}<span class="frame-url-chip">online</span></b>
+          <small>${x[3]}</small>
+        </div>
+        <div class="frame-stock available"><span></span><b>Disponível</b></div>
+        <div class="frame-price">Preço do item: <b data-price-label="${i}">${base} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}">
+          <option>3 dias</option>
+          <option>7 dias</option>
+          <option>15 dias</option>
+          <option>Permanente</option>
+        </select>
+        <small class="frame-note">ⓘ Valor muda conforme a duração escolhida.</small>
+        <div class="frame-actions">
+          <button class="btn primary small" data-confirm-frame="${i}">▣ Comprar</button>
+          <button class="btn dark small" type="button" data-gift-frame="${i}">🎁 Presentear</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderAdminFramesOnline(){
+    const box = q("#adminFramesList");
+    if(!box) return;
+
+    const frames = loadFramesOnlineSync();
+
+    box.innerHTML = frames.length ? frames.map((f,i)=>`
+      <div class="admin-item">
+        <img src="${String(f.url||"").replace(/"/g,"&quot;")}" alt="" style="object-fit:contain">
+        <div>
+          <b>${String(f.name||"Moldura")}</b><br>
+          <small>${String(f.price||"20 Linkwuans")} • ${String(f.desc||"")}</small>
+        </div>
+        <button class="delete" type="button" data-online-del-frame="${i}">×</button>
+      </div>
+    `).join("") : "<p>Nenhuma moldura custom adicionada ainda.</p>";
+  }
+
+  // Carrega molduras online assim que abrir.
+  loadFramesOnlineSync();
+
+  document.addEventListener("click", function(e){
+    // Admin adicionar moldura: salva no documento separado online.
+    if(e.target && e.target.id === "adminAddFrame"){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const url = q("#adminFrameUrl")?.value?.trim() || "";
+      if(!url){
+        try{toast("Cole a URL da moldura.");}catch(err){}
+        return;
+      }
+
+      const frames = loadFramesOnlineSync();
+
+      frames.unshift({
+        id:"frame_"+Date.now(),
+        name:q("#adminFrameName")?.value || "Moldura personalizada",
+        desc:q("#adminFrameDesc")?.value || "Moldura enviada pelo admin",
+        price:q("#adminFramePrice")?.value || "20 Linkwuans",
+        url:url,
+        createdAt:Date.now()
+      });
+
+      saveFramesOnlineSync(frames);
+      renderAdminFramesOnline();
+      renderFramesStore();
+
+      try{toast("Moldura salva online!");}catch(err){}
+      return;
+    }
+
+    // Deletar moldura admin online.
+    const del = e.target.closest && e.target.closest("[data-online-del-frame]");
+    if(del){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const frames = loadFramesOnlineSync();
+      frames.splice(Number(del.dataset.onlineDelFrame),1);
+      saveFramesOnlineSync(frames);
+      renderAdminFramesOnline();
+      renderFramesStore();
+
+      try{toast("Moldura removida online.");}catch(err){}
+      return;
+    }
+
+    // Clicar aba molduras: recarrega do Firebase.
+    const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
+    if(tab && tab.dataset.shopTab === "frames"){
+      setTimeout(renderFramesStore, 50);
+      setTimeout(renderFramesStore, 300);
+    }
+  }, true);
+
+  const oldOpenTab = window.openTab;
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__framesFixOnline){
+    const patched = function(id){
+      const result = oldOpenTab.apply(this, arguments);
+      if(id === "admin") setTimeout(renderAdminFramesOnline, 100);
+      if(id === "store") setTimeout(renderFramesStore, 100);
+      return result;
+    };
+    patched.__framesFixOnline = true;
+    window.openTab = patched;
+    try{openTab = patched;}catch(e){}
+  }
+
+  const oldRenderShop = window.renderShop;
+  if(typeof oldRenderShop === "function" && !oldRenderShop.__framesFixOnline){
+    const patchedRenderShop = function(){
+      const result = oldRenderShop.apply(this, arguments);
+      renderFramesStore();
+      return result;
+    };
+    patchedRenderShop.__framesFixOnline = true;
+    window.renderShop = patchedRenderShop;
+    try{renderShop = patchedRenderShop;}catch(e){}
+  }
+
+  window.dlinkyFramesSaveOnlineNow = function(){
+    saveFramesOnlineSync(getLocalFrames());
+    console.log("Molduras salvas online.");
+  };
+
+  window.dlinkyFramesReloadOnlineNow = function(){
+    const frames = loadFramesOnlineSync();
+    renderAdminFramesOnline();
+    renderFramesStore();
+    console.log("Molduras online:", frames);
+    return frames;
+  };
+})();
