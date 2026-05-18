@@ -1,4 +1,21 @@
 const $=(s,root=document)=>root.querySelector(s);const $$=(s,root=document)=>[...root.querySelectorAll(s)];
+
+/* ===== Dlinky performance fix: menos travamento sem mexer no visual ===== */
+(function(){
+  const nativeSetInterval = window.setInterval.bind(window);
+  window.setInterval = function(fn, delay, ...args){
+    const text = String(fn || '');
+    let d = Number(delay) || 0;
+    if(d < 900) d = 900;
+    if(/renderInventory|applyProfile|applyFrame|cleanDuplicate|restoreIcons|restoreSocial|ensureHud|bindZyo|applyPlayerRoute|applyCredits|renderAdminOrders/i.test(text)){
+      d = Math.max(d, 1800);
+    }
+    return nativeSetInterval(function(){
+      if(document.hidden) return;
+      try{ return typeof fn === 'function' ? fn.apply(this,args) : eval(fn); }catch(e){}
+    }, d);
+  };
+})();
 const icons={Instagram:'fa-brands fa-instagram',TikTok:'fa-brands fa-tiktok',Discord:'fa-brands fa-discord',YouTube:'fa-brands fa-youtube',Spotify:'fa-brands fa-spotify',WhatsApp:'fa-brands fa-whatsapp',Twitch:'fa-brands fa-twitch',Steam:'fa-brands fa-steam',Github:'fa-brands fa-github',Roblox:'fa-solid fa-square',Telegram:'fa-brands fa-telegram',X:'fa-brands fa-x-twitter'};
 const presetUrls={
   bg1:'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1600&q=80',
@@ -87,10 +104,10 @@ $('#entryOverlay').onclick=()=>{
   const audio=$('#profileAudio');
   if(user.music){audio.play().catch(()=>toast('Clique no botão de som para tocar a música'))}
 };$('#soundBtn').onclick=()=>{const a=$('#profileAudio');if(!user.music)return toast('Nenhuma música configurada');if(a.paused)a.play();else a.pause()};
-function createProfileParticles(type){const layer=$('#profileParticleLayer');layer.innerHTML='';if(type==='none'||!user.particles)return;const char={snow:'✽',stars:'✦',hearts:'❤',embers:'•',bubbles:''}[type]||'✽';const cls={snow:'snow',stars:'star',hearts:'heart',embers:'ember',bubbles:'bubble'}[type];for(let i=0;i<14;i++){const s=document.createElement('span');s.className='fx '+cls;s.textContent=char;s.style.left=Math.random()*100+'%';s.style.animationDuration=(6+Math.random()*9)+'s';s.style.animationDelay=(-Math.random()*12)+'s';s.style.fontSize=(type==='bubbles'?8:12+Math.random()*16)+'px';if(type==='bubbles'){s.style.width=s.style.height=(8+Math.random()*18)+'px'}layer.appendChild(s)}}
+function createProfileParticles(type){const layer=$('#profileParticleLayer');layer.innerHTML='';if(type==='none'||!user.particles)return;const char={snow:'✽',stars:'✦',hearts:'❤',embers:'•',bubbles:''}[type]||'✽';const cls={snow:'snow',stars:'star',hearts:'heart',embers:'ember',bubbles:'bubble'}[type];for(let i=0;i<8;i++){const s=document.createElement('span');s.className='fx '+cls;s.textContent=char;s.style.left=Math.random()*100+'%';s.style.animationDuration=(6+Math.random()*9)+'s';s.style.animationDelay=(-Math.random()*12)+'s';s.style.fontSize=(type==='bubbles'?8:12+Math.random()*16)+'px';if(type==='bubbles'){s.style.width=s.style.height=(8+Math.random()*18)+'px'}layer.appendChild(s)}}
 function escapeHtml(s=''){return String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}function safeUrl(u=''){return u.startsWith('http')?u:'#'}
 // dashboard background particles
-const canvas=$('#particlesCanvas'),ctx=canvas.getContext('2d');let dots=[];function size(){canvas.width=innerWidth;canvas.height=innerHeight;dots=Array.from({length:24},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*2+1,v:Math.random()*0.5+0.15}))}addEventListener('resize',size);size();function anim(){if(document.hidden || location.hash.includes('/profile')){requestAnimationFrame(anim);return;}ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='rgba(168,85,247,.75)';dots.forEach(d=>{d.y+=d.v;if(d.y>canvas.height)d.y=-5;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()});requestAnimationFrame(anim)}anim();
+const canvas=$('#particlesCanvas'),ctx=canvas.getContext('2d');let dots=[];function size(){canvas.width=innerWidth;canvas.height=innerHeight;dots=Array.from({length:10},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*2+1,v:Math.random()*0.5+0.15}))}addEventListener('resize',size);size();function anim(){if(document.hidden || location.hash.includes('/profile')){setTimeout(()=>requestAnimationFrame(anim),120);return;}ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='rgba(168,85,247,.75)';dots.forEach(d=>{d.y+=d.v;if(d.y>canvas.height)d.y=-5;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()});setTimeout(()=>requestAnimationFrame(anim),33)}anim();
 renderDash();
 
 /* ===== Dlinky add-on: páginas extras do Zyo sem alterar o visual base ===== */
@@ -10863,5 +10880,5 @@ document.addEventListener("click",(e)=>{
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>{injectVisualFix();ensureBrand();applyPreferred(false);});
   else {injectVisualFix();ensureBrand();applyPreferred(false);}
-  setInterval(()=>{applyPreferred(false); ensureBrand();},2500);
+  setTimeout(()=>{applyPreferred(false); ensureBrand();},800);
 })();
