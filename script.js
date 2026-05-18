@@ -10866,388 +10866,226 @@ document.addEventListener("click",(e)=>{
   setInterval(()=>{applyPreferred(false); ensureBrand();},2500);
 })();
 
-/* ===== DLINKY FIX FINAL — REGISTRO REAL + PERFIL PÚBLICO RÁPIDO ===== */
+/* ===== FIX FINAL: mostrar "Feito por Dlinky" no Ver Perfil sem mexer no resto ===== */
 (function(){
-  if(window.__dlinkyRegistroPerfilRapidoFinal) return;
-  window.__dlinkyRegistroPerfilRapidoFinal = true;
+  function q(s,r){return (r||document).querySelector(s)}
+  function isProfile(){
+    var h=location.hash||'';
+    return h==='#/profile' || document.body.classList.contains('is-profile') || document.querySelector('#profile.page.active');
+  }
+  function ensureMadeBy(){
+    var profile=q('#profile');
+    if(!profile) return;
+    var made=q('.madeby', profile) || q('.madeby');
+    if(!made){
+      made=document.createElement('div');
+      made.className='madeby';
+      made.textContent='💜 Feito por Dlinky';
+      profile.insertBefore(made, profile.firstChild);
+    }
+    made.textContent=made.textContent.trim() || '💜 Feito por Dlinky';
+    if(isProfile()){
+      made.style.setProperty('display','block','important');
+      made.style.setProperty('visibility','visible','important');
+      made.style.setProperty('opacity','1','important');
+    }
+  }
+  function injectStyle(){
+    if(q('#dlinkyMadeByFinalFix')) return;
+    var st=document.createElement('style');
+    st.id='dlinkyMadeByFinalFix';
+    st.textContent='body.is-profile .madeby,#profile.page.active .madeby{display:block!important;visibility:visible!important;opacity:1!important;position:fixed!important;right:18px!important;top:16px!important;z-index:999999!important;color:#fff!important;font-weight:800!important;text-shadow:0 0 12px rgba(168,85,247,.8)!important;pointer-events:none!important}.madeby{display:block!important}';
+    document.head.appendChild(st);
+  }
+  function run(){injectStyle();ensureMadeBy();}
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',run); else run();
+  window.addEventListener('hashchange',function(){setTimeout(run,50);setTimeout(run,400);});
+  document.addEventListener('click',function(e){if(e.target.closest('#viewProfile')||e.target.closest('#viewProfile2')||e.target.closest('[data-goto="profile"]')){setTimeout(run,100);setTimeout(run,700);}},true);
+})();
 
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyCPmjhOSXXNaVXXXdrAK9Y77fqxCoLv7Wo",
-    authDomain: "dlinky.firebaseapp.com",
-    projectId: "dlinky",
-    storageBucket: "dlinky.firebasestorage.app",
-    messagingSenderId: "856690547155",
-    appId: "1:856690547155:web:6444b8a4be23ee5a6d7726"
-  };
+
+/* ===== DLINKY HOTFIX LIMPO — RAIZ NORMAL + /slug PERFIL + CADASTRO ===== */
+(function(){
+  if(window.__dlinkyRootSlugRegisterCleanFix) return;
+  window.__dlinkyRootSlugRegisterCleanFix = true;
 
   const USER_KEY = "dlinkyUser";
-  const ACCOUNTS_KEY = "dlinkyAccountsByEmailClean";
+  const ACCOUNTS_KEY = "dlinkyAccounts_v5";
   const ADMIN_EMAIL = "jailtonsilas48@gmail.com";
 
   function q(s,r=document){ return r.querySelector(s); }
   function qa(s,r=document){ return Array.from(r.querySelectorAll(s)); }
-  function readJSON(k,f){ try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f));}catch(e){return f;} }
-  function writeJSON(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
-  function cleanSlug(v){
-    return String(v||"usuario")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g,"")
-      .replace(/[^a-z0-9_-]/g,"")
-      .slice(0,30) || "usuario";
+  function readJSON(k,f){ try{ return JSON.parse(localStorage.getItem(k) || JSON.stringify(f)); }catch(e){ return f; } }
+  function writeJSON(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+  function aviso(t){ try{ if(typeof toast === "function") return toast(t); }catch(e){} alert(t); }
+  function clean(v){ return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_-]/g,"").slice(0,30) || "usuario"; }
+  function pageOff(){ qa(".page").forEach(p=>p.classList.remove("active")); }
+  function getCurrent(){ return readJSON(USER_KEY, {}); }
+  function saveCurrent(u){
+    const old = getCurrent();
+    const merged = Object.assign({}, old, u || {});
+    // nome e slug digitados pelo usuário sempre vencem; nunca força nome do e-mail
+    if(u && u.name) merged.name = u.name;
+    if(u && u.slug) merged.slug = clean(u.slug);
+    writeJSON(USER_KEY, merged);
+    try{ window.user = Object.assign(window.user || {}, merged); }catch(e){}
+    return merged;
   }
-  function msg(t){
-    try{ if(typeof toast === "function") return toast(t); }catch(e){}
-    alert(t);
-  }
-  function firebaseReady(){
-    if(!window.firebase || !firebase.apps) return false;
-    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    return true;
-  }
-  function makeUser(data){
-    const email = String(data.email||"").toLowerCase().trim();
-    const name = String(data.name||"").trim() || (email ? email.split("@")[0] : "Usuário");
-    const slug = cleanSlug(data.slug || name);
-    const old = readJSON(USER_KEY,{});
-    return Object.assign({
-      uid: data.uid || "",
-      name,
-      slug,
-      email,
+  function blankUser(email,name,slug){
+    const base = (typeof defaultUser === "object" && defaultUser) ? defaultUser : {};
+    return Object.assign({}, base, {
+      uid: "local_" + Date.now(),
+      email: String(email||"").toLowerCase().trim(),
+      name: String(name||"Usuário").trim() || "Usuário",
+      slug: clean(slug || name || "usuario"),
       bio: "",
-      avatar: "",
-      banner: "",
-      bg: "",
-      video: "",
-      frame: "",
-      music: "",
-      welcome: "Clique aqui",
-      color: "#a855f7",
-      particles: true,
-      particleType: "snow",
-      verified: false,
-      hideViews: false,
-      decoration: "",
       views: 0,
-      coins: 0,
-      linkwuans: 0,
+      frame: "",
+      decoration: "none",
       inventory: [],
       purchases: [],
-      history: [],
-      links: [],
-      socials: [],
-      tags: [],
-      embeds: [],
-      isAdmin: email === ADMIN_EMAIL
-    }, old && old.email === email ? old : {}, {uid:data.uid||"", name, slug, email, isAdmin: email === ADMIN_EMAIL});
+      history: ["Conta criada no Dlinky"]
+    });
   }
-  function publicData(u){
-    return {
-      uid:u.uid||"", name:u.name||"Usuário", slug:u.slug||"usuario", email:u.email||"",
-      bio:u.bio||"", avatar:u.avatar||"", banner:u.banner||"", bg:u.bg||"", video:u.video||"",
-      frame:u.frame||"", music:u.music||"", welcome:u.welcome||"Clique aqui", color:u.color||"#a855f7",
-      particles:u.particles!==false, particleType:u.particleType||"snow", verified:!!u.verified, hideViews:!!u.hideViews,
-      decoration:u.decoration||"", links:Array.isArray(u.links)?u.links:[], socials:Array.isArray(u.socials)?u.socials:[],
-      tags:Array.isArray(u.tags)?u.tags:[], embeds:Array.isArray(u.embeds)?u.embeds:[], updatedAt: Date.now()
-    };
-  }
-  function setCurrentUser(u){
-    writeJSON(USER_KEY,u);
-    try{
-      if(typeof user !== "undefined" && user){ Object.keys(user).forEach(k=>delete user[k]); Object.assign(user,u); }
-      window.user = user;
-    }catch(e){}
-    const accounts = readJSON(ACCOUNTS_KEY,{});
-    if(u.email) accounts[u.email.toLowerCase()] = u;
-    writeJSON(ACCOUNTS_KEY,accounts);
-  }
+
+  function firebaseReady(){ return !!(window.firebase && firebase.apps && firebase.apps.length && firebase.auth && firebase.firestore); }
   async function saveUserOnline(u){
-    if(!firebaseReady()) return;
-    const db = firebase.firestore();
-    if(u.uid) await db.collection("users").doc(u.uid).set(u,{merge:true});
-    if(u.slug) await db.collection("profiles").doc(u.slug).set(publicData(u),{merge:true});
+    try{
+      if(firebaseReady() && firebase.auth().currentUser){
+        await firebase.firestore().collection("users").doc(firebase.auth().currentUser.uid).set(u,{merge:true});
+      }
+    }catch(e){}
+    try{
+      const all = readJSON(ACCOUNTS_KEY,{});
+      if(u.email) all[String(u.email).toLowerCase().trim()] = u;
+      if(u.slug) all["slug:" + clean(u.slug)] = u;
+      writeJSON(ACCOUNTS_KEY, all);
+    }catch(e){}
   }
 
-  function replaceForm(id){
-    const old = q(id);
-    if(!old || old.__dlinkyFinalClean) return old;
-    const novo = old.cloneNode(true);
-    novo.__dlinkyFinalClean = true;
-    old.parentNode.replaceChild(novo, old);
-    return novo;
-  }
-
-  async function registerFinal(e){
-    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    const name = q("#regName")?.value.trim() || "Usuário";
+  async function cadastrar(ev){
+    if(ev){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }
+    const name = (q("#regName")?.value || "").trim();
+    const slugField = (q("#regSlug")?.value || "").trim();
     const email = (q("#regEmail")?.value || "").trim().toLowerCase();
     const pass = q("#regPass")?.value || "";
     const pass2 = q("#regPass2")?.value || "";
-    const slug = cleanSlug(q("#regSlug")?.value || name);
+    if(!name) return aviso("Digite seu nome.");
+    if(!email) return aviso("Digite seu e-mail.");
+    if(!pass || pass.length < 6) return aviso("A senha precisa ter pelo menos 6 caracteres.");
+    if(pass !== pass2) return aviso("As senhas não conferem.");
 
-    if(!email) return msg("Digite seu e-mail.");
-    if(pass.length < 6) return msg("A senha precisa ter pelo menos 6 caracteres.");
-    if(pass !== pass2) return msg("As senhas não conferem.");
-
-    try{
-      if(!firebaseReady()) throw new Error("Firebase não carregou.");
-      const cred = await firebase.auth().createUserWithEmailAndPassword(email, pass);
-      const u = makeUser({uid:cred.user.uid, name, slug, email});
-      setCurrentUser(u);
-      await saveUserOnline(u);
-      msg("Conta criada com sucesso!");
-      location.hash = "#/dashboard";
-      setTimeout(()=>{ try{renderDash();}catch(e){} },80);
-    }catch(err){
-      const code = String(err && err.code || "");
-      if(code.includes("email-already-in-use")) return msg("Esse e-mail já existe. Clique em Login.");
-      if(code.includes("invalid-email")) return msg("E-mail inválido.");
-      if(code.includes("weak-password")) return msg("Senha fraca. Use pelo menos 6 caracteres.");
-      if(code.includes("operation-not-allowed")) return msg("Ative Email/Senha no Firebase Authentication para liberar cadastro.");
-      msg("Erro ao registrar: " + (err.message || "tente novamente"));
-    }
-  }
-
-  async function loginFinal(e){
-    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    const email = (q("#loginEmail")?.value || "").trim().toLowerCase();
-    const pass = q("#loginPass")?.value || "";
-    if(!email) return msg("Digite seu e-mail.");
-    if(!pass) return msg("Digite sua senha.");
-    try{
-      if(!firebaseReady()) throw new Error("Firebase não carregou.");
-      const cred = await firebase.auth().signInWithEmailAndPassword(email, pass);
-      const snap = await firebase.firestore().collection("users").doc(cred.user.uid).get();
-      const u = makeUser(Object.assign({}, snap.exists ? snap.data() : {}, {uid:cred.user.uid, email}));
-      setCurrentUser(u);
-      if(u.slug) await firebase.firestore().collection("profiles").doc(u.slug).set(publicData(u),{merge:true});
-      msg("Login efetuado!");
-      location.hash = "#/dashboard";
-      setTimeout(()=>{ try{renderDash();}catch(e){} },80);
-    }catch(err){
-      const code = String(err && err.code || "");
-      if(code.includes("invalid-credential") || code.includes("wrong-password")) return msg("E-mail ou senha incorretos.");
-      if(code.includes("user-not-found")) return msg("Essa conta não existe. Crie uma conta primeiro.");
-      msg("Erro no login: " + (err.message || "tente novamente"));
-    }
-  }
-
-  function patchAuthClean(){
-    const reg = replaceForm("#registerForm");
-    const log = replaceForm("#loginForm");
-    if(reg && !reg.__dlinkyFinalSubmit){ reg.__dlinkyFinalSubmit = true; reg.addEventListener("submit",registerFinal,true); }
-    if(log && !log.__dlinkyFinalSubmit){ log.__dlinkyFinalSubmit = true; log.addEventListener("submit",loginFinal,true); }
-  }
-
-  function publicSlug(){
-    const blocked = ["login","register","dashboard","assets","premium","community","admin","store"];
-
-    const pathRaw = (location.pathname || "").replace(/^\/+|\/+$/g,"").split("/")[0] || "";
-    const pathSlug = cleanSlug(pathRaw);
-    if(pathSlug && !blocked.includes(pathSlug)){
-      return pathSlug;
-    }
-
-    const h = location.hash || "";
-    const m = h.match(/^#\/([a-z0-9_-]{2,30})$/i);
-    if(!m) return "";
-    const slug = cleanSlug(m[1]);
-    if(blocked.includes(slug)) return "";
-    return slug;
-  }
-  function showOnlyProfile(){
-    qa(".page").forEach(p=>p.classList.remove("active"));
-    q("#profile")?.classList.add("active");
-    document.body.classList.add("public-profile");
-  }
-  async function openPublicFast(){
-    const slug = publicSlug();
-    if(!slug) return false;
-    showOnlyProfile();
-    const local = readJSON(USER_KEY,{});
-    if(local.slug === slug){ try{renderProfile();}catch(e){} }
+    let u = blankUser(email, name, slugField || name);
     try{
       if(firebaseReady()){
-        const snap = await firebase.firestore().collection("profiles").doc(slug).get();
-        if(snap.exists){
-          const data = makeUser(snap.data());
-          data.slug = slug;
-          setCurrentUser(data);
-        }
-      }
-    }catch(e){ console.warn("Perfil público:",e); }
-    showOnlyProfile();
-    try{renderProfile();}catch(e){}
-    const back = q("#backToDash"); if(back) back.style.display="none";
-    return true;
-  }
-
-  const oldRoute = window.route || (typeof route !== "undefined" ? route : null);
-  window.route = function(){
-    if(publicSlug()){ openPublicFast(); return; }
-    document.body.classList.remove("public-profile");
-    if(typeof oldRoute === "function") return oldRoute.apply(this,arguments);
-  };
-  try{ route = window.route; }catch(e){}
-
-  patchAuthClean();
-  openPublicFast();
-  document.addEventListener("DOMContentLoaded",()=>{ patchAuthClean(); openPublicFast(); });
-  window.addEventListener("hashchange",()=>{ patchAuthClean(); openPublicFast(); });
-  setTimeout(patchAuthClean,500);
-  setTimeout(patchAuthClean,1500);
-})();
-
-/* ===== DLINKY HOTFIX — CADASTRO NOVO FUNCIONANDO + LINK DIRETO PERFIL ===== */
-(function(){
-  if(window.__dlinkyCadastroNovoHotfix) return;
-  window.__dlinkyCadastroNovoHotfix = true;
-
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyCPmjhOSXXNaVXXXdrAK9Y77fqxCoLv7Wo",
-    authDomain: "dlinky.firebaseapp.com",
-    projectId: "dlinky",
-    storageBucket: "dlinky.firebasestorage.app",
-    messagingSenderId: "856690547155",
-    appId: "1:856690547155:web:6444b8a4be23ee5a6d7726"
-  };
-  const ADMIN_EMAIL = "jailtonsilas48@gmail.com";
-  const USER_KEY = "dlinkyUser";
-  const ACCOUNTS_KEY = "dlinkyAccounts_v5";
-
-  function q(s,r=document){return r.querySelector(s)}
-  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
-  function clean(v){return String(v||"usuario").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_-]/g,"").slice(0,30)||"usuario"}
-  function aviso(t){try{ if(typeof toast==='function') return toast(t); }catch(e){} alert(t)}
-  function fbReady(){try{if(!window.firebase||!firebase.apps)return false;if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);return true}catch(e){return false}}
-
-  function baseUser(data){
-    const email=String(data.email||"").toLowerCase().trim();
-    const nome=String(data.name||data.nome||"").trim() || (email?email.split('@')[0]:"Usuário");
-    const slug=clean(data.slug||nome);
-    const antigo=readJSON(USER_KEY,{});
-    const manter=(antigo && String(antigo.email||"").toLowerCase().trim()===email)?antigo:{};
-    return Object.assign({
-      uid:data.uid||("local_"+Date.now()),
-      name:nome,slug,email,bio:"",avatar:"",banner:"",bg:"",video:"",frame:"",music:"",welcome:"Clique aqui",
-      color:"#a855f7",particles:true,particleType:"snow",verified:false,hideViews:false,template:"default",decoration:"",
-      views:0,coins:0,linkwuans:0,inventory:[],purchases:[],history:[],links:[],socials:[],tags:[],embeds:[],isAdmin:email===ADMIN_EMAIL
-    },manter,{uid:data.uid||manter.uid||("local_"+Date.now()),name:nome,slug,email,isAdmin:email===ADMIN_EMAIL});
-  }
-
-  function applyUser(u){
-    writeJSON(USER_KEY,u);
-    const acc=readJSON(ACCOUNTS_KEY,{}); if(u.email)acc[u.email]=u; writeJSON(ACCOUNTS_KEY,acc);
-    try{ if(typeof user!=='undefined'&&user){Object.keys(user).forEach(k=>delete user[k]);Object.assign(user,u);window.user=user;}else{window.user=u;} }catch(e){window.user=u;}
-  }
-
-  function publicPayload(u){return {uid:u.uid||'',name:u.name||'Usuário',slug:u.slug||'usuario',email:u.email||'',bio:u.bio||'',avatar:u.avatar||'',banner:u.banner||'',bg:u.bg||'',video:u.video||'',frame:u.frame||'',music:u.music||'',welcome:u.welcome||'Clique aqui',color:u.color||'#a855f7',particles:u.particles!==false,particleType:u.particleType||'snow',verified:!!u.verified,hideViews:!!u.hideViews,decoration:u.decoration||'',links:Array.isArray(u.links)?u.links:[],socials:Array.isArray(u.socials)?u.socials:[],tags:Array.isArray(u.tags)?u.tags:[],embeds:Array.isArray(u.embeds)?u.embeds:[],updatedAt:Date.now()}}
-  async function saveOnline(u){
-    try{
-      if(!fbReady()||!firebase.firestore)return;
-      const db=firebase.firestore();
-      await db.collection('users').doc(u.uid||u.email||u.slug).set(Object.assign({},u,{updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
-      if(u.slug) await db.collection('profiles').doc(u.slug).set(Object.assign(publicPayload(u),{updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
-    }catch(e){console.warn('saveOnline cadastro',e)}
-  }
-
-  async function cadastrar(e){
-    if(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();}
-    const name=q('#regName')?.value.trim()||'';
-    const email=(q('#regEmail')?.value||'').trim().toLowerCase();
-    const pass=q('#regPass')?.value||'';
-    const pass2=q('#regPass2')?.value||'';
-    const slug=clean((q('#regSlug')?.value||name||email.split('@')[0]));
-    if(!name)return aviso('Digite o nome.');
-    if(!email)return aviso('Digite o e-mail.');
-    if(pass.length<6)return aviso('A senha precisa ter pelo menos 6 caracteres.');
-    if(pass!==pass2)return aviso('As senhas não conferem.');
-    const acc=readJSON(ACCOUNTS_KEY,{});
-    if(acc[email])return aviso('Esse e-mail já existe. Use Login.');
-    let uid='local_'+Date.now();
-    try{
-      if(fbReady()&&firebase.auth){
-        const cred=await firebase.auth().createUserWithEmailAndPassword(email,pass);
-        uid=cred.user.uid;
+        const cred = await firebase.auth().createUserWithEmailAndPassword(email, pass);
+        u.uid = cred.user.uid;
+        await firebase.firestore().collection("users").doc(cred.user.uid).set(u,{merge:true});
       }
     }catch(err){
-      const code=String(err&&err.code||'');
-      if(code.includes('email-already-in-use')) return aviso('Esse e-mail já existe. Use Login.');
-      // Se o Firebase Auth estiver desativado/instável, continua criando a conta local e salvando no Firestore quando possível.
-      console.warn('Firebase Auth não criou, usando cadastro local:',err);
+      const code = String(err && err.code || "");
+      if(code.includes("email-already-in-use")) return aviso("Esse e-mail já tem conta. Faça login.");
+      if(code.includes("weak-password")) return aviso("Senha fraca. Use pelo menos 6 caracteres.");
+      if(code.includes("operation-not-allowed")) return aviso("Ative Email/Senha no Firebase Authentication.");
+      return aviso("Erro ao registrar: " + (err.message || "tente novamente"));
     }
-    const u=baseUser({uid,name,email,slug});
-    u.history=[`${new Date().toLocaleString('pt-BR')} — Conta registrada`];
-    applyUser(u);
-    await saveOnline(u);
-    aviso('Conta criada com sucesso!');
-    location.hash='#/dashboard';
-    setTimeout(()=>{try{renderDash()}catch(e){}},100);
+    u = saveCurrent(u);
+    await saveUserOnline(u);
+    aviso("Conta criada com sucesso!");
+    location.hash = "#/dashboard";
+    setTimeout(()=>{ try{ if(typeof renderDash === "function") renderDash(); }catch(e){} },80);
   }
 
-  async function entrar(e){
-    if(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();}
-    const email=(q('#loginEmail')?.value||'').trim().toLowerCase();
-    const pass=q('#loginPass')?.value||'';
-    if(!email)return aviso('Digite o e-mail.');
-    if(!pass)return aviso('Digite a senha.');
+  async function entrar(ev){
+    if(ev){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }
+    const email = (q("#loginEmail")?.value || "").trim().toLowerCase();
+    const pass = q("#loginPass")?.value || "";
+    if(!email) return aviso("Digite seu e-mail.");
+    if(!pass) return aviso("Digite sua senha.");
+    let u = null;
     try{
-      if(fbReady()&&firebase.auth){
-        const cred=await firebase.auth().signInWithEmailAndPassword(email,pass);
-        let data={uid:cred.user.uid,email};
-        try{const snap=await firebase.firestore().collection('users').doc(cred.user.uid).get(); if(snap.exists)data=Object.assign(data,snap.data());}catch(_e){}
-        const u=baseUser(data); applyUser(u); await saveOnline(u); aviso('Login efetuado!'); location.hash='#/dashboard'; setTimeout(()=>{try{renderDash()}catch(e){}},100); return;
+      if(firebaseReady()){
+        const cred = await firebase.auth().signInWithEmailAndPassword(email, pass);
+        const snap = await firebase.firestore().collection("users").doc(cred.user.uid).get();
+        u = Object.assign(blankUser(email,email.split("@")[0],email.split("@")[0]), snap.exists ? snap.data() : {}, {uid:cred.user.uid,email});
       }
-    }catch(err){console.warn('login firebase falhou',err)}
-    const acc=readJSON(ACCOUNTS_KEY,{});
-    if(acc[email]){applyUser(acc[email]);aviso('Login efetuado!');location.hash='#/dashboard';setTimeout(()=>{try{renderDash()}catch(e){}},100);return;}
-    aviso('Conta não encontrada. Crie uma conta primeiro.');
+    }catch(err){
+      const all = readJSON(ACCOUNTS_KEY,{});
+      u = all[email] || null;
+      if(!u) return aviso("Conta não encontrada ou senha incorreta.");
+    }
+    saveCurrent(u);
+    aviso("Login efetuado");
+    location.hash = "#/dashboard";
+    setTimeout(()=>{ try{ if(typeof renderDash === "function") renderDash(); }catch(e){} },80);
   }
 
-  function cloneAndPatch(){
-    const reg=q('#registerForm');
-    if(reg && !reg.__cadastroNovoOK){
-      const n=reg.cloneNode(true); n.__cadastroNovoOK=true; reg.parentNode.replaceChild(n,reg);
-      n.addEventListener('submit',cadastrar,true);
-      const btn=n.querySelector('button'); if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();cadastrar(ev)},true);
+  function patchForms(){
+    const reg = q("#registerForm");
+    if(reg && !reg.__dlinkyCadastroRootFix){
+      reg.__dlinkyCadastroRootFix = true;
+      reg.addEventListener("submit", cadastrar, true);
+      const btn = reg.querySelector('button[type="submit"],button:not([type])');
+      if(btn && !btn.__dlinkyCadastroRootFix){ btn.__dlinkyCadastroRootFix = true; btn.addEventListener("click", function(e){ cadastrar(e); }, true); }
     }
-    const log=q('#loginForm');
-    if(log && !log.__loginNovoOK){
-      const n=log.cloneNode(true); n.__loginNovoOK=true; log.parentNode.replaceChild(n,log);
-      n.addEventListener('submit',entrar,true);
-      const btn=n.querySelector('button'); if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();entrar(ev)},true);
+    const log = q("#loginForm");
+    if(log && !log.__dlinkyLoginRootFix){
+      log.__dlinkyLoginRootFix = true;
+      log.addEventListener("submit", entrar, true);
+      const btn = log.querySelector('button[type="submit"],button:not([type])');
+      if(btn && !btn.__dlinkyLoginRootFix){ btn.__dlinkyLoginRootFix = true; btn.addEventListener("click", function(e){ entrar(e); }, true); }
     }
   }
 
-  const blocked=['','login','register','dashboard','assets','premium','community','admin','store'];
-  function currentPublicSlug(){
-    const p=(location.pathname||'/').replace(/^\/+|\/+$/g,'').split('/')[0];
-    const ps=clean(p); if(ps&&!blocked.includes(ps))return ps;
-    const h=location.hash||''; const m=h.match(/^#\/([a-z0-9_-]{2,30})$/i); if(m){const hs=clean(m[1]); if(!blocked.includes(hs))return hs;}
-    return '';
+  function currentPathSlug(){
+    // IMPORTANTE: raiz / NÃO abre perfil. Só /algumslug abre perfil público.
+    const raw = String(location.pathname || "").replace(/^\/+|\/+$/g,"").split("/")[0] || "";
+    if(!raw) return "";
+    const slug = clean(raw);
+    const blocked = new Set(["login","register","dashboard","assets","premium","community","admin","store","index.html"]);
+    return blocked.has(slug) ? "" : slug;
   }
-  function showProfileOnly(){qa('.page').forEach(x=>x.classList.remove('active'));q('#profile')?.classList.add('active');document.body.classList.add('public-profile','is-profile')}
-  async function openProfileDirect(){
-    const slug=currentPublicSlug(); if(!slug)return false;
-    showProfileOnly();
-    const local=readJSON(USER_KEY,{}); if(local.slug===slug){applyUser(local);try{renderProfile()}catch(e){}}
-    try{if(fbReady()&&firebase.firestore){const snap=await firebase.firestore().collection('profiles').doc(slug).get();if(snap.exists){const u=baseUser(Object.assign({},snap.data(),{slug}));applyUser(u);}}}catch(e){console.warn('perfil direto',e)}
-    showProfileOnly(); try{renderProfile()}catch(e){}
-    const back=q('#backToDash'); if(back)back.style.display='none';
+
+  async function findPublicUser(slug){
+    slug = clean(slug);
+    let found = null;
+    try{
+      if(firebaseReady()){
+        const snap = await firebase.firestore().collection("users").where("slug","==",slug).limit(1).get();
+        if(!snap.empty) found = Object.assign({}, snap.docs[0].data(), {uid:snap.docs[0].id});
+      }
+    }catch(e){}
+    if(!found){
+      const all = readJSON(ACCOUNTS_KEY,{});
+      found = all["slug:"+slug] || Object.values(all).find(x=>x && clean(x.slug)===slug) || null;
+    }
+    if(!found && clean((window.user||{}).slug) === slug) found = window.user;
+    return found;
+  }
+
+  async function openPathProfileOnly(){
+    const slug = currentPathSlug();
+    if(!slug) return false;
+    const found = await findPublicUser(slug);
+    if(found){ saveCurrent(found); }
+    else { saveCurrent(Object.assign(blankUser("", slug, slug), {name: slug, slug})); }
+    pageOff();
+    q("#profile")?.classList.add("active");
+    try{ if(typeof renderProfile === "function") renderProfile(); }catch(e){}
     return true;
   }
 
-  const oldRoute=window.route||((typeof route!=='undefined')?route:null);
-  window.route=function(){if(currentPublicSlug()){openProfileDirect();return;}document.body.classList.remove('public-profile');if(typeof oldRoute==='function')return oldRoute.apply(this,arguments)};
-  try{route=window.route}catch(e){}
+  const oldRoute = window.route;
+  window.route = route = function(){
+    const slug = currentPathSlug();
+    if(slug){ openPathProfileOnly(); return; }
+    if(typeof oldRoute === "function") return oldRoute();
+  };
 
-  cloneAndPatch();
-  document.addEventListener('DOMContentLoaded',()=>{cloneAndPatch();openProfileDirect();});
-  window.addEventListener('hashchange',()=>{cloneAndPatch();openProfileDirect();});
-  setTimeout(cloneAndPatch,500);
-  setTimeout(cloneAndPatch,1500);
-  openProfileDirect();
+  document.addEventListener("DOMContentLoaded",()=>{ patchForms(); openPathProfileOnly(); });
+  window.addEventListener("load",()=>{ patchForms(); openPathProfileOnly(); });
+  window.addEventListener("hashchange",()=>{ patchForms(); });
+  setTimeout(patchForms,300);
+  setTimeout(patchForms,1200);
+  setTimeout(()=>{ if(!currentPathSlug() && (!location.hash || location.hash==="#")){ try{ location.hash="#/"; route(); }catch(e){} } },200);
 })();
