@@ -1,24 +1,32 @@
-
-/* ===== DLINKY GUARD — impede scripts antigos de sobrescreverem duração/preço da moldura ===== */
-(function(){
-  if(window.__DLINKY_FRAME_DURATION_GUARD__) return;
-  window.__DLINKY_FRAME_DURATION_GUARD__ = true;
-  const nativeAdd = EventTarget.prototype.addEventListener;
-  window.__dlinkyNativeAddEventListener = nativeAdd;
-  EventTarget.prototype.addEventListener = function(type, listener, options){
-    try{
-      const src = String(listener || '');
-      const isDocument = this === document;
-      const touchesFrameDuration = src.includes('data-frame-duration') || src.includes('frame-duration') || src.includes('frameBuyPrice') || src.includes('confirmFrameBuy');
-      const isOldDurationChange = isDocument && type === 'change' && touchesFrameDuration && !listener.__dlinkySafeFrameDuration;
-      const isOldFrameBuyClick = isDocument && type === 'click' && (src.includes('data-confirm-frame') || src.includes('confirmFrameBuy') || src.includes('frameBuyModal')) && !listener.__dlinkySafeFrameDuration;
-      if(isOldDurationChange || isOldFrameBuyClick) return;
-    }catch(e){}
-    return nativeAdd.call(this,type,listener,options);
-  };
-})();
-
 const $=(s,root=document)=>root.querySelector(s);const $$=(s,root=document)=>[...root.querySelectorAll(s)];
+
+/* ===== FIX GLOBAL: avatar real para preview da loja ===== */
+window.__dlinkyGetBestAvatar = window.__dlinkyGetBestAvatar || function(){
+  try{
+    const read=(k)=>{try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}};
+    const u=read('dlinkyUser');
+    let v = u.avatar || u.photoURL || u.foto || u.icon || '';
+    if(!v && typeof user==='object' && user) v = user.avatar || user.photoURL || user.foto || user.icon || '';
+    if(!v){
+      const keys=[
+        'dlinky_avatar_clean_'+(u.email||u.slug||'local'),
+        'dlinkyAvatarPreserve_'+(u.email||u.slug||'local')
+      ];
+      for(const k of keys){ const x=localStorage.getItem(k); if(x){v=x;break;} }
+    }
+    if(!v){
+      const els=['#dashAvatar','#sideAvatar','#profileAvatar','#frameBuyAvatar','#adjustAvatar'];
+      for(const s of els){
+        const el=document.querySelector(s); if(!el) continue;
+        if(el.tagName==='IMG' && el.src){v=el.src;break;}
+        const bg=(el.style&&el.style.backgroundImage)||getComputedStyle(el).backgroundImage||'';
+        const m=bg.match(/url\(["']?(.*?)["']?\)/); if(m&&m[1]&&m[1]!=='none'){v=m[1];break;}
+      }
+    }
+    return String(v||'').trim();
+  }catch(e){return ''}
+};
+
 /* ===== FIX LINK DIRETO: /slug abre perfil sem piscar página inicial ===== */
 (function(){
   try{
@@ -191,12 +199,7 @@ renderDash();
   function framePriceNumber(price){
     const n=String(price||'20').match(/\d+/); return n?Number(n[0]):20;
   }
-  function frameDurationPrice(base,duration){
-    if(duration==='Permanente') return base*2;
-    if(duration==='15 dias') return base*3;
-    if(duration==='7 dias') return base*2;
-    return base;
-  }
+  function frameDurationPrice(base,duration){ return Number(base)||0; }
   function renderShop(){
     const grid=q('#shopGrid'); if(!grid)return;
     if(shopMode==='frames'){
@@ -396,7 +399,7 @@ renderDash();
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
   function getCustomFrames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
   function parsePrice(v){const m=String(v||'20').match(/\d+/); return m?Number(m[0]):20;}
-  function durationPrice(base,d){ if(d==='Permanente')return base*5; if(d==='15 dias')return base*3; if(d==='7 dias')return base*2; return base; }
+  function durationPrice(base,d){ return Number(base)||0; }
   function updateWallet(){ const ids=['walletCoins','coinCount','invCoins']; ids.forEach(id=>{const el=q('#'+id); if(el) el.textContent=user.coins||0;}); }
   document.addEventListener('change',e=>{
     const sel=e.target.closest('[data-frame-duration]'); if(!sel) return;
@@ -9169,7 +9172,7 @@ document.addEventListener("click",(e)=>{
   function normalizeFrame(raw,i){const url=String(raw?.url||raw?.frameUrl||'').trim();const price=num(raw?.price??raw?.basePrice??raw?.prices?.['3 dias']??20)||20;const prices=Object.assign({},raw?.prices||{});['3 dias','7 dias','15 dias','Permanente'].forEach(k=>{prices[k]=num(prices[k])||0});if(!prices['3 dias'])prices['3 dias']=price;if(!prices['7 dias'])prices['7 dias']=Math.round(price*1.5);if(!prices['15 dias'])prices['15 dias']=Math.round(price*2);if(!prices['Permanente'])prices['Permanente']=Math.round(price*3);return {id:String(raw?.id||slug(url||raw?.name||i)),name:String(raw?.name||raw?.title||'Moldura'),desc:String(raw?.desc||raw?.description||''),url,price,prices};}
   function allFrames(){const src=[...read(FRAMES_KEY,[]),...read(OLD_FRAMES_KEY,[]),...(userData().customFrames||[])];const map=new Map();src.forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const arr=[...map.values()];write(FRAMES_KEY,arr);write(OLD_FRAMES_KEY,arr);const u=userData();u.customFrames=arr;write(USER_KEY,u);return arr;}
   function saveFrames(arr){const map=new Map();(Array.isArray(arr)?arr:[]).forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const clean=[...map.values()];write(FRAMES_KEY,clean);write(OLD_FRAMES_KEY,clean);const u=userData();u.customFrames=clean;saveUser(u);return clean;}
-  function framePrice(f,d='3 dias'){return Number(f?.prices?.[d]||0)||num(f?.price)||20;}
+  function framePrice(f,d='3 dias'){const p=Number(f?.prices?.[d]);if(Number.isFinite(p)&&p>0)return p;return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
   function frameUrl(it){return String(it?.url||it?.frameUrl||'').trim();}
   function isFrameItem(it){return !!(it&&frameUrl(it)&&/frame|moldur/i.test(String(it.type||it.kind||it.name||'frame')));}
   function itemId(it){return String(it?.id||slug(frameUrl(it)||it?.name));}
@@ -9179,7 +9182,7 @@ document.addEventListener("click",(e)=>{
   function renderAdminFrames(){const list=$('#adminFramesList');if(list){const arr=allFrames();list.innerHTML=arr.length?arr.map((f,i)=>`<div class="admin-frame-row"><img src="${esc(f.url)}" alt="${esc(f.name)}"><div><b>${esc(f.name)}</b><small>${framePrice(f,'3 dias')} Linkwuans • ${esc(f.desc||'moldura')}</small></div><button class="delete" type="button" data-v3-del-frame="${i}">×</button></div>`).join(''):'<p>Nenhuma moldura custom adicionada ainda.</p>'}const sel=$('#giftItemSelect');if(sel){const arr=allFrames();sel.innerHTML='<option value="">Selecione uma moldura da loja</option>'+arr.map((f,i)=>`<option value="${i}">${esc(f.name)} — ${framePrice(f,'3 dias')} Linkwuans</option>`).join('')}}
   function addFrame(){const url=$('#adminFrameUrl')?.value?.trim()||'';if(!url)return toastSafe('Coloque a URL/arquivo da moldura.');if(isFake(url))return toastSafe('Use uma URL/arquivo real da moldura.');const price=num($('#adminFramePrice')?.value||$('#adminPrice3')?.value||20)||20;const f=normalizeFrame({url,name:$('#adminFrameName')?.value?.trim()||'Moldura',desc:$('#adminFrameDesc')?.value?.trim()||'',price,prices:{'3 dias':num($('#adminPrice3')?.value)||price,'7 dias':num($('#adminPrice7')?.value)||Math.round(price*1.5),'15 dias':num($('#adminPrice15')?.value)||Math.round(price*2),'Permanente':num($('#adminPricePerm')?.value)||Math.round(price*3)}});saveFrames([f,...allFrames().filter(x=>norm(x.url)!==norm(f.url))]);['adminFrameName','adminFrameDesc','adminFramePrice','adminPrice3','adminPrice7','adminPrice15','adminPricePerm','adminFrameUrl'].forEach(id=>{const el=$('#'+id);if(el)el.value=''});renderAdminFrames();renderShop();toastSafe('Moldura cadastrada na loja.');}
 
-  function renderShop(){const grid=$('#shopGrid');if(!grid)return;$$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===shopMode));if(shopMode==='frames'){const arr=allFrames();grid.className='asset-grid frames-shop-grid';if(!arr.length){grid.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return}const av=esc(userData().avatar||'');grid.innerHTML=arr.map((f,i)=>{const d=f.__duration||'3 dias';return `<div class="asset-card frame-shop-card"><div class="asset-preview inv-preview real-inv-preview"><span class="real-inv-avatar" style="background-image:url('${av}')"></span><img class="real-inv-frame" src="${esc(f.url)}" alt="${esc(f.name)}"></div><div class="asset-body"><b>${esc(f.name)}</b><small>${esc(f.desc||'Moldura')}</small><div class="frame-price">Preço: <b data-v3-price="${i}">${framePrice(f,d)} Linkwuans</b></div><select class="frame-duration" data-v3-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select><button class="btn primary small" type="button" data-v3-buy-frame="${i}">Comprar</button></div></div>`}).join('');return}const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);grid.className='asset-grid';grid.innerHTML=data.length?data.map((it,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">${shopMode==='coins'?'◈':'✦'}</div><div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}">Comprar</button></div></div>`).join(''):'<p>Nada cadastrado nessa aba.</p>';}
+  function renderShop(){const grid=$('#shopGrid');if(!grid)return;$$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===shopMode));if(shopMode==='frames'){const arr=allFrames();grid.className='asset-grid frames-shop-grid';if(!arr.length){grid.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return}const av=esc((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||userData().avatar||'');grid.innerHTML=arr.map((f,i)=>{const d=f.__duration||'3 dias';return `<div class="asset-card frame-shop-card"><div class="asset-preview inv-preview real-inv-preview"><span class="real-inv-avatar" style="background-image:url('${av}')"></span><img class="real-inv-frame" src="${esc(f.url)}" alt="${esc(f.name)}"></div><div class="asset-body"><b>${esc(f.name)}</b><small>${esc(f.desc||'Moldura')}</small><div class="frame-price">Preço: <b data-v3-price="${i}">${framePrice(f,d)} Linkwuans</b></div><select class="frame-duration" data-v3-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select><button class="btn primary small" type="button" data-v3-buy-frame="${i}">Comprar</button></div></div>`}).join('');return}const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);grid.className='asset-grid';grid.innerHTML=data.length?data.map((it,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">${shopMode==='coins'?'◈':'✦'}</div><div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}">Comprar</button></div></div>`).join(''):'<p>Nada cadastrado nessa aba.</p>';}
   function openFrameBuy(i){const f=allFrames()[Number(i)];if(!f)return;const d=$(`[data-v3-duration="${i}"]`)?.value||'3 dias';pendingFrameBuy={i:Number(i),duration:d,price:framePrice(f,d)};const m=$('#frameBuyModal');if(!m)return confirmFrameBuy();$('#frameBuyName')&&($('#frameBuyName').textContent=f.name);$('#frameBuyDuration')&&($('#frameBuyDuration').textContent=d);$('#frameBuyType')&&($('#frameBuyType').textContent=d==='Permanente'?'Permanente':'Normal');$('#frameBuyPrice')&&($('#frameBuyPrice').textContent=pendingFrameBuy.price+' Linkwuans');$('#frameBuyUser')&&($('#frameBuyUser').textContent=userData().name||'Usuário');const img=$('#frameBuyImg');if(img)img.src=f.url;const av=$('#frameBuyAvatar');if(av)av.style.backgroundImage=userData().avatar?`url("${userData().avatar}")`:'';m.classList.add('show');m.style.display='flex';}
   function closeFrameBuy(){const m=$('#frameBuyModal');if(m){m.classList.remove('show');m.style.display='none'}pendingFrameBuy=null;}
   function confirmFrameBuy(){if(!pendingFrameBuy)return;const f=allFrames()[pendingFrameBuy.i];if(!f)return;const u=userData();if(u.coins<pendingFrameBuy.price){closeFrameBuy();return toastSafe('Saldo insuficiente em Linkwuans.')}u.coins-=pendingFrameBuy.price;u.linkwuans=u.coins;u.inventory=u.inventory.filter(it=>!(isFrameItem(it)&&norm(frameUrl(it))===norm(f.url)));u.inventory.unshift({id:f.id,type:'frames',kind:'frame',source:'admin',name:f.name,url:f.url,frameUrl:f.url,duration:pendingFrameBuy.duration,price:pendingFrameBuy.price+' Linkwuans',boughtAt:Date.now()});u.__hasPurchasedFrame=true;u.__hasPurchasedItem=true;u.__cleanNewAccount=false;u.frame=f.url;u.frameUrl=f.url;u.frameName=f.name;u.activeFrameId=f.id;u.decoration='none';u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:pendingFrameBuy.price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});saveUser(u);closeFrameBuy();counters();renderInventory();applyProfileFrame();toastSafe('Moldura comprada e salva no inventário!');}
@@ -9204,7 +9207,7 @@ document.addEventListener("click",(e)=>{
   window.renderDash=function(){if(typeof oldRenderDash==='function')oldRenderDash();setTimeout(()=>{counters();renderAdminFrames();if($('#tab-store')?.classList.contains('active'))renderShop();if($('#tab-inventory')?.classList.contains('active'))renderInventory();applyProfileFrame()},0)}; try{renderDash=window.renderDash}catch(e){}
   window.openTab=function(id){if(typeof oldOpenTab==='function')oldOpenTab(id);if(id==='store')setTimeout(renderShop,0);if(id==='inventory')setTimeout(renderInventory,0);if(id==='admin')setTimeout(renderAdminFrames,0);if(id==='profile')setTimeout(applyProfileFrame,0)}; try{openTab=window.openTab}catch(e){}
 
-  document.addEventListener('click',function(e){const shop=e.target.closest?.('[data-shop-tab]');if(shop){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();shopMode=shop.dataset.shopTab||'coins';renderShop();return}const inv=e.target.closest?.('[data-inv-filter]');if(inv){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();invMode=inv.dataset.invFilter||'todos';renderInventory();return}const add=e.target.closest?.('#adminAddFrame');if(add){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();addFrame();return}const del=e.target.closest?.('[data-v3-del-frame]');if(del){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const arr=allFrames();arr.splice(Number(del.dataset.v3DelFrame),1);saveFrames(arr);sanitize();renderAdminFrames();renderShop();renderInventory();applyProfileFrame();return}const bn=e.target.closest?.('[data-v3-buy-normal]');if(bn){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);const it=data[Number(bn.dataset.v3BuyNormal)];if(!it)return;const u=userData();if(shopMode==='coins'){if(window.dlinkyOpenPixRecharge){window.dlinkyOpenPixRecharge(Number(it[2]||0));return}u.coins+=Number(it[2]||0);saveUser(u);counters();toastSafe('Linkwuans adicionados.');return}u.inventory.unshift({type:shopMode,kind:shopMode,name:it[0],value:it[2],duration:'Permanente',source:'shop',date:Date.now()});u.__hasPurchasedItem=true;u.__cleanNewAccount=false;if(['neonName','shineName','rainbowName','hideViews'].includes(it[2]))u[it[2]]=true;saveUser(u);counters();renderInventory();toastSafe('Item comprado e salvo no inventário!');return}const bf=e.target.closest?.('[data-v3-buy-frame]');if(bf){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openFrameBuy(bf.dataset.v3BuyFrame);return}if(e.target.closest?.('#confirmFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();confirmFrameBuy();return}if(e.target.closest?.('#closeFrameBuy,#cancelFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();closeFrameBuy();return}const use=e.target.closest?.('[data-v3-use-inv],[data-v3-use-effect]');if(use){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();useInventory(use.dataset.v3UseInv??use.dataset.v3UseEffect);return}const adj=e.target.closest?.('[data-v3-adjust-inv]');if(adj){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openAdjust(adj.dataset.v3AdjustInv);return}if(e.target.closest?.('#saveFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();saveAdjust();return}if(e.target.closest?.('#resetFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();resetAdjust();return}if(e.target.closest?.('#closeFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const m=$('#frameAdjustModal');if(m){m.classList.remove('show');m.style.display='none'}return}},true);
+  document.addEventListener('click',function(e){const shop=e.target.closest?.('[data-shop-tab]');if(shop){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();shopMode=shop.dataset.shopTab||'coins';renderShop();return}const inv=e.target.closest?.('[data-inv-filter]');if(inv){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();invMode=inv.dataset.invFilter||'todos';renderInventory();return}const add=e.target.closest?.('#adminAddFrame');if(add){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();addFrame();return}const del=e.target.closest?.('[data-v3-del-frame]');if(del){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const arr=allFrames();arr.splice(Number(del.dataset.v3DelFrame),1);saveFrames(arr);sanitize();renderAdminFrames();renderShop();renderInventory();applyProfileFrame();return}const bn=e.target.closest?.('[data-v3-buy-normal]');if(bn){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);const it=data[Number(bn.dataset.v3BuyNormal)];if(!it)return;const u=userData();if(shopMode==='coins'){if(window.dlinkyOpenPixRecharge){window.dlinkyOpenPixRecharge(Number(it[2]||0));return}u.coins+=Number(it[2]||0);saveUser(u);counters();toastSafe('Linkwuans adicionados.');return}u.inventory.unshift({type:shopMode,kind:shopMode,name:it[0],value:it[2],duration:'Permanente',source:'shop',date:Date.now()});u.__hasPurchasedItem=true;u.__cleanNewAccount=false;if(['neonName','shineName','rainbowName','hideViews'].includes(it[2]))u[it[2]]=true;saveUser(u);counters();renderInventory();toastSafe('Item comprado e salvo no inventário!');return}const bf=e.target.closest?.('[data-v3-buy-frame]');if(bf){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openFrameBuy(bf.dataset.v3BuyFrame);return}if(e.target.closest?.('#confirmFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(window.__dlinkyForceFrameBuyFromModal){window.__dlinkyForceFrameBuyFromModal();}else{confirmFrameBuy();}return}if(e.target.closest?.('#closeFrameBuy,#cancelFrameBuy')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();closeFrameBuy();return}const use=e.target.closest?.('[data-v3-use-inv],[data-v3-use-effect]');if(use){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();useInventory(use.dataset.v3UseInv??use.dataset.v3UseEffect);return}const adj=e.target.closest?.('[data-v3-adjust-inv]');if(adj){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openAdjust(adj.dataset.v3AdjustInv);return}if(e.target.closest?.('#saveFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();saveAdjust();return}if(e.target.closest?.('#resetFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();resetAdjust();return}if(e.target.closest?.('#closeFrameAdjust')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const m=$('#frameAdjustModal');if(m){m.classList.remove('show');m.style.display='none'}return}},true);
   document.addEventListener('change',function(e){const sel=e.target.closest?.('[data-v3-duration]');if(!sel)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const i=Number(sel.dataset.v3Duration), f=allFrames()[i];const lab=$(`[data-v3-price="${i}"]`);if(lab&&f)lab.textContent=framePrice(f,sel.value)+' Linkwuans'},true);
   document.addEventListener('input',function(e){if(['adjustX','adjustY','adjustScale','adjustRotate'].includes(e.target?.id))updateAdjustPreview()},true);
 
@@ -11631,25 +11634,22 @@ document.addEventListener("click",(e)=>{
   setTimeout(paintBio,1200);
 })();
 
-
-/* ===== DLINKY PATCH SEGURO — SOMENTE LOJA =====
-   Corrige apenas a Loja:
-   - Aba ativa fica correta e não pula.
-   - Molduras mostra molduras cadastradas.
-   - Efeitos mostra efeitos.
-   - Outros fica reservado para Selos.
-   - Preview da moldura usa avatar/GIF atual.
-   Não altera perfil, música, avatar salvo, login, cadastro nem renderProfile.
+/* ===== DLINKY PATCH DEFINITIVO — SOMENTE LOJA SEM PISCAR/RESETAR =====
+   Corrige apenas a loja:
+   - Recarga/Molduras/Efeitos/Outros ficam na aba certa.
+   - A duração da moldura não volta mais para 3 dias.
+   - Se algum script antigo tentar redesenhar a loja, este patch restaura a aba correta.
+   - Não mexe em perfil, avatar, música, login, cadastro nem renderProfile.
 */
 (function(){
-  if(window.__dlinkyOnlyStorePatchV1) return;
-  window.__dlinkyOnlyStorePatchV1 = true;
+  if(window.__dlinkyStoreStableFinalV10) return;
+  window.__dlinkyStoreStableFinalV10 = true;
 
-  const STORE_MODE_KEY = 'dlinky_loja_aba_fixa';
+  const MODE_KEY = 'dlinky_loja_aba_fixa_final';
+  const DUR_KEY = 'dlinky_moldura_duracao_fixa_final';
   const USER_KEY = 'dlinkyUser';
   const FRAME_KEYS = ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
   const SELO_KEYS = ['dlinkyCleanAdminSelosCatalog','dlinkyCustomSelos','dlinkyAdminSelos','dlinkySelos','dlinkyInsignias','dlinkyBadges'];
-
   const COINS = [
     ['345 Linkwuans','R$ 30,00',345],
     ['650 Linkwuans','R$ 50,00',650],
@@ -11662,89 +11662,81 @@ document.addEventListener("click",(e)=>{
     ['Nome Colorido','240 Linkwuans','rainbowName'],
     ['Ocultar Views','150 Linkwuans','hideViews']
   ];
+  const DURATIONS = ['3 dias','7 dias','15 dias','Permanente'];
 
-  function q(s,r=document){ return r.querySelector(s); }
-  function qa(s,r=document){ return Array.from(r.querySelectorAll(s)); }
-  function esc(v){ return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function readJSON(k,f){ try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f));}catch(e){return f;} }
-  function writeJSON(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
+  let rendering = false;
+  let lastMode = normMode(localStorage.getItem(MODE_KEY) || 'coins');
+  let restoreTimer = null;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function esc(v){return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function toastMsg(t){try{if(typeof window.toast==='function')return window.toast(t)}catch(e){}}
+  function storeRoot(){return q('#tab-store')}
+  function shopGrid(){const s=storeRoot();return s?q('#shopGrid',s):q('#shopGrid')}
+  function normMode(m){
+    m=String(m||'').toLowerCase();
+    if(m.includes('frame')||m.includes('mold')) return 'frames';
+    if(m.includes('effect')||m.includes('efe')) return 'effects';
+    if(m.includes('other')||m.includes('out')||m.includes('selo')||m.includes('insign')) return 'other';
+    return 'coins';
+  }
+  function setMode(m){lastMode=normMode(m);localStorage.setItem(MODE_KEY,lastMode);return lastMode}
+  function getMode(){return normMode(lastMode || localStorage.getItem(MODE_KEY) || 'coins')}
   function getUser(){
-    const saved = readJSON(USER_KEY,{});
-    if(window.user && typeof window.user === 'object') return Object.assign(window.user,saved);
+    const saved=readJSON(USER_KEY,{});
+    try{if(window.user&&typeof window.user==='object')return Object.assign(window.user,saved)}catch(e){}
     return saved;
   }
   function saveUser(u){
     writeJSON(USER_KEY,u||{});
-    if(window.user && typeof window.user === 'object') Object.assign(window.user,u||{});
+    try{if(window.user&&typeof window.user==='object')Object.assign(window.user,u||{})}catch(e){}
   }
-  function toastMsg(t){ try{ if(typeof window.toast==='function') return window.toast(t); }catch(e){} }
-  function storeRoot(){ return q('#tab-store'); }
-  function shopGrid(){ const s=storeRoot(); return s ? q('#shopGrid',s) : null; }
-  function normMode(m){
-    m=String(m||'').toLowerCase();
-    if(m.includes('frame') || m.includes('mold')) return 'frames';
-    if(m.includes('effect') || m.includes('efe')) return 'effects';
-    if(m.includes('other') || m.includes('out') || m.includes('selo') || m.includes('insign')) return 'other';
-    return 'coins';
-  }
-  function getMode(){ return normMode(localStorage.getItem(STORE_MODE_KEY) || 'coins'); }
-  function setMode(m){ localStorage.setItem(STORE_MODE_KEY,normMode(m)); }
-  function setActive(m){
-    const s=storeRoot(); if(!s) return;
-    const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
-    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',s).forEach(btn=>{
-      const bm=normMode(btn.dataset.shopTab || btn.textContent);
-      btn.dataset.shopTab=bm;
-      if(labels[bm]) btn.textContent=labels[bm];
-      btn.classList.toggle('active',bm===m);
-    });
-  }
-  function firstUrl(o){ return String(o?.url || o?.img || o?.image || o?.src || o?.frame || o?.frameUrl || o?.value || '').trim(); }
-  function priceNumber(v){ const m=String(v||'40').match(/\d+/); return m?Number(m[0]):40; }
-  function priceFor(base,dur){
-    if(dur==='Permanente') return base*5;
-    if(dur==='15 dias') return base*3;
-    if(dur==='7 dias') return base*2;
-    return base;
-  }
+  function firstUrl(o){return String(o?.url||o?.img||o?.image||o?.src||o?.frame||o?.frameUrl||o?.value||'').trim()}
+  function priceNumber(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
+  function durationMap(){return readJSON(DUR_KEY,{})}
+  function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
+  function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
+  function priceFor(frame,dur){const p=Number(frame?.prices?.[dur]);if(Number.isFinite(p)&&p>0)return p;return priceNumber(frame?.price);}
   function getAvatar(){
-    const u=getUser();
-    return String(u.avatar || u.photoURL || u.foto || u.icon || localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')) || '').trim();
+    return String((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||'').trim();
   }
   function getFrames(){
     let arr=[];
-    FRAME_KEYS.forEach(k=>{ const v=readJSON(k,[]); if(Array.isArray(v)) arr=arr.concat(v); });
+    FRAME_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
     const u=getUser();
     if(Array.isArray(u.inventory)){
       u.inventory.forEach(it=>{
         const url=firstUrl(it);
         const txt=String([it.type,it.kind,it.name,it.title,it.value].filter(Boolean).join(' ')).toLowerCase();
-        if(url && (txt.includes('frame') || txt.includes('moldura'))){
-          arr.push({name:it.name||'Moldura',desc:it.desc||'Espinhos.',price:it.price||'40 Linkwuans',url,prices:it.prices||null});
+        if(url&&(txt.includes('frame')||txt.includes('moldura'))){
+          arr.push({name:it.name||'Moldura',desc:it.desc||'Espinhos.',price:it.price||'40 Linkwuans',url,prices:it.prices||null,id:it.id||url});
         }
       });
     }
     const seen=new Set();
-    return arr.map((f,i)=>({
-      name:f.name||f.nome||f.title||'Moldura',
-      desc:f.desc||f.descricao||f.description||'Espinhos.',
-      price:f.price||f.preco||f.valor||'40 Linkwuans',
-      url:firstUrl(f),
-      prices:f.prices||f.precos||null,
-      id:f.id||('frame_'+i)
-    })).filter(f=>f.url).filter(f=>{ const k=(f.url+'|'+f.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });
+    return arr.map((f,i)=>{
+      const url=firstUrl(f);
+      return {name:f.name||f.nome||f.title||'Moldura',desc:f.desc||f.descricao||f.description||'Espinhos.',price:f.price||f.preco||f.valor||'40 Linkwuans',url,prices:f.prices||f.precos||null,id:String(f.id||url||('frame_'+i))};
+    }).filter(f=>f.url).filter(f=>{const k=(f.url+'|'+f.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
   }
   function getSelos(){
     let arr=[];
-    SELO_KEYS.forEach(k=>{ const v=readJSON(k,[]); if(Array.isArray(v)) arr=arr.concat(v); });
+    SELO_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
     const seen=new Set();
-    return arr.map((s,i)=>({
-      name:s.name||s.nome||s.title||'Selo',
-      desc:s.desc||s.descricao||'',
-      price:s.price||s.preco||'0 Linkwuans',
-      url:firstUrl(s),
-      id:s.id||('selo_'+i)
-    })).filter(s=>{ const k=(s.id+'|'+s.url+'|'+s.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });
+    return arr.map((s,i)=>({name:s.name||s.nome||s.title||'Selo',desc:s.desc||s.descricao||'',price:s.price||s.preco||'0 Linkwuans',url:firstUrl(s),id:String(s.id||s.url||('selo_'+i))})).filter(s=>{const k=(s.id+'|'+s.url+'|'+s.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+  }
+  function setActive(m){
+    const s=storeRoot(); if(!s)return;
+    const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
+    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',s).forEach(btn=>{
+      const bm=normMode(btn.dataset.shopTab||btn.textContent);
+      btn.dataset.shopTab=bm;
+      if(labels[bm])btn.textContent=labels[bm];
+      btn.classList.toggle('active',bm===m);
+    });
   }
   function renderCoins(g){
     g.className='asset-grid';
@@ -11753,22 +11745,20 @@ document.addEventListener("click",(e)=>{
   function renderFrames(g){
     const frames=getFrames();
     const av=getAvatar();
-    window.__dlinkyVisibleFrames=frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices||null]);
+    window.__dlinkyVisibleFrames=frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices||null,f.id]);
     g.className='asset-grid frames-shop-grid';
-    if(!frames.length){
-      g.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';
-      return;
-    }
+    if(!frames.length){g.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return;}
     g.innerHTML=frames.map((f,i)=>{
-      const base=priceNumber(f.price);
-      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
+      const d=getDuration(f.id);
+      const p=priceFor(f,d);
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-frame-id="${esc(f.id)}" data-base-price="${priceNumber(f.price)}">
         <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
           <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
           <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
         </div>
         <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
-        <div class="frame-price">Preço: <b data-price-label="${i}">${base} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}"><option>3 dias</option><option>7 dias</option><option>15 dias</option><option>Permanente</option></select>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${p} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}" data-frame-id="${esc(f.id)}">${DURATIONS.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>
         <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
       </div>`;
     }).join('');
@@ -11780,241 +11770,413 @@ document.addEventListener("click",(e)=>{
   function renderSelos(g){
     const selos=getSelos();
     g.className='asset-grid';
-    if(!selos.length){
-      g.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';
-      return;
-    }
-    g.innerHTML=selos.map((s,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">${s.url?`<img src="${esc(s.url)}" alt="${esc(s.name)}" style="max-width:90px;max-height:90px;object-fit:contain">`:'✦'}</div><div class="asset-body"><b>${esc(s.name)}</b><small>${esc(s.price)}</small><button class="btn primary small" type="button" data-loja-selo="${esc(s.id)}">Comprar</button></div></div>`).join('');
+    if(!selos.length){g.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';return;}
+    g.innerHTML=selos.map(s=>`<div class="asset-card"><div class="asset-preview shop-preview">${s.url?`<img src="${esc(s.url)}" alt="${esc(s.name)}" style="max-width:90px;max-height:90px;object-fit:contain">`:'✦'}</div><div class="asset-body"><b>${esc(s.name)}</b><small>${esc(s.price)}</small><button class="btn primary small" type="button" data-loja-selo="${esc(s.id)}">Comprar</button></div></div>`).join('');
   }
   function renderStore(m){
-    const g=shopGrid(); if(!g) return;
-    m=normMode(m||getMode()); setMode(m); setActive(m);
-    if(m==='frames') renderFrames(g);
-    else if(m==='effects') renderEffects(g);
-    else if(m==='other') renderSelos(g);
+    const g=shopGrid(); if(!g)return;
+    m=setMode(m||getMode());
+    rendering=true;
+    setActive(m);
+    if(m==='frames')renderFrames(g);
+    else if(m==='effects')renderEffects(g);
+    else if(m==='other')renderSelos(g);
     else renderCoins(g);
+    requestAnimationFrame(()=>{rendering=false});
+  }
+  function scheduleRestore(){
+    clearTimeout(restoreTimer);
+    restoreTimer=setTimeout(()=>{
+      const s=storeRoot();
+      if(s&&s.classList.contains('active')) renderStore(getMode());
+    },40);
   }
 
-  document.addEventListener('click',function(e){
-    const tab=e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
-    if(tab){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); renderStore(tab.dataset.shopTab || tab.textContent); return false; }
-
-    const coin=e.target.closest('[data-loja-coin]');
-    if(coin){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const v=Number(coin.dataset.lojaCoin||0); if(window.dlinkyOpenPixRecharge) window.dlinkyOpenPixRecharge(v); else {const u=getUser(); u.coins=Number(u.coins||0)+v; saveUser(u); toastMsg('Linkwuans adicionados.');} return false; }
-
-    const eff=e.target.closest('[data-loja-effect]');
-    if(eff){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const it=EFFECTS[Number(eff.dataset.lojaEffect)||0]; const u=getUser(); u.inventory=Array.isArray(u.inventory)?u.inventory:[]; u.inventory.unshift({type:'effects',name:it[0],value:it[2]}); u[it[2]]=true; saveUser(u); toastMsg('Efeito adicionado!'); return false; }
-
-    const selo=e.target.closest('[data-loja-selo]');
-    if(selo){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const u=getUser(); u.selosOwned=Array.isArray(u.selosOwned)?u.selosOwned:[]; if(!u.selosOwned.includes(selo.dataset.lojaSelo)) u.selosOwned.push(selo.dataset.lojaSelo); u.activeSelo=selo.dataset.lojaSelo; saveUser(u); toastMsg('Selo comprado!'); return false; }
+  window.addEventListener('pointerdown',function(e){
+    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
+    if(!tab)return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    renderStore(tab.dataset.shopTab||tab.textContent);
   },true);
 
-  document.addEventListener('change',function(e){
-    const sel=e.target.closest('#tab-store [data-frame-duration]');
-    if(!sel) return;
+  window.addEventListener('click',function(e){
+    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
+    if(tab){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();renderStore(tab.dataset.shopTab||tab.textContent);return;}
+    const coin=e.target&&e.target.closest&&e.target.closest('[data-loja-coin]');
+    if(coin){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const v=Number(coin.dataset.lojaCoin||0);if(window.dlinkyOpenPixRecharge)window.dlinkyOpenPixRecharge(v);else{const u=getUser();u.coins=Number(u.coins||0)+v;saveUser(u);toastMsg('Linkwuans adicionados.')}return;}
+    const eff=e.target&&e.target.closest&&e.target.closest('[data-loja-effect]');
+    if(eff){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const it=EFFECTS[Number(eff.dataset.lojaEffect)||0];const u=getUser();u.inventory=Array.isArray(u.inventory)?u.inventory:[];u.inventory.unshift({type:'effects',name:it[0],value:it[2]});u[it[2]]=true;saveUser(u);toastMsg('Efeito adicionado!');return;}
+    const selo=e.target&&e.target.closest&&e.target.closest('[data-loja-selo]');
+    if(selo){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const u=getUser();u.selosOwned=Array.isArray(u.selosOwned)?u.selosOwned:[];if(!u.selosOwned.includes(selo.dataset.lojaSelo))u.selosOwned.push(selo.dataset.lojaSelo);u.activeSelo=selo.dataset.lojaSelo;saveUser(u);toastMsg('Selo comprado!');return;}
+  },true);
+
+  window.addEventListener('input',function(e){
+    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
+    if(!sel)return;
+    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
+    saveDuration(id,sel.value);
+    const frames=getFrames();
     const idx=Number(sel.dataset.frameDuration||0);
-    const item=(window.__dlinkyVisibleFrames||[])[idx];
-    const card=sel.closest('[data-frame-card]');
-    const base=Number(card?.dataset?.basePrice || priceNumber(item?.[1]));
-    const prices=item?.[6]||null;
-    const price=(prices && prices[sel.value]!=null) ? Number(prices[sel.value]) : priceFor(base,sel.value);
-    const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab) lab.textContent=price+' Linkwuans';
+    const f=frames[idx];
+    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
   },true);
 
-  const oldOpen=window.openTab || (typeof openTab==='function'?openTab:null);
-  if(typeof oldOpen==='function' && !oldOpen.__lojaOnlySafePatch){
-    const patched=function(id){ const r=oldOpen.apply(this,arguments); if(id==='store') setTimeout(()=>renderStore(getMode()),20); return r; };
-    patched.__lojaOnlySafePatch=true;
-    window.openTab=patched;
-    try{openTab=patched}catch(e){}
+  window.addEventListener('change',function(e){
+    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
+    if(!sel)return;
+    e.stopPropagation();
+    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
+    saveDuration(id,sel.value);
+    const frames=getFrames();
+    const idx=Number(sel.dataset.frameDuration||0);
+    const f=frames[idx];
+    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
+  },true);
+
+  const oldOpen=window.openTab||(typeof openTab==='function'?openTab:null);
+  if(typeof oldOpen==='function'){
+    const patched=function(id){const r=oldOpen.apply(this,arguments); if(id==='store')setTimeout(()=>renderStore(getMode()),20); return r;};
+    window.openTab=patched; try{openTab=patched}catch(e){}
   }
+  window.renderShop=function(){return renderStore(getMode())};
+  try{renderShop=window.renderShop}catch(e){}
 
-  const oldRenderShop=window.renderShop || (typeof renderShop==='function'?renderShop:null);
-  const patchedRender=function(){ return renderStore(getMode()); };
-  patchedRender.__lojaOnlySafePatch=true;
-  window.renderShop=patchedRender;
-  try{renderShop=patchedRender}catch(e){}
+  const mo=new MutationObserver(function(){
+    if(rendering)return;
+    const s=storeRoot();
+    if(!s||!s.classList.contains('active'))return;
+    const active=s.querySelector('.shop-tabs [data-shop-tab].active, .asset-tabs [data-shop-tab].active');
+    const activeMode=active?normMode(active.dataset.shopTab||active.textContent):getMode();
+    if(activeMode!==getMode()) scheduleRestore();
+    if(getMode()==='frames'){
+      const sel=s.querySelector('[data-frame-duration]');
+      if(sel){const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0); if(sel.value!==getDuration(id)) scheduleRestore();}
+    }
+  });
+  function observe(){const s=storeRoot(); if(s)mo.observe(s,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observe,{once:true});else observe();
 
-  window.addEventListener('hashchange',()=>setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },120));
-  document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },120));
-  setTimeout(()=>{ if(storeRoot()?.classList.contains('active')) renderStore(getMode()); },500);
+  window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
+  setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
 })();
 
 
-
-/* ===== DLINKY FIX FINAL — SOMENTE preço/duração da moldura =====
-   Mantém o valor real do admin, não deixa outro script sobrescrever,
-   e usa o mesmo preço do card no modal e na compra.
+/* ===== DLINKY FIX CIRÚRGICO FINAL — AVATAR REAL NA PREVIEW DA MOLDURA =====
+   Só mexe na imagem/avatar dentro dos cards de Molduras da Loja.
+   Não altera abas, duração, preço, música, perfil, admin, inventário ou compra.
 */
 (function(){
-  if(window.__DLINKY_FRAME_PRICE_FINAL_FIX__) return;
-  window.__DLINKY_FRAME_PRICE_FINAL_FIX__ = true;
+  if(window.__dlinkyAvatarPreviewMolduraFinal) return;
+  window.__dlinkyAvatarPreviewMolduraFinal = true;
 
-  const nativeAdd = window.__dlinkyNativeAddEventListener || EventTarget.prototype.addEventListener;
-  const DURATION_KEY = 'dlinkyFrameDurationByItem_vFinal';
-  const USER_KEY = 'dlinkyUser';
-  const FRAME_KEYS = ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
 
-  function q(s,r=document){ return r.querySelector(s); }
-  function qa(s,r=document){ return Array.from(r.querySelectorAll(s)); }
-  function readJSON(k,f){ try{ const raw=localStorage.getItem(k); return raw ? JSON.parse(raw) : f; }catch(e){ return f; } }
-  function writeJSON(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
-  function esc(v){ return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function num(v){ const m=String(v||'0').match(/\d+/); return m?Number(m[0]):0; }
-  function getUser(){
-    const u=readJSON(USER_KEY,{});
-    try{ if(window.user && typeof window.user==='object') Object.assign(window.user,u); }catch(e){}
-    return window.user && typeof window.user==='object' ? window.user : u;
+  function cleanUrl(v){
+    v = String(v || '').trim();
+    if(!v || v === 'none') return '';
+    const m = v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v = m[1];
+    return v.replace(/^['"]|['"]$/g,'').trim();
   }
-  function saveUser(u){
-    writeJSON(USER_KEY,u||{});
-    try{ if(window.user && typeof window.user==='object') Object.assign(window.user,u||{}); }catch(e){}
-  }
-  function toastMsg(t){ try{ if(typeof window.toast==='function') window.toast(t); }catch(e){} }
-  function firstUrl(o){ return String(o?.url || o?.img || o?.image || o?.src || o?.frame || o?.frameUrl || o?.value || '').trim(); }
-  function getFramesRaw(){
-    let arr=[];
-    FRAME_KEYS.forEach(k=>{ const v=readJSON(k,[]); if(Array.isArray(v)) arr=arr.concat(v); });
-    const u=getUser();
-    if(Array.isArray(u.inventory)){
-      u.inventory.forEach(it=>{
-        const url=firstUrl(it);
-        const txt=String([it.type,it.kind,it.name,it.title,it.value].filter(Boolean).join(' ')).toLowerCase();
-        if(url && (txt.includes('frame') || txt.includes('moldura'))){
-          arr.push({name:it.name||'Moldura',desc:it.desc||'Espinhos.',price:it.price||'40 Linkwuans',url,prices:it.prices||null});
-        }
-      });
+
+  function readUser(){
+    try{
+      const saved = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
+      if(typeof user === 'object' && user){ return Object.assign({}, saved, user); }
+      return saved;
+    }catch(e){
+      try{ if(typeof user === 'object' && user) return user; }catch(err){}
+      return {};
     }
-    const seen=new Set();
-    return arr.map((f,i)=>({
-      name:f.name||f.nome||f.title||'Moldura',
-      desc:f.desc||f.descricao||f.description||'Espinhos.',
-      price:f.price||f.preco||f.valor||'40 Linkwuans',
-      url:firstUrl(f),
-      prices:f.prices||f.precos||null,
-      id:f.id||('frame_'+i)
-    })).filter(f=>f.url).filter(f=>{ const k=(f.url+'|'+f.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });
   }
-  function getVisibleFrame(idx){
-    const visible=window.__dlinkyVisibleFrames || [];
-    const v=visible[idx];
-    if(v){ return {name:v[0],price:v[1],id:v[2],desc:v[3],url:v[5],prices:v[6]||null}; }
-    return getFramesRaw()[idx] || null;
+
+  function fromElement(sel){
+    const el = q(sel);
+    if(!el) return '';
+    if(el.tagName === 'IMG') return cleanUrl(el.getAttribute('src'));
+    return cleanUrl(el.style.backgroundImage || getComputedStyle(el).backgroundImage);
   }
-  function keyForFrame(frame,idx){ return String((frame&&frame.url) || (frame&&frame.id) || (frame&&frame.name) || idx); }
-  function getSavedDuration(frame,idx){
-    const map=readJSON(DURATION_KEY,{});
-    return map[keyForFrame(frame,idx)] || '';
-  }
-  function setSavedDuration(frame,idx,dur){
-    const map=readJSON(DURATION_KEY,{});
-    map[keyForFrame(frame,idx)] = dur;
-    writeJSON(DURATION_KEY,map);
-  }
-  function priceNumber(v){ const n=num(v); return n || 40; }
-  function priceFor(frame,dur,card){
-    frame = frame || {};
-    if(frame.prices && Object.prototype.hasOwnProperty.call(frame.prices,dur) && frame.prices[dur]!=='' && !Number.isNaN(Number(frame.prices[dur]))){
-      return Number(frame.prices[dur]);
+
+  function bestAvatar(){
+    const u = readUser();
+    const candidates = [
+      u.avatar,
+      u.photo,
+      u.photoURL,
+      u.avatarUrl,
+      localStorage.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')),
+      localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')),
+      fromElement('#dashAvatar'),
+      fromElement('#sideAvatar'),
+      fromElement('#profileAvatar'),
+      fromElement('.profile-avatar'),
+      fromElement('.avatar')
+    ];
+    for(const c of candidates){
+      const v = cleanUrl(c);
+      if(v && !/placeholder|default-avatar|usuario|user-icon/i.test(v)) return v;
+      if(v && /^https?:\/\//i.test(v)) return v;
     }
-    const base = Number(card?.dataset?.basePrice || priceNumber(frame.price));
-    if(dur === 'Permanente') return base*5;
-    if(dur === '15 dias') return base*3;
-    if(dur === '7 dias') return base*2;
-    return base;
+    return cleanUrl(u.avatar || candidates.find(Boolean) || '');
   }
-  function syncOne(sel, save){
-    if(!sel) return;
-    const idx=Number(sel.dataset.frameDuration||0);
-    const card=sel.closest('[data-frame-card]');
-    const frame=getVisibleFrame(idx);
-    if(!frame) return;
-    const saved=getSavedDuration(frame,idx);
-    if(save) setSavedDuration(frame,idx,sel.value || '3 dias');
-    else if(saved && sel.value !== saved) sel.value = saved;
-    const dur=sel.value || '3 dias';
-    const price=priceFor(frame,dur,card);
-    if(card){
-      card.dataset.currentDuration=dur;
-      card.dataset.currentPrice=String(price);
+
+  function paintAvatarPreview(){
+    const store = q('#tab-store');
+    if(!store) return;
+    const av = bestAvatar();
+    if(!av) return;
+
+    // Mantém salvo para próximos renders sem mexer nos outros dados.
+    try{
+      const u = readUser();
+      if(u && !u.avatar){ u.avatar = av; localStorage.setItem('dlinkyUser', JSON.stringify(u)); }
+      localStorage.setItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'), av);
+    }catch(e){}
+
+    const targets = qa('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', store);
+    targets.forEach(el=>{
+      el.style.setProperty('background-image', 'url("'+av.replace(/"/g,'%22')+'")', 'important');
+      el.style.setProperty('background-size', 'cover', 'important');
+      el.style.setProperty('background-position', 'center', 'important');
+      el.style.setProperty('background-repeat', 'no-repeat', 'important');
+      el.style.setProperty('background-color', 'transparent', 'important');
+      el.style.setProperty('display', 'block', 'important');
+      el.style.setProperty('visibility', 'visible', 'important');
+      el.style.setProperty('opacity', '1', 'important');
+    });
+
+    // Caso algum card tenha perdido o elemento do avatar, recria somente dentro da preview da moldura.
+    qa('.frame-shop-preview,.real-frame-preview,.inv-preview', store).forEach(box=>{
+      const hasFrame = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
+      if(!hasFrame) return;
+      let avatarEl = q('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', box);
+      if(!avatarEl){
+        avatarEl = document.createElement('div');
+        avatarEl.className = 'frame-avatar-demo zyo-person-demo';
+        box.insertBefore(avatarEl, box.firstChild);
+      }
+      avatarEl.style.cssText += ';position:absolute!important;left:50%!important;top:50%!important;width:92px!important;height:92px!important;border-radius:50%!important;transform:translate(-50%,-50%)!important;z-index:1!important;background:url("'+av.replace(/"/g,'%22')+'") center/cover no-repeat!important;';
+      box.style.setProperty('position','relative','important');
+      box.style.setProperty('overflow','hidden','important');
+      const img = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
+      if(img){
+        img.style.setProperty('position','absolute','important');
+        img.style.setProperty('left','50%','important');
+        img.style.setProperty('top','50%','important');
+        img.style.setProperty('transform','translate(-50%,-50%)','important');
+        img.style.setProperty('z-index','2','important');
+        img.style.setProperty('object-fit','contain','important');
+        img.style.setProperty('pointer-events','none','important');
+      }
+    });
+  }
+
+  // Reaplica após renders antigos da loja sem alterar o render da loja.
+  const oldRenderShop = window.renderShop;
+  if(typeof oldRenderShop === 'function' && !oldRenderShop.__dlinkyAvatarPreviewOnly){
+    const patched = function(){
+      const r = oldRenderShop.apply(this, arguments);
+      requestAnimationFrame(paintAvatarPreview);
+      setTimeout(paintAvatarPreview, 80);
+      return r;
+    };
+    patched.__dlinkyAvatarPreviewOnly = true;
+    window.renderShop = patched;
+    try{ renderShop = patched; }catch(e){}
+  }
+
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab],#tab-store [data-frame-duration]')){
+      setTimeout(paintAvatarPreview, 30);
+      setTimeout(paintAvatarPreview, 180);
     }
-    const label = card?.querySelector('[data-price-label]') || q(`[data-price-label="${idx}"]`, q('#tab-store') || document);
-    if(label) label.textContent = price + ' Linkwuans';
-    return {idx,card,frame,dur,price};
-  }
-  function syncAll(){ qa('#tab-store [data-frame-duration]').forEach(sel=>syncOne(sel,false)); }
-  function openFrameModal(btn){
-    const idx=Number(btn.dataset.confirmFrame||0);
-    const sel=q(`#tab-store [data-frame-duration="${idx}"]`);
-    const data=syncOne(sel,true) || {idx,frame:getVisibleFrame(idx),dur:'3 dias',price:0};
-    const frame=data.frame || getVisibleFrame(idx);
-    const modal=q('#frameBuyModal');
-    if(!modal || !frame) return;
-    if(q('#frameBuyName')) q('#frameBuyName').textContent=frame.name||'Moldura';
-    if(q('#frameBuyDuration')) q('#frameBuyDuration').textContent=data.dur;
-    if(q('#frameBuyPrice')) q('#frameBuyPrice').textContent=data.price+' Linkwuans';
-    if(q('#frameBuyType')) q('#frameBuyType').textContent=data.dur==='Permanente'?'Permanente':'Normal';
-    if(q('#frameBuyUser')) q('#frameBuyUser').textContent=(getUser().name||'Usuário');
-    if(q('#frameBuyImg')) q('#frameBuyImg').src=frame.url||'';
-    const avatar=q('#frameBuyAvatar');
-    if(avatar){
-      const u=getUser();
-      const av=String(u.avatar||u.photoURL||u.icon||'').trim();
-      avatar.style.backgroundImage=av?`url("${esc(av)}")`:'';
+  }, true);
+
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]')){
+      setTimeout(paintAvatarPreview, 30);
+      setTimeout(paintAvatarPreview, 180);
     }
-    modal.dataset.idx=String(idx);
-    modal.dataset.duration=data.dur;
-    modal.dataset.price=String(data.price);
-    modal.classList.add('show');
+  }, true);
+
+  const mo = new MutationObserver(function(){
+    const store = q('#tab-store');
+    if(store && store.classList.contains('active')) requestAnimationFrame(paintAvatarPreview);
+  });
+  function startObserve(){ const store=q('#tab-store'); if(store) mo.observe(store,{childList:true,subtree:true}); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserve, {once:true}); else startObserve();
+
+  setTimeout(paintAvatarPreview, 100);
+  setTimeout(paintAvatarPreview, 500);
+  setTimeout(paintAvatarPreview, 1200);
+})();
+
+
+/* ===== FIX CIRÚRGICO: botão Comprar do modal de moldura clicável =====
+   Só corrige o clique do #confirmFrameBuy quando o modal antigo usa dataset.
+   Não mexe em loja, avatar, música, duração nem preço.
+*/
+(function(){
+  if(window.__dlinkyModalComprarAcessivelFix) return;
+  window.__dlinkyModalComprarAcessivelFix = true;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function getTextNumber(s){const m=String(s||'').match(/\d+/);return m?Number(m[0]):0}
+  function readUser(){
+    try{ if(typeof user==='object' && user) return user; }catch(e){}
+    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}
   }
-  function confirmBuy(){
-    const modal=q('#frameBuyModal'); if(!modal) return;
-    const idx=Number(modal.dataset.idx||0);
-    const frame=getVisibleFrame(idx); if(!frame) return;
-    const sel=q(`#tab-store [data-frame-duration="${idx}"]`);
-    const data=syncOne(sel,true) || {dur:modal.dataset.duration||'3 dias',price:Number(modal.dataset.price||0)};
-    const u=getUser();
-    u.coins=Number(u.coins||0);
+  function saveUserSafe(u){
+    try{ if(typeof user==='object' && user) Object.assign(user,u); }catch(e){}
+    localStorage.setItem('dlinkyUser', JSON.stringify(u));
+    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+    try{ if(typeof renderInventory==='function') renderInventory(); }catch(e){}
+    try{ if(typeof applyProfileFrame==='function') applyProfileFrame(); }catch(e){}
+  }
+  function toastSafe(msg){try{ if(typeof toast==='function') toast(msg); }catch(e){} }
+  function closeModal(){
+    const m=q('#frameBuyModal');
+    if(m){m.classList.remove('show');m.style.display='none';}
+  }
+  function itemFromModal(){
+    const m=q('#frameBuyModal');
+    const idx=Number(m?.dataset?.idx||0);
+    const list=window.__dlinkyVisibleFrames||[];
+    let it=list[idx];
+    const name=q('#frameBuyName')?.textContent?.trim()||'Moldura';
+    const img=q('#frameBuyImg')?.getAttribute('src')||'';
+    if(Array.isArray(it)) return {name:it[0]||name,url:it[5]||img};
+    if(it && typeof it==='object') return {name:it.name||name,url:it.url||it.frameUrl||img,id:it.id};
+    return {name,url:img};
+  }
+
+  window.__dlinkyForceFrameBuyFromModal = function(){
+    const m=q('#frameBuyModal');
+    if(!m || !m.classList.contains('show')) return;
+
+    const item=itemFromModal();
+    const duration=(m.dataset.duration||q('#frameBuyDuration')?.textContent||'3 dias').trim();
+    const price=Number(m.dataset.price||getTextNumber(q('#frameBuyPrice')?.textContent)||0);
+    const u=readUser();
+    u.coins=Number(u.coins||u.linkwuans||0);
+    u.linkwuans=u.coins;
     u.inventory=Array.isArray(u.inventory)?u.inventory:[];
     u.purchases=Array.isArray(u.purchases)?u.purchases:[];
-    if(u.coins < data.price){ modal.classList.remove('show'); toastMsg('Saldo insuficiente em Linkwuans.'); return; }
-    u.coins -= data.price;
-    u.inventory.unshift({type:'frames',name:frame.name||'Moldura',value:'custom-frame',url:frame.url||'',duration:data.dur,price:data.price+' Linkwuans',date:Date.now()});
-    u.frame = frame.url || u.frame;
-    u.decoration = 'none';
-    u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:data.price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
-    saveUser(u);
-    modal.classList.remove('show');
-    try{ if(typeof window.renderDash==='function') window.renderDash(); }catch(e){}
-    toastMsg('Moldura comprada e aplicada!');
+
+    if(price>0 && u.coins < price){
+      closeModal();
+      toastSafe('Saldo insuficiente em Linkwuans.');
+      return;
+    }
+
+    if(price>0) u.coins -= price;
+    u.linkwuans = u.coins;
+    const url=item.url||'';
+    const invItem={
+      id:item.id||('frame_'+Date.now()),
+      type:'frames',kind:'frame',source:'admin',
+      name:item.name||'Moldura',
+      url:url,frameUrl:url,value:'custom-frame',
+      duration:duration,
+      price:price+' Linkwuans',
+      boughtAt:Date.now(),date:Date.now()
+    };
+    if(url){
+      u.inventory=u.inventory.filter(x=>String(x.url||x.frameUrl||'')!==String(url));
+      u.inventory.unshift(invItem);
+      u.frame=url;
+      u.frameUrl=url;
+      u.frameName=invItem.name;
+      u.decoration='none';
+    }
+    u.__hasPurchasedFrame=true;
+    u.__hasPurchasedItem=true;
+    u.__cleanNewAccount=false;
+    u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
+    saveUserSafe(u);
+    closeModal();
+    toastSafe('Moldura comprada e salva no inventário!');
+  };
+
+  const st=document.createElement('style');
+  st.textContent='#frameBuyModal.show{pointer-events:auto!important;z-index:999999!important}#frameBuyModal.show *{pointer-events:auto!important}#confirmFrameBuy{pointer-events:auto!important;cursor:pointer!important;opacity:1!important;visibility:visible!important}';
+  document.head.appendChild(st);
+})();
+
+
+/* ===== FIX CIRÚRGICO FINAL: Linkwuans da moldura sem piscar =====
+   Só sincroniza o preço do card/modal com os preços cadastrados no Admin.
+   Não mexe em avatar, música, perfil, admin, abas ou HTML da loja.
+*/
+(function(){
+  if(window.__dlinkyLinkwuansSemPiscarFinal) return;
+  window.__dlinkyLinkwuansSemPiscarFinal = true;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function read(k,fb){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(fb))}catch(e){return fb}}
+  function num(v){const m=String(v||'').match(/\d+/);return m?Number(m[0]):0}
+  function norm(v){return String(v||'').trim().toLowerCase()}
+  function frames(){
+    const list=[];
+    ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'].forEach(k=>{
+      const arr=read(k,[]); if(Array.isArray(arr)) list.push(...arr);
+    });
+    const seen=new Set();
+    return list.filter(f=>{
+      const key=norm(f?.url||f?.frameUrl||f?.id||f?.name);
+      if(!key||seen.has(key))return false; seen.add(key); return true;
+    });
   }
-
-  const onChange=function(e){
-    const sel=e.target && e.target.closest && e.target.closest('#tab-store [data-frame-duration]');
-    if(!sel) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    syncOne(sel,true);
-    setTimeout(()=>syncOne(sel,false),0);
-    setTimeout(()=>syncOne(sel,false),80);
-    setTimeout(()=>syncOne(sel,false),250);
-    return false;
-  };
-  onChange.__dlinkySafeFrameDuration=true;
-  nativeAdd.call(document,'change',onChange,true);
-
-  const onClick=function(e){
-    const buy=e.target && e.target.closest && e.target.closest('#tab-store [data-confirm-frame]');
-    if(buy){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); openFrameModal(buy); return false; }
-    if(e.target && e.target.closest && e.target.closest('#confirmFrameBuy')){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); confirmBuy(); return false; }
-    if(e.target && e.target.closest && (e.target.closest('#cancelFrameBuy') || e.target.closest('#closeFrameBuy'))){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); q('#frameBuyModal')?.classList.remove('show'); return false; }
-  };
-  onClick.__dlinkySafeFrameDuration=true;
-  nativeAdd.call(document,'click',onClick,true);
-
-  const mo=new MutationObserver(()=>{ clearTimeout(window.__dlinkyFramePriceFinalTimer); window.__dlinkyFramePriceFinalTimer=setTimeout(syncAll,0); });
-  const start=()=>{ const root=q('#tab-store'); if(root) mo.observe(root,{childList:true,subtree:true}); syncAll(); setTimeout(syncAll,120); setTimeout(syncAll,500); };
-  if(document.readyState==='loading') nativeAdd.call(document,'DOMContentLoaded',start,false); else start();
-  nativeAdd.call(window,'hashchange',()=>setTimeout(syncAll,120),false);
+  function priceOf(f,dur,fallback){
+    const p=Number(f?.prices?.[dur]);
+    if(Number.isFinite(p)&&p>0)return p;
+    const p2=Number(f?.precos?.[dur]);
+    if(Number.isFinite(p2)&&p2>0)return p2;
+    if(dur==='Permanente'){
+      const pp=Number(f?.prices?.Permanente||f?.precos?.Permanente);
+      if(Number.isFinite(pp)&&pp>0)return pp;
+    }
+    return num(f?.price||f?.preco||f?.valor||fallback||0);
+  }
+  function frameForCard(card,idx){
+    const arr=frames();
+    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.real-inv-frame,.frame-img');
+    const src=norm(img?.getAttribute?.('src')||img?.src||'');
+    if(src){const by=arr.find(f=>norm(f?.url||f?.frameUrl)===src); if(by)return by;}
+    return arr[idx] || null;
+  }
+  function sync(){
+    const store=q('#tab-store');
+    if(!store || !store.classList.contains('active')) return;
+    qa('[data-frame-card],.frame-shop-card,.asset-card',store).forEach((card,i)=>{
+      const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration]');
+      if(!sel) return;
+      const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||i);
+      const f=frameForCard(card,idx);
+      const label=card.querySelector('[data-price-label],[data-v3-price]');
+      if(!label) return;
+      const price=priceOf(f,sel.value,label.textContent);
+      if(price>0) label.textContent=price+' Linkwuans';
+    });
+    const m=q('#frameBuyModal.show');
+    if(m){
+      const name=q('#frameBuyName')?.textContent?.trim();
+      const dur=q('#frameBuyDuration')?.textContent?.trim()||m.dataset.duration||'3 dias';
+      const img=norm(q('#frameBuyImg')?.getAttribute('src')||'');
+      const f=frames().find(x=>norm(x?.url||x?.frameUrl)===img) || frames().find(x=>norm(x?.name)===norm(name));
+      const label=q('#frameBuyPrice');
+      if(label){
+        const price=priceOf(f,dur,label.textContent);
+        if(price>0){ label.textContent=price+' Linkwuans'; m.dataset.price=String(price); }
+      }
+    }
+  }
+  document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration]')){sync();setTimeout(sync,30);setTimeout(sync,160);}},true);
+  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame],#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){setTimeout(sync,30);setTimeout(sync,160);setTimeout(sync,350);}},true);
+  const mo=new MutationObserver(()=>sync());
+  function start(){const s=q('#tab-store');if(s)mo.observe(s,{childList:true,subtree:true});sync();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+  setTimeout(sync,200);setTimeout(sync,800);
 })();
