@@ -422,7 +422,12 @@ renderDash();
   }
   document.addEventListener('click',e=>{
     const b=e.target.closest('[data-confirm-frame]');
-    if(b){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); openFrameConfirm(+b.dataset.confirmFrame); return; }
+    if(b){
+      const card=b.closest('[data-frame-card]');
+      const sel=card?.querySelector('[data-frame-duration]');
+      if(sel?.dataset?.frameKey) localStorage.setItem(sel.dataset.frameKey, sel.value);
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); openFrameConfirm(+b.dataset.confirmFrame); return;
+    }
     if(e.target.closest('#closeFrameBuy')) q('#frameBuyModal')?.classList.remove('show');
     if(e.target.closest('#cancelFrameBuy')) q('#frameBuyModal')?.classList.remove('show');
     if(e.target.closest('#confirmFrameBuy')) buySelectedFrame();
@@ -11626,7 +11631,6 @@ document.addEventListener("click",(e)=>{
   window.__dlinkyOnlyStorePatchV1 = true;
 
   const STORE_MODE_KEY = 'dlinky_loja_aba_fixa';
-  const FRAME_DURATION_KEY = 'dlinky_loja_moldura_duracao_fixa_v1';
   const USER_KEY = 'dlinkyUser';
   const FRAME_KEYS = ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
   const SELO_KEYS = ['dlinkyCleanAdminSelosCatalog','dlinkyCustomSelos','dlinkyAdminSelos','dlinkySelos','dlinkyInsignias','dlinkyBadges'];
@@ -11670,41 +11674,6 @@ document.addEventListener("click",(e)=>{
   }
   function getMode(){ return normMode(localStorage.getItem(STORE_MODE_KEY) || 'coins'); }
   function setMode(m){ localStorage.setItem(STORE_MODE_KEY,normMode(m)); }
-  function readDurations(){ return readJSON(FRAME_DURATION_KEY,{}); }
-  function frameDurationId(f,i){ return String((f&&f.id)||((f&&f.url)||'')+'|'+((f&&f.name)||'')||('frame_'+i)); }
-  function getFrameDuration(f,i){
-    const all=readDurations();
-    const d=all[frameDurationId(f,i)] || '3 dias';
-    return ['3 dias','7 dias','15 dias','Permanente'].includes(d) ? d : '3 dias';
-  }
-  function setFrameDuration(f,i,d){
-    if(!['3 dias','7 dias','15 dias','Permanente'].includes(d)) d='3 dias';
-    const all=readDurations();
-    all[frameDurationId(f,i)]=d;
-    writeJSON(FRAME_DURATION_KEY,all);
-  }
-  function optionSelected(current,value){ return current===value ? ' selected' : ''; }
-  function setSelectDurationValue(sel,value){
-    if(!sel) return;
-    if(['3 dias','7 dias','15 dias','Permanente'].includes(value)) sel.value=value;
-  }
-  function setFrameCardPrice(idx,price){
-    const lab=q(`[data-price-label="${idx}"]`,storeRoot());
-    if(lab) lab.textContent=price+' Linkwuans';
-  }
-  function setAllRenderedDurations(){
-    const frames=getFrames();
-    qa('#tab-store [data-frame-duration]').forEach(sel=>{
-      const idx=Number(sel.dataset.frameDuration||0);
-      const f=frames[idx];
-      const dur=getFrameDuration(f,idx);
-      setSelectDurationValue(sel,dur);
-      const card=sel.closest('[data-frame-card]');
-      const base=Number(card?.dataset?.basePrice || priceNumber(f?.price));
-      const price=(f?.prices && f.prices[dur]!=null) ? Number(f.prices[dur]) : priceFor(base,dur);
-      setFrameCardPrice(idx,price);
-    });
-  }
   function setActive(m){
     const s=storeRoot(); if(!s) return;
     const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
@@ -11722,6 +11691,16 @@ document.addEventListener("click",(e)=>{
     if(dur==='15 dias') return base*3;
     if(dur==='7 dias') return base*2;
     return base;
+  }
+  function frameDurationKey(f,i){
+    return 'dlinkyFrameDuration_' + String((f && (f.id || f.url || f.name)) || i).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');
+  }
+  function getFrameDuration(f,i){
+    const v=localStorage.getItem(frameDurationKey(f,i));
+    return ['3 dias','7 dias','15 dias','Permanente'].includes(v) ? v : '3 dias';
+  }
+  function optionDur(label,current){
+    return `<option ${label===current?'selected':''}>${label}</option>`;
   }
   function getAvatar(){
     const u=getUser();
@@ -11778,20 +11757,15 @@ document.addEventListener("click",(e)=>{
     g.innerHTML=frames.map((f,i)=>{
       const base=priceNumber(f.price);
       const dur=getFrameDuration(f,i);
-      const currentPrice=(f.prices && f.prices[dur]!=null) ? Number(f.prices[dur]) : priceFor(base,dur);
-      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
+      const shownPrice=(f.prices && f.prices[dur]!=null) ? Number(f.prices[dur]) : priceFor(base,dur);
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}" data-frame-key="${esc(frameDurationKey(f,i))}">
         <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
           <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
           <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
         </div>
         <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
-        <div class="frame-price">Preço: <b data-price-label="${i}">${currentPrice} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}">
-          <option${optionSelected(dur,'3 dias')}>3 dias</option>
-          <option${optionSelected(dur,'7 dias')}>7 dias</option>
-          <option${optionSelected(dur,'15 dias')}>15 dias</option>
-          <option${optionSelected(dur,'Permanente')}>Permanente</option>
-        </select>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${shownPrice} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}" data-frame-key="${esc(frameDurationKey(f,i))}">${optionDur('3 dias',dur)}${optionDur('7 dias',dur)}${optionDur('15 dias',dur)}${optionDur('Permanente',dur)}</select>
         <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
       </div>`;
     }).join('');
@@ -11812,7 +11786,7 @@ document.addEventListener("click",(e)=>{
   function renderStore(m){
     const g=shopGrid(); if(!g) return;
     m=normMode(m||getMode()); setMode(m); setActive(m);
-    if(m==='frames'){ renderFrames(g); setAllRenderedDurations(); }
+    if(m==='frames') renderFrames(g);
     else if(m==='effects') renderEffects(g);
     else if(m==='other') renderSelos(g);
     else renderCoins(g);
@@ -11836,13 +11810,15 @@ document.addEventListener("click",(e)=>{
     const sel=e.target.closest('#tab-store [data-frame-duration]');
     if(!sel) return;
     const idx=Number(sel.dataset.frameDuration||0);
-    const frames=getFrames();
-    const f=frames[idx];
-    setFrameDuration(f,idx,sel.value);
+    if(sel.dataset.frameKey){
+      localStorage.setItem(sel.dataset.frameKey, sel.value);
+    }
+    const item=(window.__dlinkyVisibleFrames||[])[idx];
     const card=sel.closest('[data-frame-card]');
-    const base=Number(card?.dataset?.basePrice || priceNumber(f?.price));
-    const price=(f?.prices && f.prices[sel.value]!=null) ? Number(f.prices[sel.value]) : priceFor(base,sel.value);
-    setFrameCardPrice(idx,price);
+    const base=Number(card?.dataset?.basePrice || priceNumber(item?.[1]));
+    const prices=item?.[6]||null;
+    const price=(prices && prices[sel.value]!=null) ? Number(prices[sel.value]) : priceFor(base,sel.value);
+    const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab) lab.textContent=price+' Linkwuans';
   },true);
 
   const oldOpen=window.openTab || (typeof openTab==='function'?openTab:null);
