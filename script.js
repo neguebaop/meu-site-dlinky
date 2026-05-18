@@ -11634,8 +11634,232 @@ document.addEventListener("click",(e)=>{
   setTimeout(paintBio,1200);
 })();
 
+/* ===== DLINKY PATCH DEFINITIVO — SOMENTE LOJA SEM PISCAR/RESETAR =====
+   Corrige apenas a loja:
+   - Recarga/Molduras/Efeitos/Outros ficam na aba certa.
+   - A duração da moldura não volta mais para 3 dias.
+   - Se algum script antigo tentar redesenhar a loja, este patch restaura a aba correta.
+   - Não mexe em perfil, avatar, música, login, cadastro nem renderProfile.
+*/
+(function(){
+  if(window.__dlinkyStoreStableFinalV10) return;
+  window.__dlinkyStoreStableFinalV10 = true;
 
-/* bloco antigo da loja removido: ele fazia as abas voltarem sozinhas */
+  const MODE_KEY = 'dlinky_loja_aba_fixa_final';
+  const DUR_KEY = 'dlinky_moldura_duracao_fixa_final';
+  const USER_KEY = 'dlinkyUser';
+  const FRAME_KEYS = ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
+  const SELO_KEYS = ['dlinkyCleanAdminSelosCatalog','dlinkyCustomSelos','dlinkyAdminSelos','dlinkySelos','dlinkyInsignias','dlinkyBadges'];
+  const COINS = [
+    ['345 Linkwuans','R$ 30,00',345],
+    ['650 Linkwuans','R$ 50,00',650],
+    ['1450 Linkwuans','R$ 100,00',1450],
+    ['3300 Linkwuans','R$ 200,00',3300]
+  ];
+  const EFFECTS = [
+    ['Neon no Nome','180 Linkwuans','neonName'],
+    ['Nome Brilhante','220 Linkwuans','shineName'],
+    ['Nome Colorido','240 Linkwuans','rainbowName'],
+    ['Ocultar Views','150 Linkwuans','hideViews']
+  ];
+  const DURATIONS = ['3 dias','7 dias','15 dias','Permanente'];
+
+  let rendering = false;
+  let lastMode = normMode(localStorage.getItem(MODE_KEY) || 'coins');
+  let restoreTimer = null;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function esc(v){return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function toastMsg(t){try{if(typeof window.toast==='function')return window.toast(t)}catch(e){}}
+  function storeRoot(){return q('#tab-store')}
+  function shopGrid(){const s=storeRoot();return s?q('#shopGrid',s):q('#shopGrid')}
+  function normMode(m){
+    m=String(m||'').toLowerCase();
+    if(m.includes('frame')||m.includes('mold')) return 'frames';
+    if(m.includes('effect')||m.includes('efe')) return 'effects';
+    if(m.includes('other')||m.includes('out')||m.includes('selo')||m.includes('insign')) return 'other';
+    return 'coins';
+  }
+  function setMode(m){lastMode=normMode(m);localStorage.setItem(MODE_KEY,lastMode);return lastMode}
+  function getMode(){return normMode(lastMode || localStorage.getItem(MODE_KEY) || 'coins')}
+  function getUser(){
+    const saved=readJSON(USER_KEY,{});
+    try{if(window.user&&typeof window.user==='object')return Object.assign(window.user,saved)}catch(e){}
+    return saved;
+  }
+  function saveUser(u){
+    writeJSON(USER_KEY,u||{});
+    try{if(window.user&&typeof window.user==='object')Object.assign(window.user,u||{})}catch(e){}
+  }
+  function firstUrl(o){return String(o?.url||o?.img||o?.image||o?.src||o?.frame||o?.frameUrl||o?.value||'').trim()}
+  function priceNumber(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
+  function durationMap(){return readJSON(DUR_KEY,{})}
+  function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
+  function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
+  function priceFor(frame,dur){const p=Number(frame?.prices?.[dur]);if(Number.isFinite(p)&&p>0)return p;return priceNumber(frame?.price);}
+  function getAvatar(){
+    return String((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||'').trim();
+  }
+  function getFrames(){
+    let arr=[];
+    FRAME_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
+    const u=getUser();
+    if(Array.isArray(u.inventory)){
+      u.inventory.forEach(it=>{
+        const url=firstUrl(it);
+        const txt=String([it.type,it.kind,it.name,it.title,it.value].filter(Boolean).join(' ')).toLowerCase();
+        if(url&&(txt.includes('frame')||txt.includes('moldura'))){
+          arr.push({name:it.name||'Moldura',desc:it.desc||'Espinhos.',price:it.price||'40 Linkwuans',url,prices:it.prices||null,id:it.id||url});
+        }
+      });
+    }
+    const seen=new Set();
+    return arr.map((f,i)=>{
+      const url=firstUrl(f);
+      return {name:f.name||f.nome||f.title||'Moldura',desc:f.desc||f.descricao||f.description||'Espinhos.',price:f.price||f.preco||f.valor||'40 Linkwuans',url,prices:f.prices||f.precos||null,id:String(f.id||url||('frame_'+i))};
+    }).filter(f=>f.url).filter(f=>{const k=(f.url+'|'+f.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+  }
+  function getSelos(){
+    let arr=[];
+    SELO_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
+    const seen=new Set();
+    return arr.map((s,i)=>({name:s.name||s.nome||s.title||'Selo',desc:s.desc||s.descricao||'',price:s.price||s.preco||'0 Linkwuans',url:firstUrl(s),id:String(s.id||s.url||('selo_'+i))})).filter(s=>{const k=(s.id+'|'+s.url+'|'+s.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+  }
+  function setActive(m){
+    const s=storeRoot(); if(!s)return;
+    const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
+    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',s).forEach(btn=>{
+      const bm=normMode(btn.dataset.shopTab||btn.textContent);
+      btn.dataset.shopTab=bm;
+      if(labels[bm])btn.textContent=labels[bm];
+      btn.classList.toggle('active',bm===m);
+    });
+  }
+  function renderCoins(g){
+    g.className='asset-grid';
+    g.innerHTML=COINS.map(x=>`<div class="asset-card"><div class="asset-preview shop-preview">◈</div><div class="asset-body"><b>${x[0]}</b><small>${x[1]}</small><button class="btn primary small" type="button" data-loja-coin="${x[2]}">Comprar</button></div></div>`).join('');
+  }
+  function renderFrames(g){
+    const frames=getFrames();
+    const av=getAvatar();
+    window.__dlinkyVisibleFrames=frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices||null,f.id]);
+    g.className='asset-grid frames-shop-grid';
+    if(!frames.length){g.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return;}
+    g.innerHTML=frames.map((f,i)=>{
+      const d=getDuration(f.id);
+      const p=priceFor(f,d);
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-frame-id="${esc(f.id)}" data-base-price="${priceNumber(f.price)}">
+        <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
+          <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
+          <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
+        </div>
+        <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${p} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}" data-frame-id="${esc(f.id)}">${DURATIONS.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>
+        <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
+      </div>`;
+    }).join('');
+  }
+  function renderEffects(g){
+    g.className='asset-grid';
+    g.innerHTML=EFFECTS.map((x,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">✦</div><div class="asset-body"><b>${esc(x[0])}</b><small>${esc(x[1])}</small><button class="btn primary small" type="button" data-loja-effect="${i}">Comprar</button></div></div>`).join('');
+  }
+  function renderSelos(g){
+    const selos=getSelos();
+    g.className='asset-grid';
+    if(!selos.length){g.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';return;}
+    g.innerHTML=selos.map(s=>`<div class="asset-card"><div class="asset-preview shop-preview">${s.url?`<img src="${esc(s.url)}" alt="${esc(s.name)}" style="max-width:90px;max-height:90px;object-fit:contain">`:'✦'}</div><div class="asset-body"><b>${esc(s.name)}</b><small>${esc(s.price)}</small><button class="btn primary small" type="button" data-loja-selo="${esc(s.id)}">Comprar</button></div></div>`).join('');
+  }
+  function renderStore(m){
+    const g=shopGrid(); if(!g)return;
+    m=setMode(m||getMode());
+    rendering=true;
+    setActive(m);
+    if(m==='frames')renderFrames(g);
+    else if(m==='effects')renderEffects(g);
+    else if(m==='other')renderSelos(g);
+    else renderCoins(g);
+    requestAnimationFrame(()=>{rendering=false});
+  }
+  function scheduleRestore(){
+    clearTimeout(restoreTimer);
+    restoreTimer=setTimeout(()=>{
+      const s=storeRoot();
+      if(s&&s.classList.contains('active')) renderStore(getMode());
+    },40);
+  }
+
+  window.addEventListener('pointerdown',function(e){
+    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
+    if(!tab)return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    renderStore(tab.dataset.shopTab||tab.textContent);
+  },true);
+
+  window.addEventListener('click',function(e){
+    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
+    if(tab){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();renderStore(tab.dataset.shopTab||tab.textContent);return;}
+    const coin=e.target&&e.target.closest&&e.target.closest('[data-loja-coin]');
+    if(coin){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const v=Number(coin.dataset.lojaCoin||0);if(window.dlinkyOpenPixRecharge)window.dlinkyOpenPixRecharge(v);else{const u=getUser();u.coins=Number(u.coins||0)+v;saveUser(u);toastMsg('Linkwuans adicionados.')}return;}
+    const eff=e.target&&e.target.closest&&e.target.closest('[data-loja-effect]');
+    if(eff){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const it=EFFECTS[Number(eff.dataset.lojaEffect)||0];const u=getUser();u.inventory=Array.isArray(u.inventory)?u.inventory:[];u.inventory.unshift({type:'effects',name:it[0],value:it[2]});u[it[2]]=true;saveUser(u);toastMsg('Efeito adicionado!');return;}
+    const selo=e.target&&e.target.closest&&e.target.closest('[data-loja-selo]');
+    if(selo){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const u=getUser();u.selosOwned=Array.isArray(u.selosOwned)?u.selosOwned:[];if(!u.selosOwned.includes(selo.dataset.lojaSelo))u.selosOwned.push(selo.dataset.lojaSelo);u.activeSelo=selo.dataset.lojaSelo;saveUser(u);toastMsg('Selo comprado!');return;}
+  },true);
+
+  window.addEventListener('input',function(e){
+    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
+    if(!sel)return;
+    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
+    saveDuration(id,sel.value);
+    const frames=getFrames();
+    const idx=Number(sel.dataset.frameDuration||0);
+    const f=frames[idx];
+    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
+  },true);
+
+  window.addEventListener('change',function(e){
+    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
+    if(!sel)return;
+    e.stopPropagation();
+    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
+    saveDuration(id,sel.value);
+    const frames=getFrames();
+    const idx=Number(sel.dataset.frameDuration||0);
+    const f=frames[idx];
+    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
+  },true);
+
+  const oldOpen=window.openTab||(typeof openTab==='function'?openTab:null);
+  if(typeof oldOpen==='function'){
+    const patched=function(id){const r=oldOpen.apply(this,arguments); if(id==='store')setTimeout(()=>renderStore(getMode()),20); return r;};
+    window.openTab=patched; try{openTab=patched}catch(e){}
+  }
+  window.renderShop=function(){return renderStore(getMode())};
+  try{renderShop=window.renderShop}catch(e){}
+
+  const mo=new MutationObserver(function(){
+    if(rendering)return;
+    const s=storeRoot();
+    if(!s||!s.classList.contains('active'))return;
+    const active=s.querySelector('.shop-tabs [data-shop-tab].active, .asset-tabs [data-shop-tab].active');
+    const activeMode=active?normMode(active.dataset.shopTab||active.textContent):getMode();
+    if(activeMode!==getMode()) scheduleRestore();
+    if(getMode()==='frames'){
+      const sel=s.querySelector('[data-frame-duration]');
+      if(sel){const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0); if(sel.value!==getDuration(id)) scheduleRestore();}
+    }
+  });
+  function observe(){const s=storeRoot(); if(s)mo.observe(s,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observe,{once:true});else observe();
+
+  window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
+  setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
+})();
+
 
 /* ===== DLINKY FIX CIRÚRGICO FINAL — AVATAR REAL NA PREVIEW DA MOLDURA =====
    Só mexe na imagem/avatar dentro dos cards de Molduras da Loja.
@@ -12001,140 +12225,110 @@ document.addEventListener("click",(e)=>{
 
 
 
-/* ===== FIX FINAL LIMPO: ABAS DA LOJA NÃO VOLTAM SOZINHAS ===== */
+/* ===== FIX CIRÚRGICO: ABA "OUTROS" DA LOJA NÃO VOLTAR PRO ANTERIOR ===== */
 (function(){
-  if(window.__dlinkyAbasLojaFixFinalLimpo) return;
-  window.__dlinkyAbasLojaFixFinalLimpo = true;
+  if(window.__dlinkyFixOutrosLojaCirurgico) return;
+  window.__dlinkyFixOutrosLojaCirurgico = true;
 
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
-  function norm(mode){
-    mode=String(mode||'').toLowerCase();
-    if(mode.includes('mold')||mode.includes('frame')) return 'frames';
-    if(mode.includes('efe')||mode.includes('effect')) return 'effects';
-    if(mode.includes('out')||mode.includes('other')) return 'other';
-    return 'coins';
+  function normalizeMode(v){
+    v = String(v || '').toLowerCase().trim();
+
+    if(v === 'recarga' || v === 'recharge' || v === 'coin' || v === 'coins') return 'coins';
+    if(v === 'moldura' || v === 'molduras' || v === 'frame' || v === 'frames') return 'frames';
+    if(v === 'efeito' || v === 'efeitos' || v === 'effect' || v === 'effects') return 'effects';
+    if(v === 'outro' || v === 'outros' || v === 'others' || v === 'other') return 'other';
+
+    return v || 'coins';
   }
 
-  function frames(){
-    try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]').filter(f=>f&&f.url)}catch(e){return []}
-  }
-
-  function userData(){
-    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}
-  }
-
-  function setActive(mode){
-    mode=norm(mode);
-    const store=q('#tab-store');
-    if(!store) return;
-    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',store).forEach(btn=>{
-      const bmode=norm(btn.dataset.shopTab||btn.textContent);
-      btn.dataset.shopTab=bmode;
-      btn.classList.toggle('active', bmode===mode);
+  function fixButtonsDataset(){
+    qa('#tab-store [data-shop-tab], #tab-store .shop-tabs button').forEach(btn=>{
+      const old = btn.dataset.shopTab || btn.textContent || '';
+      const fixed = normalizeMode(old);
+      btn.dataset.shopTab = fixed;
     });
   }
 
-  function renderFixed(mode){
-    const grid=q('#shopGrid');
-    if(!grid) return;
-    mode=norm(mode);
-    try{ shopMode=mode; }catch(e){}
-    window.shopMode=mode;
-    setActive(mode);
+  function fixShopDataAliases(){
+    try{
+      if(typeof shopData === 'undefined' || !shopData) return;
 
-    if(mode==='frames'){
-      const fs=frames();
-      grid.classList.add('frames-shop-grid');
-      if(!fs.length){
-        window.__dlinkyVisibleFrames=[];
-        grid.innerHTML='<div class="panel empty-frames-help"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';
-        return;
-      }
-      const u=userData();
-      const avatar=esc(u.avatar||'');
-      window.__dlinkyVisibleFrames=fs.map((f,i)=>[f.name||'Moldura personalizada',f.price||'20 Linkwuans','custom-'+i,f.desc||'Moldura custom','Disponível',f.url||'',f.prices||null,f.id||f.url||('frame_'+i)]);
-      grid.innerHTML=window.__dlinkyVisibleFrames.map((x,i)=>{
-        return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}">
-          <div class="frame-shop-preview real-frame-preview">
-            <div class="frame-avatar-demo zyo-person-demo" style="background-image:${avatar?`url('${avatar}')`:'none'}!important"></div>
-            <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
-          </div>
-          <div class="frame-info clean-info"><b>${esc(x[0])}</b><small>${esc(x[3])}</small></div>
-          <div class="frame-price">Preço: <b>${esc(x[1])}</b></div>
-          <select class="frame-duration"><option>3 dias</option><option>7 dias</option><option>15 dias</option><option>Permanente</option></select>
-          <div class="frame-actions"><button class="btn primary small" type="button" data-v3-buy-frame="${i}">Comprar</button></div>
-        </div>`;
-      }).join('');
-      return;
-    }
+      // Garante que qualquer nome usado pelo botão aponte para o lugar certo
+      if(shopData.other && !shopData.outros) shopData.outros = shopData.other;
+      if(shopData.other && !shopData.others) shopData.others = shopData.other;
 
-    grid.classList.remove('frames-shop-grid');
+      if(shopData.effects && !shopData.efeitos) shopData.efeitos = shopData.effects;
+      if(shopData.frames && !shopData.molduras) shopData.molduras = shopData.frames;
+      if(shopData.coins && !shopData.recarga) shopData.recarga = shopData.coins;
+    }catch(e){}
+  }
 
-    const safe={
-      coins:[['345 Linkwuans','R$ 30,00',345],['650 Linkwuans','R$ 50,00',650],['1450 Linkwuans','R$ 100,00',1450],['3300 Linkwuans','R$ 200,00',3300]],
-      effects:[['Neon no Nome','180 Linkwuans','neonName'],['Nome Brilhante','220 Linkwuans','shineName'],['Nome Colorido','240 Linkwuans','rainbowName'],['Ocultar Views','150 Linkwuans','hideViews']],
-      other:[['Cursor Custom','120 Linkwuans','cursor'],['Tema Cyber','300 Linkwuans','cyber']]
+  function keepActiveCorrect(){
+    fixButtonsDataset();
+    const active = q('#tab-store [data-shop-tab].active');
+    if(!active) return;
+
+    const mode = normalizeMode(active.dataset.shopTab || active.textContent);
+    active.dataset.shopTab = mode;
+
+    try{ shopMode = mode; }catch(e){}
+    window.shopMode = mode;
+
+    qa('#tab-store [data-shop-tab]').forEach(btn=>{
+      btn.classList.toggle('active', normalizeMode(btn.dataset.shopTab || btn.textContent) === mode);
+    });
+  }
+
+  fixShopDataAliases();
+  fixButtonsDataset();
+
+  // Aqui NÃO bloqueia clique. Só corrige o valor antes dos códigos antigos lerem.
+  document.addEventListener('pointerdown', function(e){
+    const btn = e.target.closest && e.target.closest('#tab-store [data-shop-tab], #tab-store .shop-tabs button');
+    if(!btn) return;
+
+    fixShopDataAliases();
+    const mode = normalizeMode(btn.dataset.shopTab || btn.textContent);
+    btn.dataset.shopTab = mode;
+    try{ shopMode = mode; }catch(err){}
+    window.shopMode = mode;
+  }, true);
+
+  document.addEventListener('click', function(e){
+    const btn = e.target.closest && e.target.closest('#tab-store [data-shop-tab], #tab-store .shop-tabs button');
+    if(!btn) return;
+
+    fixShopDataAliases();
+    const mode = normalizeMode(btn.dataset.shopTab || btn.textContent);
+    btn.dataset.shopTab = mode;
+    try{ shopMode = mode; }catch(err){}
+    window.shopMode = mode;
+
+    // deixa os listeners antigos rodarem, depois só confere se ficou certo
+    setTimeout(keepActiveCorrect, 30);
+    setTimeout(keepActiveCorrect, 200);
+  }, true);
+
+  const oldRenderShop = window.renderShop;
+  if(typeof oldRenderShop === 'function' && !oldRenderShop.__fixOutrosLojaCirurgico){
+    const patched = function(){
+      fixShopDataAliases();
+      fixButtonsDataset();
+
+      try{
+        if(typeof shopMode !== 'undefined') shopMode = normalizeMode(shopMode);
+        window.shopMode = normalizeMode(window.shopMode || shopMode);
+      }catch(e){}
+
+      return oldRenderShop.apply(this, arguments);
     };
-    let data=[];
-    try{ if(typeof shopData!=='undefined' && shopData && Array.isArray(shopData[mode])) data=shopData[mode]; }catch(e){}
-    if(!data.length) data=safe[mode]||[];
-
-    grid.innerHTML=data.length?data.map((it,i)=>`<div class="asset-card">
-      <div class="asset-preview shop-preview">${mode==='coins'?'◈':'✦'}</div>
-      <div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1]||'')}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}">Comprar</button></div>
-    </div>`).join(''):'<p>Nada cadastrado nessa aba.</p>';
+    patched.__fixOutrosLojaCirurgico = true;
+    window.renderShop = patched;
+    try{ renderShop = patched; }catch(e){}
   }
 
-  // Clique simples: não usa pointerdown, não usa MutationObserver, não fica voltando sozinho.
-  document.addEventListener('click',function(e){
-    const tab=e.target.closest&&e.target.closest('#tab-store [data-shop-tab]');
-    if(!tab) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    renderFixed(tab.dataset.shopTab||tab.textContent);
-  },true);
-
-  window.renderShop=function(){renderFixed(window.shopMode||shopMode||'coins')};
-  try{renderShop=window.renderShop}catch(e){}
-
-  const oldOpen=window.openTab;
-  if(typeof oldOpen==='function' && !oldOpen.__dlinkyAbasLojaFixFinalLimpo){
-    const patched=function(id){
-      const r=oldOpen.apply(this,arguments);
-      if(id==='store') setTimeout(()=>renderFixed(window.shopMode||shopMode||'coins'),0);
-      return r;
-    };
-    patched.__dlinkyAbasLojaFixFinalLimpo=true;
-    window.openTab=patched;
-    try{openTab=patched}catch(e){}
-  }
-})();
-
-/* ===== FIX: INVENTÁRIO NÃO MOSTRA MOLDURA QUE NÃO EXISTE NO ADMIN ===== */
-(function(){
-  if(window.__dlinkyInventarioSoAdminFinal) return;
-  window.__dlinkyInventarioSoAdminFinal=true;
-
-  function read(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
-  function cleanUrl(v){return String(v||'').trim()}
-  function sync(){
-    const admin=(read('dlinkyCustomFrames',[])||[]).filter(f=>f&&f.url).map(f=>cleanUrl(f.url));
-    const allowed=new Set(admin);
-    const u=read('dlinkyUser',{});
-    if(!u||typeof u!=='object')return;
-    u.inventory=Array.isArray(u.inventory)?u.inventory.filter(it=>allowed.has(cleanUrl(it.url||it.frameUrl))):[];
-    const equipped=cleanUrl(u.frame||u.frameUrl);
-    if(equipped && !allowed.has(equipped)){
-      u.frame='';u.frameUrl='';u.frameName='';u.decoration='none';
-    }
-    write('dlinkyUser',u);
-    try{if(typeof user==='object'&&user)Object.assign(user,u)}catch(e){}
-  }
-  sync();
-  setTimeout(sync,500);
+  setTimeout(()=>{fixShopDataAliases(); fixButtonsDataset(); keepActiveCorrect();},300);
 })();
