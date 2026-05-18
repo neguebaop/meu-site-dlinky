@@ -1,4 +1,32 @@
 const $=(s,root=document)=>root.querySelector(s);const $$=(s,root=document)=>[...root.querySelectorAll(s)];
+
+/* ===== FIX GLOBAL: avatar real para preview da loja ===== */
+window.__dlinkyGetBestAvatar = window.__dlinkyGetBestAvatar || function(){
+  try{
+    const read=(k)=>{try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}};
+    const u=read('dlinkyUser');
+    let v = u.avatar || u.photoURL || u.foto || u.icon || '';
+    if(!v && typeof user==='object' && user) v = user.avatar || user.photoURL || user.foto || user.icon || '';
+    if(!v){
+      const keys=[
+        'dlinky_avatar_clean_'+(u.email||u.slug||'local'),
+        'dlinkyAvatarPreserve_'+(u.email||u.slug||'local')
+      ];
+      for(const k of keys){ const x=localStorage.getItem(k); if(x){v=x;break;} }
+    }
+    if(!v){
+      const els=['#dashAvatar','#sideAvatar','#profileAvatar','#frameBuyAvatar','#adjustAvatar'];
+      for(const s of els){
+        const el=document.querySelector(s); if(!el) continue;
+        if(el.tagName==='IMG' && el.src){v=el.src;break;}
+        const bg=(el.style&&el.style.backgroundImage)||getComputedStyle(el).backgroundImage||'';
+        const m=bg.match(/url\(["']?(.*?)["']?\)/); if(m&&m[1]&&m[1]!=='none'){v=m[1];break;}
+      }
+    }
+    return String(v||'').trim();
+  }catch(e){return ''}
+};
+
 /* ===== FIX LINK DIRETO: /slug abre perfil sem piscar página inicial ===== */
 (function(){
   try{
@@ -171,12 +199,7 @@ renderDash();
   function framePriceNumber(price){
     const n=String(price||'20').match(/\d+/); return n?Number(n[0]):20;
   }
-  function frameDurationPrice(base,duration){
-    if(duration==='Permanente') return base*2;
-    if(duration==='15 dias') return base*3;
-    if(duration==='7 dias') return base*2;
-    return base;
-  }
+  function frameDurationPrice(base,duration){ return Number(base)||0; }
   function renderShop(){
     const grid=q('#shopGrid'); if(!grid)return;
     if(shopMode==='frames'){
@@ -376,7 +399,7 @@ renderDash();
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
   function getCustomFrames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
   function parsePrice(v){const m=String(v||'20').match(/\d+/); return m?Number(m[0]):20;}
-  function durationPrice(base,d){ if(d==='Permanente')return base*5; if(d==='15 dias')return base*3; if(d==='7 dias')return base*2; return base; }
+  function durationPrice(base,d){ return Number(base)||0; }
   function updateWallet(){ const ids=['walletCoins','coinCount','invCoins']; ids.forEach(id=>{const el=q('#'+id); if(el) el.textContent=user.coins||0;}); }
   document.addEventListener('change',e=>{
     const sel=e.target.closest('[data-frame-duration]'); if(!sel) return;
@@ -9149,7 +9172,7 @@ document.addEventListener("click",(e)=>{
   function normalizeFrame(raw,i){const url=String(raw?.url||raw?.frameUrl||'').trim();const price=num(raw?.price??raw?.basePrice??raw?.prices?.['3 dias']??20)||20;const prices=Object.assign({},raw?.prices||{});['3 dias','7 dias','15 dias','Permanente'].forEach(k=>{prices[k]=num(prices[k])||0});if(!prices['3 dias'])prices['3 dias']=price;if(!prices['7 dias'])prices['7 dias']=Math.round(price*1.5);if(!prices['15 dias'])prices['15 dias']=Math.round(price*2);if(!prices['Permanente'])prices['Permanente']=Math.round(price*3);return {id:String(raw?.id||slug(url||raw?.name||i)),name:String(raw?.name||raw?.title||'Moldura'),desc:String(raw?.desc||raw?.description||''),url,price,prices};}
   function allFrames(){const src=[...read(FRAMES_KEY,[]),...read(OLD_FRAMES_KEY,[]),...(userData().customFrames||[])];const map=new Map();src.forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const arr=[...map.values()];write(FRAMES_KEY,arr);write(OLD_FRAMES_KEY,arr);const u=userData();u.customFrames=arr;write(USER_KEY,u);return arr;}
   function saveFrames(arr){const map=new Map();(Array.isArray(arr)?arr:[]).forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const clean=[...map.values()];write(FRAMES_KEY,clean);write(OLD_FRAMES_KEY,clean);const u=userData();u.customFrames=clean;saveUser(u);return clean;}
-  function framePrice(f,d='3 dias'){return Number(f?.prices?.[d]||0)||num(f?.price)||20;}
+  function framePrice(f,d='3 dias'){return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
   function frameUrl(it){return String(it?.url||it?.frameUrl||'').trim();}
   function isFrameItem(it){return !!(it&&frameUrl(it)&&/frame|moldur/i.test(String(it.type||it.kind||it.name||'frame')));}
   function itemId(it){return String(it?.id||slug(frameUrl(it)||it?.name));}
@@ -9159,7 +9182,7 @@ document.addEventListener("click",(e)=>{
   function renderAdminFrames(){const list=$('#adminFramesList');if(list){const arr=allFrames();list.innerHTML=arr.length?arr.map((f,i)=>`<div class="admin-frame-row"><img src="${esc(f.url)}" alt="${esc(f.name)}"><div><b>${esc(f.name)}</b><small>${framePrice(f,'3 dias')} Linkwuans • ${esc(f.desc||'moldura')}</small></div><button class="delete" type="button" data-v3-del-frame="${i}">×</button></div>`).join(''):'<p>Nenhuma moldura custom adicionada ainda.</p>'}const sel=$('#giftItemSelect');if(sel){const arr=allFrames();sel.innerHTML='<option value="">Selecione uma moldura da loja</option>'+arr.map((f,i)=>`<option value="${i}">${esc(f.name)} — ${framePrice(f,'3 dias')} Linkwuans</option>`).join('')}}
   function addFrame(){const url=$('#adminFrameUrl')?.value?.trim()||'';if(!url)return toastSafe('Coloque a URL/arquivo da moldura.');if(isFake(url))return toastSafe('Use uma URL/arquivo real da moldura.');const price=num($('#adminFramePrice')?.value||$('#adminPrice3')?.value||20)||20;const f=normalizeFrame({url,name:$('#adminFrameName')?.value?.trim()||'Moldura',desc:$('#adminFrameDesc')?.value?.trim()||'',price,prices:{'3 dias':num($('#adminPrice3')?.value)||price,'7 dias':num($('#adminPrice7')?.value)||Math.round(price*1.5),'15 dias':num($('#adminPrice15')?.value)||Math.round(price*2),'Permanente':num($('#adminPricePerm')?.value)||Math.round(price*3)}});saveFrames([f,...allFrames().filter(x=>norm(x.url)!==norm(f.url))]);['adminFrameName','adminFrameDesc','adminFramePrice','adminPrice3','adminPrice7','adminPrice15','adminPricePerm','adminFrameUrl'].forEach(id=>{const el=$('#'+id);if(el)el.value=''});renderAdminFrames();renderShop();toastSafe('Moldura cadastrada na loja.');}
 
-  function renderShop(){const grid=$('#shopGrid');if(!grid)return;$$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===shopMode));if(shopMode==='frames'){const arr=allFrames();grid.className='asset-grid frames-shop-grid';if(!arr.length){grid.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return}const av=esc(userData().avatar||'');grid.innerHTML=arr.map((f,i)=>{const d=f.__duration||'3 dias';return `<div class="asset-card frame-shop-card"><div class="asset-preview inv-preview real-inv-preview"><span class="real-inv-avatar" style="background-image:url('${av}')"></span><img class="real-inv-frame" src="${esc(f.url)}" alt="${esc(f.name)}"></div><div class="asset-body"><b>${esc(f.name)}</b><small>${esc(f.desc||'Moldura')}</small><div class="frame-price">Preço: <b data-v3-price="${i}">${framePrice(f,d)} Linkwuans</b></div><select class="frame-duration" data-v3-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select><button class="btn primary small" type="button" data-v3-buy-frame="${i}">Comprar</button></div></div>`}).join('');return}const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);grid.className='asset-grid';grid.innerHTML=data.length?data.map((it,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">${shopMode==='coins'?'◈':'✦'}</div><div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}">Comprar</button></div></div>`).join(''):'<p>Nada cadastrado nessa aba.</p>';}
+  function renderShop(){const grid=$('#shopGrid');if(!grid)return;$$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===shopMode));if(shopMode==='frames'){const arr=allFrames();grid.className='asset-grid frames-shop-grid';if(!arr.length){grid.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return}const av=esc((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||userData().avatar||'');grid.innerHTML=arr.map((f,i)=>{const d=f.__duration||'3 dias';return `<div class="asset-card frame-shop-card"><div class="asset-preview inv-preview real-inv-preview"><span class="real-inv-avatar" style="background-image:url('${av}')"></span><img class="real-inv-frame" src="${esc(f.url)}" alt="${esc(f.name)}"></div><div class="asset-body"><b>${esc(f.name)}</b><small>${esc(f.desc||'Moldura')}</small><div class="frame-price">Preço: <b data-v3-price="${i}">${framePrice(f,d)} Linkwuans</b></div><select class="frame-duration" data-v3-duration="${i}">${['3 dias','7 dias','15 dias','Permanente'].map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select><button class="btn primary small" type="button" data-v3-buy-frame="${i}">Comprar</button></div></div>`}).join('');return}const data=(typeof shopData!=='undefined'&&shopData[shopMode])?shopData[shopMode]:(safeShopData[shopMode]||[]);grid.className='asset-grid';grid.innerHTML=data.length?data.map((it,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">${shopMode==='coins'?'◈':'✦'}</div><div class="asset-body"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><button class="btn primary small" type="button" data-v3-buy-normal="${i}">Comprar</button></div></div>`).join(''):'<p>Nada cadastrado nessa aba.</p>';}
   function openFrameBuy(i){const f=allFrames()[Number(i)];if(!f)return;const d=$(`[data-v3-duration="${i}"]`)?.value||'3 dias';pendingFrameBuy={i:Number(i),duration:d,price:framePrice(f,d)};const m=$('#frameBuyModal');if(!m)return confirmFrameBuy();$('#frameBuyName')&&($('#frameBuyName').textContent=f.name);$('#frameBuyDuration')&&($('#frameBuyDuration').textContent=d);$('#frameBuyType')&&($('#frameBuyType').textContent=d==='Permanente'?'Permanente':'Normal');$('#frameBuyPrice')&&($('#frameBuyPrice').textContent=pendingFrameBuy.price+' Linkwuans');$('#frameBuyUser')&&($('#frameBuyUser').textContent=userData().name||'Usuário');const img=$('#frameBuyImg');if(img)img.src=f.url;const av=$('#frameBuyAvatar');if(av)av.style.backgroundImage=userData().avatar?`url("${userData().avatar}")`:'';m.classList.add('show');m.style.display='flex';}
   function closeFrameBuy(){const m=$('#frameBuyModal');if(m){m.classList.remove('show');m.style.display='none'}pendingFrameBuy=null;}
   function confirmFrameBuy(){if(!pendingFrameBuy)return;const f=allFrames()[pendingFrameBuy.i];if(!f)return;const u=userData();if(u.coins<pendingFrameBuy.price){closeFrameBuy();return toastSafe('Saldo insuficiente em Linkwuans.')}u.coins-=pendingFrameBuy.price;u.linkwuans=u.coins;u.inventory=u.inventory.filter(it=>!(isFrameItem(it)&&norm(frameUrl(it))===norm(f.url)));u.inventory.unshift({id:f.id,type:'frames',kind:'frame',source:'admin',name:f.name,url:f.url,frameUrl:f.url,duration:pendingFrameBuy.duration,price:pendingFrameBuy.price+' Linkwuans',boughtAt:Date.now()});u.__hasPurchasedFrame=true;u.__hasPurchasedItem=true;u.__cleanNewAccount=false;u.frame=f.url;u.frameUrl=f.url;u.frameName=f.name;u.activeFrameId=f.id;u.decoration='none';u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:pendingFrameBuy.price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});saveUser(u);closeFrameBuy();counters();renderInventory();applyProfileFrame();toastSafe('Moldura comprada e salva no inventário!');}
@@ -11676,17 +11699,9 @@ document.addEventListener("click",(e)=>{
   function durationMap(){return readJSON(DUR_KEY,{})}
   function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
   function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
-  function priceFor(frame,dur){
-    const base=priceNumber(frame.price);
-    if(frame.prices&&frame.prices[dur]!=null)return Number(frame.prices[dur]);
-    if(dur==='Permanente')return base*5;
-    if(dur==='15 dias')return base*3;
-    if(dur==='7 dias')return base*2;
-    return base;
-  }
+  function priceFor(frame,dur){ return priceNumber(frame.price); }
   function getAvatar(){
-    const u=getUser();
-    return String(u.avatar||u.photoURL||u.foto||u.icon||localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local'))||'').trim();
+    return String((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||'').trim();
   }
   function getFrames(){
     let arr=[];
@@ -11843,4 +11858,43 @@ document.addEventListener("click",(e)=>{
 
   window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
   setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
+})();
+
+
+/* ===== FIX FINAL SOMENTE LOJA: preço não aumenta + avatar real no preview ===== */
+(function(){
+  const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  function num(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
+  function frames(){
+    try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch(e){return []}
+  }
+  function avatar(){return (window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||''}
+  function apply(){
+    const store=q('#tab-store'); if(!store||!store.classList.contains('active'))return;
+    const av=avatar();
+    if(av){
+      qa('.frame-avatar-demo,.real-inv-avatar,.zyo-person-demo',store).forEach(el=>{
+        el.style.backgroundImage='url("'+av.replace(/"/g,'%22')+'")';
+        el.style.backgroundSize='cover';
+        el.style.backgroundPosition='center';
+        el.style.backgroundColor='transparent';
+      });
+    }
+    const arr=frames();
+    qa('[data-price-label],[data-v3-price]',store).forEach((el,i)=>{
+      const card=el.closest('[data-frame-card]');
+      const idx=Number(card?.dataset?.frameCard ?? i);
+      const f=arr[idx];
+      const p=num(f?.price||f?.prices?.['3 dias']||el.textContent||40);
+      el.textContent=p+' Linkwuans';
+    });
+  }
+  document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]'))setTimeout(apply,0)},true);
+  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]'))setTimeout(apply,80)},true);
+  const oldRS=window.renderShop;
+  if(typeof oldRS==='function'&&!oldRS.__dlinkyPriceAvatarFix){
+    const patched=function(){const r=oldRS.apply(this,arguments);setTimeout(apply,0);setTimeout(apply,80);return r};
+    patched.__dlinkyPriceAvatarFix=true; window.renderShop=patched; try{renderShop=patched}catch(e){}
+  }
+  setTimeout(apply,200);
 })();
