@@ -11634,22 +11634,23 @@ document.addEventListener("click",(e)=>{
   setTimeout(paintBio,1200);
 })();
 
-/* ===== DLINKY PATCH DEFINITIVO — SOMENTE LOJA SEM PISCAR/RESETAR =====
-   Corrige apenas a loja:
-   - Recarga/Molduras/Efeitos/Outros ficam na aba certa.
-   - A duração da moldura não volta mais para 3 dias.
-   - Se algum script antigo tentar redesenhar a loja, este patch restaura a aba correta.
-   - Não mexe em perfil, avatar, música, login, cadastro nem renderProfile.
+
+/* ===== DLINKY FIX FINAL LIMPO — LOJA MOLDURAS SEM PISCAR E SEM SUMIR =====
+   Corrige somente a aba Loja > Molduras:
+   - remove o loop antigo que recriava a loja sem parar;
+   - mostra apenas molduras cadastradas no Admin/localStorage;
+   - mantém a aba Molduras depois de reload;
+   - mantém a moldura comprada/equipada salva no dlinkyUser.
 */
 (function(){
-  if(window.__dlinkyStoreStableFinalV10) return;
-  window.__dlinkyStoreStableFinalV10 = true;
+  if(window.__dlinkyLojaMoldurasSemPiscarFinal) return;
+  window.__dlinkyLojaMoldurasSemPiscarFinal = true;
 
-  const MODE_KEY = 'dlinky_loja_aba_fixa_final';
-  const DUR_KEY = 'dlinky_moldura_duracao_fixa_final';
   const USER_KEY = 'dlinkyUser';
+  const MODE_KEY = 'dlinky_loja_aba_atual';
+  const DUR_KEY = 'dlinky_loja_moldura_duracao';
   const FRAME_KEYS = ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
-  const SELO_KEYS = ['dlinkyCleanAdminSelosCatalog','dlinkyCustomSelos','dlinkyAdminSelos','dlinkySelos','dlinkyInsignias','dlinkyBadges'];
+  const DURATIONS = ['3 dias','7 dias','15 dias','Permanente'];
   const COINS = [
     ['345 Linkwuans','R$ 30,00',345],
     ['650 Linkwuans','R$ 50,00',650],
@@ -11662,563 +11663,222 @@ document.addEventListener("click",(e)=>{
     ['Nome Colorido','240 Linkwuans','rainbowName'],
     ['Ocultar Views','150 Linkwuans','hideViews']
   ];
-  const DURATIONS = ['3 dias','7 dias','15 dias','Permanente'];
+  const OTHER = [
+    ['Cursor Custom','120 Linkwuans','cursor'],
+    ['Tema Cyber','300 Linkwuans','cyber']
+  ];
 
-  let rendering = false;
-  let lastMode = normMode(localStorage.getItem(MODE_KEY) || 'coins');
-  let restoreTimer = null;
+  let shopMode = normalizeMode(localStorage.getItem(MODE_KEY) || 'coins');
 
-  function q(s,r=document){return r.querySelector(s)}
-  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function esc(v){return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
-  function toastMsg(t){try{if(typeof window.toast==='function')return window.toast(t)}catch(e){}}
-  function storeRoot(){return q('#tab-store')}
-  function shopGrid(){const s=storeRoot();return s?q('#shopGrid',s):q('#shopGrid')}
-  function normMode(m){
-    m=String(m||'').toLowerCase();
-    if(m.includes('frame')||m.includes('mold')) return 'frames';
-    if(m.includes('effect')||m.includes('efe')) return 'effects';
-    if(m.includes('other')||m.includes('out')||m.includes('selo')||m.includes('insign')) return 'other';
-    return 'coins';
-  }
-  function setMode(m){lastMode=normMode(m);localStorage.setItem(MODE_KEY,lastMode);return lastMode}
-  function getMode(){return normMode(lastMode || localStorage.getItem(MODE_KEY) || 'coins')}
+  function $(s,r=document){ return r.querySelector(s); }
+  function $$(s,r=document){ return Array.from(r.querySelectorAll(s)); }
+  function esc(v){ return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function readJSON(k,fb){ try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):fb; }catch(e){ return fb; } }
+  function writeJSON(k,v){ localStorage.setItem(k,JSON.stringify(v)); }
   function getUser(){
-    const saved=readJSON(USER_KEY,{});
-    try{if(window.user&&typeof window.user==='object')return Object.assign(window.user,saved)}catch(e){}
+    const saved = readJSON(USER_KEY,{});
+    try{
+      if(typeof user === 'object' && user){ Object.assign(user,saved); return user; }
+    }catch(e){}
     return saved;
   }
-  function saveUser(u){
+  function saveUserSafe(u){
     writeJSON(USER_KEY,u||{});
-    try{if(window.user&&typeof window.user==='object')Object.assign(window.user,u||{})}catch(e){}
+    try{ if(typeof user === 'object' && user) Object.assign(user,u||{}); }catch(e){}
   }
-  function firstUrl(o){return String(o?.url||o?.img||o?.image||o?.src||o?.frame||o?.frameUrl||o?.value||'').trim()}
-  function priceNumber(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
-  function durationMap(){return readJSON(DUR_KEY,{})}
-  function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
-  function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
-  function priceFor(frame,dur){const p=Number(frame?.prices?.[dur]);if(Number.isFinite(p)&&p>0)return p;return priceNumber(frame?.price);}
-  function getAvatar(){
-    return String((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||'').trim();
+  function toastSafe(t){ try{ if(typeof toast === 'function') toast(t); }catch(e){} }
+  function normalizeMode(v){
+    v = String(v||'').toLowerCase();
+    if(v.includes('mold') || v.includes('frame')) return 'frames';
+    if(v.includes('efe') || v.includes('effect')) return 'effects';
+    if(v.includes('out') || v.includes('other')) return 'other';
+    return 'coins';
   }
-  function getFrames(){
+  function setMode(v){ shopMode = normalizeMode(v); localStorage.setItem(MODE_KEY,shopMode); return shopMode; }
+  function store(){ return $('#tab-store'); }
+  function grid(){ return $('#shopGrid',store()||document) || $('#shopGrid'); }
+  function firstUrl(f){ return String(f?.url || f?.frameUrl || f?.image || f?.img || f?.src || '').trim(); }
+  function onlyNum(v){ const m=String(v??'').match(/\d+/); return m?Number(m[0]):0; }
+  function validImg(v){ return /^(https?:\/\/|data:image\/|assets\/|\.\/|\/)/i.test(String(v||'')) || /\.(png|apng|gif|webp|jpg|jpeg|svg)(\?|#|$)/i.test(String(v||'')); }
+  function frameId(f,i){ return String(f.id || firstUrl(f) || f.name || ('frame_'+i)); }
+  function allFrames(){
     let arr=[];
-    FRAME_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
+    FRAME_KEYS.forEach(k=>{ const v=readJSON(k,[]); if(Array.isArray(v)) arr=arr.concat(v); });
+    const seen=new Set();
+    return arr.map((f,i)=>({
+      id: frameId(f,i),
+      name: f.name || f.nome || f.title || 'Moldura',
+      desc: f.desc || f.descricao || f.description || 'Moldura cadastrada',
+      price: f.price || f.preco || f.valor || '50 Linkwuans',
+      prices: f.prices || f.precos || f.priceMap || null,
+      url: firstUrl(f)
+    })).filter(f=>f.url && validImg(f.url)).filter(f=>{
+      const key=(f.url+'|'+f.name).toLowerCase();
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  function durationMap(){ return readJSON(DUR_KEY,{}); }
+  function getDuration(id){ const d=durationMap()[id]; return DURATIONS.includes(d)?d:'Permanente'; }
+  function setDuration(id,d){ const m=durationMap(); m[id]=DURATIONS.includes(d)?d:'Permanente'; writeJSON(DUR_KEY,m); }
+  function framePrice(f,d){
+    const map=f?.prices;
+    if(map && map[d] != null){ const n=Number(map[d]); if(Number.isFinite(n) && n>0) return n; }
+    const base=onlyNum(f?.price || 50) || 50;
+    return base;
+  }
+  function avatarUrl(){
+    try{ if(window.__dlinkyGetBestAvatar){ const v=window.__dlinkyGetBestAvatar(); if(v) return v; } }catch(e){}
     const u=getUser();
-    if(Array.isArray(u.inventory)){
-      u.inventory.forEach(it=>{
-        const url=firstUrl(it);
-        const txt=String([it.type,it.kind,it.name,it.title,it.value].filter(Boolean).join(' ')).toLowerCase();
-        if(url&&(txt.includes('frame')||txt.includes('moldura'))){
-          arr.push({name:it.name||'Moldura',desc:it.desc||'Espinhos.',price:it.price||'40 Linkwuans',url,prices:it.prices||null,id:it.id||url});
-        }
-      });
-    }
-    const seen=new Set();
-    return arr.map((f,i)=>{
-      const url=firstUrl(f);
-      return {name:f.name||f.nome||f.title||'Moldura',desc:f.desc||f.descricao||f.description||'Espinhos.',price:f.price||f.preco||f.valor||'40 Linkwuans',url,prices:f.prices||f.precos||null,id:String(f.id||url||('frame_'+i))};
-    }).filter(f=>f.url).filter(f=>{const k=(f.url+'|'+f.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+    return String(u.avatar || u.photoURL || localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')) || '').trim();
   }
-  function getSelos(){
-    let arr=[];
-    SELO_KEYS.forEach(k=>{const v=readJSON(k,[]);if(Array.isArray(v))arr=arr.concat(v)});
-    const seen=new Set();
-    return arr.map((s,i)=>({name:s.name||s.nome||s.title||'Selo',desc:s.desc||s.descricao||'',price:s.price||s.preco||'0 Linkwuans',url:firstUrl(s),id:String(s.id||s.url||('selo_'+i))})).filter(s=>{const k=(s.id+'|'+s.url+'|'+s.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
-  }
-  function setActive(m){
-    const s=storeRoot(); if(!s)return;
+  function activeButtons(mode){
+    const root=store(); if(!root) return;
     const labels={coins:'Recarga',frames:'Molduras',effects:'Efeitos',other:'Outros'};
-    qa('.shop-tabs [data-shop-tab], .asset-tabs [data-shop-tab]',s).forEach(btn=>{
-      const bm=normMode(btn.dataset.shopTab||btn.textContent);
-      btn.dataset.shopTab=bm;
-      if(labels[bm])btn.textContent=labels[bm];
-      btn.classList.toggle('active',bm===m);
+    $$('.shop-tabs button,.asset-tabs button,[data-shop-tab]',root).forEach(btn=>{
+      const m=normalizeMode(btn.dataset.shopTab || btn.textContent);
+      btn.dataset.shopTab=m;
+      if(labels[m]) btn.textContent=labels[m];
+      btn.classList.toggle('active',m===mode);
     });
   }
   function renderCoins(g){
     g.className='asset-grid';
-    g.innerHTML=COINS.map(x=>`<div class="asset-card"><div class="asset-preview shop-preview">◈</div><div class="asset-body"><b>${x[0]}</b><small>${x[1]}</small><button class="btn primary small" type="button" data-loja-coin="${x[2]}">Comprar</button></div></div>`).join('');
+    g.innerHTML=COINS.map(x=>`<div class="asset-card"><div class="asset-preview shop-preview">◈</div><div class="asset-body"><b>${x[0]}</b><small>${x[1]}</small><button class="btn primary small" type="button" data-clean-buy-coin="${x[2]}">Comprar</button></div></div>`).join('');
+  }
+  function renderSimple(g,data){
+    g.className='asset-grid';
+    g.innerHTML=data.map((x,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">✦</div><div class="asset-body"><b>${esc(x[0])}</b><small>${esc(x[1])}</small><button class="btn primary small" type="button" data-clean-buy-item="${i}">Comprar</button></div></div>`).join('');
   }
   function renderFrames(g){
-    const frames=getFrames();
-    const av=getAvatar();
-    window.__dlinkyVisibleFrames=frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices||null,f.id]);
+    const frames=allFrames();
+    const av=avatarUrl();
     g.className='asset-grid frames-shop-grid';
-    if(!frames.length){g.innerHTML='<div class="panel"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';return;}
+    window.__dlinkyVisibleFrames = frames.map((f,i)=>[f.name,f.price,'custom-'+i,f.desc,'Disponível',f.url,f.prices,f.id]);
+    if(!frames.length){
+      g.innerHTML='<div class="panel empty-frames-help"><h2>Nenhuma moldura cadastrada</h2><p>Cadastre uma moldura real no Admin para aparecer aqui.</p></div>';
+      return;
+    }
     g.innerHTML=frames.map((f,i)=>{
       const d=getDuration(f.id);
-      const p=priceFor(f,d);
-      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-frame-id="${esc(f.id)}" data-base-price="${priceNumber(f.price)}">
+      const p=framePrice(f,d);
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-clean-frame-id="${esc(f.id)}" data-base-price="${p}">
         <div class="frame-shop-preview real-frame-preview" style="position:relative;display:grid;place-items:center;overflow:hidden;min-height:170px;background:#09080d;border-radius:10px;">
           <div class="frame-avatar-demo zyo-person-demo" style="width:92px;height:92px;border-radius:50%;background:${av?`url('${esc(av)}') center/cover no-repeat`:'#dbe1ea'};position:absolute;z-index:1;"></div>
           <img class="frame-img big" src="${esc(f.url)}" alt="${esc(f.name)}" style="position:absolute;z-index:2;width:145px;height:145px;object-fit:contain;pointer-events:none;">
         </div>
         <div class="frame-info clean-info"><b>${esc(f.name)}</b><small>${esc(f.desc)}</small></div>
         <div class="frame-price">Preço: <b data-price-label="${i}">${p} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}" data-frame-id="${esc(f.id)}">${DURATIONS.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>
+        <select class="frame-duration" data-frame-duration="${i}" data-clean-frame-id="${esc(f.id)}">${DURATIONS.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>
         <div class="frame-actions"><button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button></div>
       </div>`;
     }).join('');
   }
-  function renderEffects(g){
-    g.className='asset-grid';
-    g.innerHTML=EFFECTS.map((x,i)=>`<div class="asset-card"><div class="asset-preview shop-preview">✦</div><div class="asset-body"><b>${esc(x[0])}</b><small>${esc(x[1])}</small><button class="btn primary small" type="button" data-loja-effect="${i}">Comprar</button></div></div>`).join('');
-  }
-  function renderSelos(g){
-    const selos=getSelos();
-    g.className='asset-grid';
-    if(!selos.length){g.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';return;}
-    g.innerHTML=selos.map(s=>`<div class="asset-card"><div class="asset-preview shop-preview">${s.url?`<img src="${esc(s.url)}" alt="${esc(s.name)}" style="max-width:90px;max-height:90px;object-fit:contain">`:'✦'}</div><div class="asset-body"><b>${esc(s.name)}</b><small>${esc(s.price)}</small><button class="btn primary small" type="button" data-loja-selo="${esc(s.id)}">Comprar</button></div></div>`).join('');
-  }
-  function renderStore(m){
-    const g=shopGrid(); if(!g)return;
-    m=setMode(m||getMode());
-    rendering=true;
-    setActive(m);
-    if(m==='frames')renderFrames(g);
-    else if(m==='effects')renderEffects(g);
-    else if(m==='other')renderSelos(g);
+  function renderShopClean(mode){
+    const g=grid(); if(!g) return;
+    mode=setMode(mode || shopMode);
+    activeButtons(mode);
+    if(mode==='frames') renderFrames(g);
+    else if(mode==='effects') renderSimple(g,EFFECTS);
+    else if(mode==='other') renderSimple(g,OTHER);
     else renderCoins(g);
-    requestAnimationFrame(()=>{rendering=false});
-  }
-  function scheduleRestore(){
-    clearTimeout(restoreTimer);
-    restoreTimer=setTimeout(()=>{
-      const s=storeRoot();
-      if(s&&s.classList.contains('active')) renderStore(getMode());
-    },40);
   }
 
-  window.addEventListener('pointerdown',function(e){
-    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
-    if(!tab)return;
-    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    renderStore(tab.dataset.shopTab||tab.textContent);
-  },true);
+  window.renderShop = function(){ renderShopClean(shopMode); };
+  try{ renderShop = window.renderShop; }catch(e){}
 
-  window.addEventListener('click',function(e){
-    const tab=e.target&&e.target.closest&&e.target.closest('#tab-store .shop-tabs [data-shop-tab], #tab-store .asset-tabs [data-shop-tab]');
-    if(tab){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();renderStore(tab.dataset.shopTab||tab.textContent);return;}
-    const coin=e.target&&e.target.closest&&e.target.closest('[data-loja-coin]');
-    if(coin){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const v=Number(coin.dataset.lojaCoin||0);if(window.dlinkyOpenPixRecharge)window.dlinkyOpenPixRecharge(v);else{const u=getUser();u.coins=Number(u.coins||0)+v;saveUser(u);toastMsg('Linkwuans adicionados.')}return;}
-    const eff=e.target&&e.target.closest&&e.target.closest('[data-loja-effect]');
-    if(eff){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const it=EFFECTS[Number(eff.dataset.lojaEffect)||0];const u=getUser();u.inventory=Array.isArray(u.inventory)?u.inventory:[];u.inventory.unshift({type:'effects',name:it[0],value:it[2]});u[it[2]]=true;saveUser(u);toastMsg('Efeito adicionado!');return;}
-    const selo=e.target&&e.target.closest&&e.target.closest('[data-loja-selo]');
-    if(selo){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const u=getUser();u.selosOwned=Array.isArray(u.selosOwned)?u.selosOwned:[];if(!u.selosOwned.includes(selo.dataset.lojaSelo))u.selosOwned.push(selo.dataset.lojaSelo);u.activeSelo=selo.dataset.lojaSelo;saveUser(u);toastMsg('Selo comprado!');return;}
-  },true);
-
-  window.addEventListener('input',function(e){
-    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
-    if(!sel)return;
-    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
-    saveDuration(id,sel.value);
-    const frames=getFrames();
-    const idx=Number(sel.dataset.frameDuration||0);
-    const f=frames[idx];
-    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
-  },true);
-
-  window.addEventListener('change',function(e){
-    const sel=e.target&&e.target.closest&&e.target.closest('#tab-store [data-frame-duration]');
-    if(!sel)return;
-    e.stopPropagation();
-    const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0);
-    saveDuration(id,sel.value);
-    const frames=getFrames();
-    const idx=Number(sel.dataset.frameDuration||0);
-    const f=frames[idx];
-    if(f){const lab=q(`[data-price-label="${idx}"]`,storeRoot()); if(lab)lab.textContent=priceFor(f,sel.value)+' Linkwuans';}
-  },true);
-
-  const oldOpen=window.openTab||(typeof openTab==='function'?openTab:null);
-  if(typeof oldOpen==='function'){
-    const patched=function(id){const r=oldOpen.apply(this,arguments); if(id==='store')setTimeout(()=>renderStore(getMode()),20); return r;};
-    window.openTab=patched; try{openTab=patched}catch(e){}
-  }
-  window.renderShop=function(){return renderStore(getMode())};
-  try{renderShop=window.renderShop}catch(e){}
-
-  const mo=new MutationObserver(function(){
-    if(rendering)return;
-    const s=storeRoot();
-    if(!s||!s.classList.contains('active'))return;
-    const active=s.querySelector('.shop-tabs [data-shop-tab].active, .asset-tabs [data-shop-tab].active');
-    const activeMode=active?normMode(active.dataset.shopTab||active.textContent):getMode();
-    if(activeMode!==getMode()) scheduleRestore();
-    if(getMode()==='frames'){
-      const sel=s.querySelector('[data-frame-duration]');
-      if(sel){const id=sel.dataset.frameId||String(sel.dataset.frameDuration||0); if(sel.value!==getDuration(id)) scheduleRestore();}
-    }
-  });
-  function observe(){const s=storeRoot(); if(s)mo.observe(s,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observe,{once:true});else observe();
-
-  window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
-  setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
-})();
-
-
-/* ===== DLINKY FIX CIRÚRGICO FINAL — AVATAR REAL NA PREVIEW DA MOLDURA =====
-   Só mexe na imagem/avatar dentro dos cards de Molduras da Loja.
-   Não altera abas, duração, preço, música, perfil, admin, inventário ou compra.
-*/
-(function(){
-  if(window.__dlinkyAvatarPreviewMolduraFinal) return;
-  window.__dlinkyAvatarPreviewMolduraFinal = true;
-
-  function q(s,r=document){return r.querySelector(s)}
-  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-
-  function cleanUrl(v){
-    v = String(v || '').trim();
-    if(!v || v === 'none') return '';
-    const m = v.match(/url\(["']?(.+?)["']?\)/i);
-    if(m) v = m[1];
-    return v.replace(/^['"]|['"]$/g,'').trim();
-  }
-
-  function readUser(){
-    try{
-      const saved = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
-      if(typeof user === 'object' && user){ return Object.assign({}, saved, user); }
-      return saved;
-    }catch(e){
-      try{ if(typeof user === 'object' && user) return user; }catch(err){}
-      return {};
-    }
-  }
-
-  function fromElement(sel){
-    const el = q(sel);
-    if(!el) return '';
-    if(el.tagName === 'IMG') return cleanUrl(el.getAttribute('src'));
-    return cleanUrl(el.style.backgroundImage || getComputedStyle(el).backgroundImage);
-  }
-
-  function bestAvatar(){
-    const u = readUser();
-    const candidates = [
-      u.avatar,
-      u.photo,
-      u.photoURL,
-      u.avatarUrl,
-      localStorage.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')),
-      localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')),
-      fromElement('#dashAvatar'),
-      fromElement('#sideAvatar'),
-      fromElement('#profileAvatar'),
-      fromElement('.profile-avatar'),
-      fromElement('.avatar')
-    ];
-    for(const c of candidates){
-      const v = cleanUrl(c);
-      if(v && !/placeholder|default-avatar|usuario|user-icon/i.test(v)) return v;
-      if(v && /^https?:\/\//i.test(v)) return v;
-    }
-    return cleanUrl(u.avatar || candidates.find(Boolean) || '');
-  }
-
-  function paintAvatarPreview(){
-    const store = q('#tab-store');
-    if(!store) return;
-    const av = bestAvatar();
-    if(!av) return;
-
-    // Mantém salvo para próximos renders sem mexer nos outros dados.
-    try{
-      const u = readUser();
-      if(u && !u.avatar){ u.avatar = av; localStorage.setItem('dlinkyUser', JSON.stringify(u)); }
-      localStorage.setItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'), av);
-    }catch(e){}
-
-    const targets = qa('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', store);
-    targets.forEach(el=>{
-      el.style.setProperty('background-image', 'url("'+av.replace(/"/g,'%22')+'")', 'important');
-      el.style.setProperty('background-size', 'cover', 'important');
-      el.style.setProperty('background-position', 'center', 'important');
-      el.style.setProperty('background-repeat', 'no-repeat', 'important');
-      el.style.setProperty('background-color', 'transparent', 'important');
-      el.style.setProperty('display', 'block', 'important');
-      el.style.setProperty('visibility', 'visible', 'important');
-      el.style.setProperty('opacity', '1', 'important');
-    });
-
-    // Caso algum card tenha perdido o elemento do avatar, recria somente dentro da preview da moldura.
-    qa('.frame-shop-preview,.real-frame-preview,.inv-preview', store).forEach(box=>{
-      const hasFrame = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
-      if(!hasFrame) return;
-      let avatarEl = q('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', box);
-      if(!avatarEl){
-        avatarEl = document.createElement('div');
-        avatarEl.className = 'frame-avatar-demo zyo-person-demo';
-        box.insertBefore(avatarEl, box.firstChild);
-      }
-      avatarEl.style.cssText += ';position:absolute!important;left:50%!important;top:50%!important;width:92px!important;height:92px!important;border-radius:50%!important;transform:translate(-50%,-50%)!important;z-index:1!important;background:url("'+av.replace(/"/g,'%22')+'") center/cover no-repeat!important;';
-      box.style.setProperty('position','relative','important');
-      box.style.setProperty('overflow','hidden','important');
-      const img = q('.frame-img,.real-inv-frame,.inv-frame-preview,img', box);
-      if(img){
-        img.style.setProperty('position','absolute','important');
-        img.style.setProperty('left','50%','important');
-        img.style.setProperty('top','50%','important');
-        img.style.setProperty('transform','translate(-50%,-50%)','important');
-        img.style.setProperty('z-index','2','important');
-        img.style.setProperty('object-fit','contain','important');
-        img.style.setProperty('pointer-events','none','important');
-      }
-    });
-  }
-
-  // Reaplica após renders antigos da loja sem alterar o render da loja.
-  const oldRenderShop = window.renderShop;
-  if(typeof oldRenderShop === 'function' && !oldRenderShop.__dlinkyAvatarPreviewOnly){
-    const patched = function(){
-      const r = oldRenderShop.apply(this, arguments);
-      requestAnimationFrame(paintAvatarPreview);
-      setTimeout(paintAvatarPreview, 80);
+  const oldOpenTab = window.openTab || (typeof openTab === 'function' ? openTab : null);
+  if(typeof oldOpenTab === 'function' && !oldOpenTab.__molduraSemPiscarFinal){
+    const patched=function(id){
+      const r=oldOpenTab.apply(this,arguments);
+      if(id==='store') setTimeout(()=>renderShopClean(shopMode),0);
       return r;
     };
-    patched.__dlinkyAvatarPreviewOnly = true;
-    window.renderShop = patched;
-    try{ renderShop = patched; }catch(e){}
+    patched.__molduraSemPiscarFinal=true;
+    window.openTab=patched;
+    try{ openTab=patched; }catch(e){}
   }
-
-  document.addEventListener('click', function(e){
-    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab],#tab-store [data-frame-duration]')){
-      setTimeout(paintAvatarPreview, 30);
-      setTimeout(paintAvatarPreview, 180);
-    }
-  }, true);
-
-  document.addEventListener('change', function(e){
-    if(e.target && e.target.closest && e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]')){
-      setTimeout(paintAvatarPreview, 30);
-      setTimeout(paintAvatarPreview, 180);
-    }
-  }, true);
-
-  const mo = new MutationObserver(function(){
-    const store = q('#tab-store');
-    if(store && store.classList.contains('active')) requestAnimationFrame(paintAvatarPreview);
-  });
-  function startObserve(){ const store=q('#tab-store'); if(store) mo.observe(store,{childList:true,subtree:true}); }
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserve, {once:true}); else startObserve();
-
-  setTimeout(paintAvatarPreview, 100);
-  setTimeout(paintAvatarPreview, 500);
-  setTimeout(paintAvatarPreview, 1200);
-})();
-
-
-/* ===== FIX CIRÚRGICO: botão Comprar do modal de moldura clicável =====
-   Só corrige o clique do #confirmFrameBuy quando o modal antigo usa dataset.
-   Não mexe em loja, avatar, música, duração nem preço.
-*/
-(function(){
-  if(window.__dlinkyModalComprarAcessivelFix) return;
-  window.__dlinkyModalComprarAcessivelFix = true;
-
-  function q(s,r=document){return r.querySelector(s)}
-  function getTextNumber(s){const m=String(s||'').match(/\d+/);return m?Number(m[0]):0}
-  function readUser(){
-    try{ if(typeof user==='object' && user) return user; }catch(e){}
-    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}
-  }
-  function saveUserSafe(u){
-    try{ if(typeof user==='object' && user) Object.assign(user,u); }catch(e){}
-    localStorage.setItem('dlinkyUser', JSON.stringify(u));
-    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
-    try{ if(typeof renderInventory==='function') renderInventory(); }catch(e){}
-    try{ if(typeof applyProfileFrame==='function') applyProfileFrame(); }catch(e){}
-  }
-  function toastSafe(msg){try{ if(typeof toast==='function') toast(msg); }catch(e){} }
-  function closeModal(){
-    const m=q('#frameBuyModal');
-    if(m){m.classList.remove('show');m.style.display='none';}
-  }
-  function itemFromModal(){
-    const m=q('#frameBuyModal');
-    const idx=Number(m?.dataset?.idx||0);
-    const list=window.__dlinkyVisibleFrames||[];
-    let it=list[idx];
-    const name=q('#frameBuyName')?.textContent?.trim()||'Moldura';
-    const img=q('#frameBuyImg')?.getAttribute('src')||'';
-    if(Array.isArray(it)) return {name:it[0]||name,url:it[5]||img};
-    if(it && typeof it==='object') return {name:it.name||name,url:it.url||it.frameUrl||img,id:it.id};
-    return {name,url:img};
-  }
-
-  window.__dlinkyForceFrameBuyFromModal = function(){
-    const m=q('#frameBuyModal');
-    if(!m || !m.classList.contains('show')) return;
-
-    const item=itemFromModal();
-    const duration=(m.dataset.duration||q('#frameBuyDuration')?.textContent||'3 dias').trim();
-    const price=Number(m.dataset.price||getTextNumber(q('#frameBuyPrice')?.textContent)||0);
-    const u=readUser();
-    u.coins=Number(u.coins||u.linkwuans||0);
-    u.linkwuans=u.coins;
-    u.inventory=Array.isArray(u.inventory)?u.inventory:[];
-    u.purchases=Array.isArray(u.purchases)?u.purchases:[];
-
-    if(price>0 && u.coins < price){
-      closeModal();
-      toastSafe('Saldo insuficiente em Linkwuans.');
-      return;
-    }
-
-    if(price>0) u.coins -= price;
-    u.linkwuans = u.coins;
-    const url=item.url||'';
-    const invItem={
-      id:item.id||('frame_'+Date.now()),
-      type:'frames',kind:'frame',source:'admin',
-      name:item.name||'Moldura',
-      url:url,frameUrl:url,value:'custom-frame',
-      duration:duration,
-      price:price+' Linkwuans',
-      boughtAt:Date.now(),date:Date.now()
-    };
-    if(url){
-      u.inventory=u.inventory.filter(x=>String(x.url||x.frameUrl||'')!==String(url));
-      u.inventory.unshift(invItem);
-      u.frame=url;
-      u.frameUrl=url;
-      u.frameName=invItem.name;
-      u.decoration='none';
-    }
-    u.__hasPurchasedFrame=true;
-    u.__hasPurchasedItem=true;
-    u.__cleanNewAccount=false;
-    u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
-    saveUserSafe(u);
-    closeModal();
-    toastSafe('Moldura comprada e salva no inventário!');
-  };
-
-  const st=document.createElement('style');
-  st.textContent='#frameBuyModal.show{pointer-events:auto!important;z-index:999999!important}#frameBuyModal.show *{pointer-events:auto!important}#confirmFrameBuy{pointer-events:auto!important;cursor:pointer!important;opacity:1!important;visibility:visible!important}';
-  document.head.appendChild(st);
-})();
-
-
-/* ===== FIX SEGURO FINAL: loja sem travar + preço da moldura sem loop =====
-   Mexe SOMENTE na Loja.
-   Remove a necessidade de MutationObserver pesado e atualiza preço só quando o usuário troca a duração ou abre o modal.
-*/
-(function(){
-  if(window.__dlinkyLojaLevePrecoFixFinal) return;
-  window.__dlinkyLojaLevePrecoFixFinal = true;
-
-  const $ = (s,r=document)=>r.querySelector(s);
-  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
-
-  function readJSON(k,fb){
-    try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):fb; }catch(e){ return fb; }
-  }
-  function onlyNum(v){
-    const m=String(v??'').match(/\d+/); return m?Number(m[0]):0;
-  }
-  function clean(v){ return String(v??'').trim().toLowerCase(); }
-  function allFrames(){
-    const keys=['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
-    const out=[];
-    keys.forEach(k=>{ const arr=readJSON(k,[]); if(Array.isArray(arr)) out.push(...arr); });
-    const seen=new Set();
-    return out.filter(f=>{
-      const key=clean(f?.url||f?.frameUrl||f?.id||f?.name);
-      if(!key || seen.has(key)) return false;
-      seen.add(key); return true;
-    });
-  }
-  function frameByCard(card,idx){
-    const frames=allFrames();
-    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.frame-img,.real-inv-frame');
-    const src=clean(img?.getAttribute('src')||img?.src||'');
-    if(src){
-      const bySrc=frames.find(f=>clean(f?.url||f?.frameUrl)===src);
-      if(bySrc) return bySrc;
-    }
-    const title=clean(card?.querySelector('.frame-info b,.asset-body b,b')?.textContent||'');
-    if(title){
-      const byName=frames.find(f=>title.includes(clean(f?.name)) || clean(f?.name).includes(title));
-      if(byName) return byName;
-    }
-    return frames[idx] || null;
-  }
-  function priceFor(frame,duration,fallback){
-    if(frame){
-      const maps=[frame.prices,frame.precos,frame.priceMap];
-      for(const map of maps){
-        if(map && map[duration]!=null){
-          const n=Number(map[duration]);
-          if(Number.isFinite(n) && n>0) return n;
-        }
-      }
-      const direct=onlyNum(frame.price||frame.preco||frame.valor);
-      if(direct>0) return direct;
-    }
-    return onlyNum(fallback) || 0;
-  }
-  function updateCard(card){
-    if(!card) return;
-    const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration],select.frame-duration');
-    if(!sel) return;
-    const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||0);
-    const label=card.querySelector('[data-price-label],[data-v3-price],.frame-price b');
-    if(!label) return;
-    const frame=frameByCard(card,idx);
-    const price=priceFor(frame,sel.value,label.textContent);
-    if(price>0){
-      const txt=price+' Linkwuans';
-      if(label.textContent.trim()!==txt) label.textContent=txt;
-    }
-  }
-  function updateVisibleCards(){
-    const store=$('#tab-store');
-    if(!store || !store.classList.contains('active')) return;
-    $$('#tab-store .frame-shop-card,#tab-store [data-frame-card]').forEach(updateCard);
-  }
-  function updateModal(){
-    const modal=$('#frameBuyModal.show');
-    if(!modal) return;
-    const name=clean($('#frameBuyName')?.textContent||'');
-    const dur=($('#frameBuyDuration')?.textContent||modal.dataset.duration||'3 dias').trim();
-    const img=clean($('#frameBuyImg')?.getAttribute('src')||'');
-    const frames=allFrames();
-    const frame=frames.find(f=>clean(f?.url||f?.frameUrl)===img) || frames.find(f=>name && clean(f?.name)===name);
-    const label=$('#frameBuyPrice');
-    if(!label) return;
-    const price=priceFor(frame,dur,label.textContent||modal.dataset.price);
-    if(price>0){
-      const txt=price+' Linkwuans';
-      if(label.textContent.trim()!==txt) label.textContent=txt;
-      modal.dataset.price=String(price);
-    }
-  }
-
-  document.addEventListener('change',function(e){
-    const sel=e.target && e.target.closest && e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration],#tab-store select.frame-duration');
-    if(!sel) return;
-    updateCard(sel.closest('.frame-shop-card,[data-frame-card],.asset-card'));
-  },true);
 
   document.addEventListener('click',function(e){
-    if(e.target && e.target.closest && e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]')){
-      const btn=e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]');
-      updateCard(btn.closest('.frame-shop-card,[data-frame-card],.asset-card'));
-      setTimeout(updateModal,30);
-      setTimeout(updateModal,120);
+    const tab=e.target.closest && e.target.closest('#tab-store [data-shop-tab],#tab-store .shop-tabs button,#tab-store .asset-tabs button');
+    if(tab){
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      renderShopClean(tab.dataset.shopTab || tab.textContent);
+      return;
     }
-    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){
-      setTimeout(updateVisibleCards,80);
+    const coin=e.target.closest && e.target.closest('#tab-store [data-clean-buy-coin]');
+    if(coin){
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      const v=Number(coin.dataset.cleanBuyCoin||0);
+      if(window.dlinkyOpenPixRecharge) window.dlinkyOpenPixRecharge(v);
+      else { const u=getUser(); u.coins=Number(u.coins||0)+v; u.linkwuans=u.coins; saveUserSafe(u); toastSafe('Linkwuans adicionados.'); }
+      return;
+    }
+    const item=e.target.closest && e.target.closest('#tab-store [data-clean-buy-item]');
+    if(item){
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      const data=shopMode==='effects'?EFFECTS:OTHER;
+      const it=data[Number(item.dataset.cleanBuyItem)||0]; if(!it) return;
+      const u=getUser(); u.inventory=Array.isArray(u.inventory)?u.inventory:[];
+      u.inventory.unshift({type:shopMode,name:it[0],value:it[2],duration:'Permanente',date:Date.now()});
+      if(['neonName','shineName','rainbowName','hideViews'].includes(it[2])) u[it[2]]=true;
+      saveUserSafe(u); toastSafe('Item salvo no inventário!');
+      return;
     }
   },true);
 
-  // Atualiza só algumas vezes quando entra na loja. Não fica em loop observando o HTML.
-  window.addEventListener('hashchange',()=>setTimeout(updateVisibleCards,120));
-  setTimeout(updateVisibleCards,300);
+  document.addEventListener('change',function(e){
+    const sel=e.target.closest && e.target.closest('#tab-store select[data-frame-duration]');
+    if(!sel) return;
+    const id=sel.dataset.cleanFrameId || sel.dataset.frameId || String(sel.dataset.frameDuration||0);
+    setDuration(id,sel.value);
+    const frames=allFrames();
+    const idx=Number(sel.dataset.frameDuration||0);
+    const f=frames[idx];
+    const label=$(`[data-price-label="${idx}"]`,store()||document);
+    if(f && label) label.textContent=framePrice(f,sel.value)+' Linkwuans';
+  },true);
+
+  // reforço para compra do modal: salva no usuário e não deixa sumir no reload
+  window.__dlinkyForceFrameBuyFromModal = function(){
+    const modal=$('#frameBuyModal');
+    if(!modal) return;
+    const idx=Number(modal.dataset.idx||0);
+    const list=window.__dlinkyVisibleFrames||[];
+    const item=list[idx]||[];
+    const name=$('#frameBuyName')?.textContent?.trim() || item[0] || 'Moldura';
+    const url=$('#frameBuyImg')?.getAttribute('src') || item[5] || '';
+    const duration=(modal.dataset.duration || $('#frameBuyDuration')?.textContent || 'Permanente').trim();
+    const price=onlyNum(modal.dataset.price || $('#frameBuyPrice')?.textContent || item[1]);
+    const u=getUser();
+    u.coins=Number(u.coins||u.linkwuans||0); u.linkwuans=u.coins;
+    u.inventory=Array.isArray(u.inventory)?u.inventory:[]; u.purchases=Array.isArray(u.purchases)?u.purchases:[];
+    if(price>0 && u.coins<price){ modal.classList.remove('show'); modal.style.display='none'; toastSafe('Saldo insuficiente em Linkwuans.'); return; }
+    if(price>0) u.coins-=price;
+    u.linkwuans=u.coins;
+    if(url){
+      u.inventory=u.inventory.filter(x=>String(x.url||x.frameUrl||'')!==String(url));
+      u.inventory.unshift({type:'frames',kind:'frame',name,url,frameUrl:url,value:'custom-frame',duration,price:price+' Linkwuans',date:Date.now(),boughtAt:Date.now()});
+      u.frame=url; u.frameUrl=url; u.frameName=name; u.decoration='none';
+    }
+    u.__hasPurchasedFrame=true; u.__hasPurchasedItem=true; u.__cleanNewAccount=false;
+    u.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
+    saveUserSafe(u);
+    modal.classList.remove('show'); modal.style.display='none';
+    try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+    try{ if(typeof renderInventory==='function') renderInventory(); }catch(e){}
+    toastSafe('Moldura comprada e salva!');
+  };
+
+  document.addEventListener('click',function(e){
+    if(e.target.closest && e.target.closest('#confirmFrameBuy')){
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      window.__dlinkyForceFrameBuyFromModal();
+      return;
+    }
+  },true);
+
+  window.addEventListener('hashchange',function(){ setTimeout(()=>{ if(store()?.classList.contains('active')) renderShopClean(shopMode); },80); });
+  setTimeout(()=>{ if(store()?.classList.contains('active')) renderShopClean(shopMode); },120);
 })();
