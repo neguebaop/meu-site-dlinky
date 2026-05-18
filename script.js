@@ -12690,3 +12690,200 @@ document.addEventListener("click",(e)=>{
 
   setTimeout(()=>{renderAdminFramesFixed();renderInventoryFixed();renderShopFixed();},400);
 })();
+
+
+
+/* ===== FIX ÚNICO: INVENTÁRIO SÓ MOSTRA MOLDURA QUE EXISTE NO ADMIN ===== */
+(function(){
+  if(window.__dlinkyFixInventarioSoAdmin) return;
+  window.__dlinkyFixInventarioSoAdmin = true;
+
+  const q=(s,r=document)=>r.querySelector(s);
+  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  function readJSON(k,fb){
+    try{return JSON.parse(localStorage.getItem(k)||"")}catch(e){return fb}
+  }
+  function writeJSON(k,v){
+    localStorage.setItem(k,JSON.stringify(v));
+  }
+  function cleanUrl(v){
+    return String(v||"").trim();
+  }
+  function toastFix(t){
+    try{ if(typeof toast==="function") toast(t); }catch(e){}
+  }
+
+  function adminFrames(){
+    const arr = readJSON("dlinkyCustomFrames", []);
+    return Array.isArray(arr) ? arr.filter(f=>f && cleanUrl(f.url)) : [];
+  }
+
+  function syncInventoryWithAdmin(){
+    const frames = adminFrames();
+    const allowed = new Set(frames.map(f=>cleanUrl(f.url)));
+
+    const u = readJSON("dlinkyUser", {});
+    if(!u || typeof u !== "object") return u;
+
+    const oldInv = Array.isArray(u.inventory) ? u.inventory : [];
+
+    // Se não existe no Admin, remove do inventário.
+    u.inventory = oldInv.filter(it=>{
+      const url = cleanUrl(it && (it.url || it.frameUrl));
+      if(!url) return false;
+      return allowed.has(url);
+    });
+
+    // Se a moldura equipada não existe no Admin, desequipa.
+    const equipped = cleanUrl(u.frame || u.frameUrl);
+    if(equipped && !allowed.has(equipped)){
+      u.frame = "";
+      u.frameUrl = "";
+      u.frameName = "";
+      u.decoration = "none";
+    }
+
+    writeJSON("dlinkyUser", u);
+    writeJSON("dlinkyUser_BACKUP", u);
+
+    try{
+      if(typeof user==="object" && user) Object.assign(user,u);
+    }catch(e){}
+
+    return u;
+  }
+
+  function renderInventoryOnlyAdmin(){
+    const u = syncInventoryWithAdmin();
+    const grid = q("#inventoryGrid");
+    if(!grid) return;
+
+    const inv = Array.isArray(u.inventory) ? u.inventory : [];
+    const avatar = cleanUrl(u.avatar);
+
+    if(!inv.length){
+      grid.innerHTML = "<p>Você ainda não possui itens no inventário.</p>";
+    }else{
+      grid.innerHTML = inv.map((it,i)=>{
+        const url = cleanUrl(it.url || it.frameUrl);
+        return `<div class="asset-card inv-item-card">
+          <div class="asset-preview shop-preview inv-preview" style="position:relative;display:grid;place-items:center;min-height:150px;overflow:hidden">
+            <span class="inv-avatar-preview zyo-person-demo" style="width:82px;height:82px;border-radius:50%;background:${avatar?`url('${avatar}') center/cover no-repeat`:"#ddd"};position:absolute;z-index:1"></span>
+            <img class="inv-frame-preview" src="${url}" style="position:absolute;z-index:2;width:135px;height:135px;object-fit:contain;pointer-events:none">
+          </div>
+          <div class="asset-body">
+            <b>${String(it.name||"Moldura").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}</b>
+            <small>${String(it.duration||"item").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}</small>
+            <button class="btn primary small" type="button" data-use-admin-frame="${i}">Usar</button>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    ["invItemsCount","invCountMini"].forEach(id=>{
+      const el=q("#"+id);
+      if(el) el.textContent = inv.length;
+    });
+  }
+
+  // Quando abrir inventário, limpa antes de mostrar.
+  const oldOpenTab = window.openTab;
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__inventarioSoAdmin){
+    const patched = function(id){
+      const r = oldOpenTab.apply(this, arguments);
+      if(id === "inventory"){
+        setTimeout(renderInventoryOnlyAdmin, 0);
+        setTimeout(renderInventoryOnlyAdmin, 250);
+      }
+      if(id === "store" || id === "admin"){
+        setTimeout(syncInventoryWithAdmin, 0);
+      }
+      return r;
+    };
+    patched.__inventarioSoAdmin = true;
+    window.openTab = patched;
+    try{ openTab = patched; }catch(e){}
+  }
+
+  // Bloqueia o código antigo de recriar item fantasma no inventário.
+  const nativeSetItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key,value){
+    if(key === "dlinkyUser"){
+      try{
+        const u = JSON.parse(value || "{}");
+        const frames = adminFrames();
+        const allowed = new Set(frames.map(f=>cleanUrl(f.url)));
+
+        if(u && typeof u === "object"){
+          u.inventory = Array.isArray(u.inventory) ? u.inventory.filter(it=>{
+            const url = cleanUrl(it && (it.url || it.frameUrl));
+            return url && allowed.has(url);
+          }) : [];
+
+          const equipped = cleanUrl(u.frame || u.frameUrl);
+          if(equipped && !allowed.has(equipped)){
+            u.frame = "";
+            u.frameUrl = "";
+            u.frameName = "";
+            u.decoration = "none";
+          }
+
+          value = JSON.stringify(u);
+        }
+      }catch(e){}
+    }
+    return nativeSetItem(key,value);
+  };
+
+  document.addEventListener("click",function(e){
+    const b = e.target.closest && e.target.closest("[data-use-admin-frame]");
+    if(!b) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    const u = syncInventoryWithAdmin();
+    const it = (u.inventory||[])[Number(b.dataset.useAdminFrame)];
+    if(!it) return;
+
+    const url = cleanUrl(it.url || it.frameUrl);
+    if(!url) return;
+
+    u.frame = url;
+    u.frameUrl = url;
+    u.frameName = it.name || "Moldura";
+    u.decoration = "none";
+
+    writeJSON("dlinkyUser", u);
+    writeJSON("dlinkyUser_BACKUP", u);
+    try{ if(typeof user==="object" && user) Object.assign(user,u); }catch(e){}
+    toastFix("Moldura aplicada.");
+    renderInventoryOnlyAdmin();
+  }, true);
+
+  // Botão de emergência pelo console: dlinkyLimparInventarioFantasma()
+  window.dlinkyLimparInventarioFantasma = function(){
+    const u = readJSON("dlinkyUser", {});
+    if(u && typeof u === "object"){
+      u.inventory = [];
+      u.frame = "";
+      u.frameUrl = "";
+      u.frameName = "";
+      u.decoration = "none";
+      writeJSON("dlinkyUser", u);
+      writeJSON("dlinkyUser_BACKUP", u);
+      try{ if(typeof user==="object" && user) Object.assign(user,u); }catch(e){}
+    }
+    renderInventoryOnlyAdmin();
+    toastFix("Inventário fantasma limpo.");
+  };
+
+  window.renderInventory = renderInventoryOnlyAdmin;
+  try{ renderInventory = renderInventoryOnlyAdmin; }catch(e){}
+
+  // Roda ao carregar para apagar a moldura fantasma imediatamente.
+  setTimeout(syncInventoryWithAdmin, 100);
+  setTimeout(renderInventoryOnlyAdmin, 500);
+})();
