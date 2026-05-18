@@ -11664,3 +11664,115 @@ document.addEventListener("click",(e)=>{
   document.addEventListener('DOMContentLoaded',()=>setTimeout(bind,250));
   setTimeout(bind,500);
 })();
+
+/* ===== FIX FINAL SEGURO: Loja > Outros fica só Selos e não troca com Molduras/Recarga ===== */
+(function(){
+  if(window.__dlinkyLojaOutrosSomenteSelosFix) return;
+  window.__dlinkyLojaOutrosSomenteSelosFix = true;
+
+  const $=(s,r=document)=>r.querySelector(s);
+  const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const CATALOG_KEYS=['dlinkyCleanAdminSelosCatalog','dlinkyAdminSelos','dlinkyCustomSelos','dlinkySelos'];
+  const USER_KEY='dlinkyUser';
+  const OWNED_KEY='dlinkyOwnedSelosClean';
+
+  function readJSON(k,fb){try{return JSON.parse(localStorage.getItem(k)||'')??fb}catch(e){return fb}}
+  function writeJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+  function userObj(){const u=readJSON(USER_KEY,{});u.coins=Number(u.coins??u.linkwuans??0);u.linkwuans=u.coins;return u}
+  function saveUserObj(u){u.coins=Number(u.coins??u.linkwuans??0);u.linkwuans=u.coins;writeJSON(USER_KEY,u);try{if(typeof user!=='undefined'&&user)Object.assign(user,u)}catch(e){};try{if(window.user)Object.assign(window.user,u)}catch(e){}}
+  function catalog(){
+    const map=new Map();
+    CATALOG_KEYS.forEach(k=>{
+      const arr=readJSON(k,[]);
+      if(Array.isArray(arr)) arr.forEach((s,i)=>{
+        if(!s) return;
+        const id=String(s.id||s.seloId||s.url||s.img||s.image||s.name||s.nome||i);
+        if(!id) return;
+        map.set(id,{...s,id});
+      });
+    });
+    return Array.from(map.values());
+  }
+  function owned(){
+    const u=userObj();
+    return Array.from(new Set([...(Array.isArray(u.selosOwned)?u.selosOwned:[]),...readJSON(OWNED_KEY,[])].map(String)));
+  }
+  function toastMsg(t){try{if(typeof toast==='function')return toast(t)}catch(e){} console.log(t)}
+  function counters(){
+    const u=userObj();
+    ['walletCoins','invCoins','coinCount'].forEach(id=>{const el=$('#'+id); if(el) el.textContent=u.coins});
+  }
+  function setActiveTab(mode){
+    $$('.shop-tabs [data-shop-tab]').forEach(b=>b.classList.toggle('active',(b.dataset.shopTab||'')===mode));
+    try{localStorage.setItem('dlinkyShopTabFixed',mode)}catch(e){}
+  }
+  function renderOutrosSelos(){
+    const grid=$('#shopGrid'); if(!grid) return;
+    setActiveTab('other');
+    grid.className='asset-grid dlinky-selos-shop-grid';
+    const arr=catalog();
+    if(!arr.length){
+      grid.innerHTML='<div class="panel"><h2>Nenhum selo cadastrado</h2><p>Cadastre selos no Admin Selos para aparecer aqui.</p></div>';
+      return;
+    }
+    const own=owned();
+    grid.innerHTML=arr.map(s=>{
+      const id=String(s.id);
+      const url=s.url||s.img||s.image||'';
+      const name=s.name||s.nome||'Selo';
+      const desc=s.desc||s.description||'Selo personalizado';
+      const price=Number(s.price||s.preco||120)||120;
+      const bought=own.includes(id);
+      return `<div class="asset-card dlinky-selo-shop-card" data-clean-selo-card="${esc(id)}">
+        <div class="asset-preview shop-preview">${url?`<img src="${esc(url)}" alt="${esc(name)}" style="max-width:80px;max-height:80px;object-fit:contain">`:'🏷️'}</div>
+        <div class="asset-body"><b>${esc(name)}</b><small>${esc(desc)}</small><small>${price} Linkwuans</small><button class="btn primary small" type="button" data-clean-buy-selo="${esc(id)}">${bought?'Comprado':'Comprar'}</button></div>
+      </div>`;
+    }).join('');
+  }
+  function buySelo(id){
+    const arr=catalog(); const s=arr.find(x=>String(x.id)===String(id)); if(!s) return;
+    const u=userObj(); const price=Number(s.price||s.preco||120)||120;
+    const own=owned();
+    if(own.includes(String(id))){ toastMsg('Você já tem esse selo.'); return; }
+    if((u.coins||0)<price){ toastMsg('Saldo insuficiente em Linkwuans.'); return; }
+    u.coins=(u.coins||0)-price;
+    u.selosOwned=Array.from(new Set([...(Array.isArray(u.selosOwned)?u.selosOwned:[]),String(id)]));
+    saveUserObj(u);
+    writeJSON(OWNED_KEY,Array.from(new Set([...own,String(id)])));
+    counters();
+    renderOutrosSelos();
+    toastMsg('Selo comprado!');
+  }
+
+  // O segredo: capturar ANTES dos scripts antigos somente a aba Outros, porque ela conflita com a loja antiga.
+  window.addEventListener('click',function(e){
+    const btn=e.target && e.target.closest && e.target.closest('.shop-tabs [data-shop-tab="other"]');
+    if(!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    renderOutrosSelos();
+  },true);
+
+  window.addEventListener('pointerdown',function(e){
+    const btn=e.target && e.target.closest && e.target.closest('.shop-tabs [data-shop-tab="other"]');
+    if(!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    renderOutrosSelos();
+  },true);
+
+  document.addEventListener('click',function(e){
+    const b=e.target && e.target.closest && e.target.closest('[data-clean-buy-selo]');
+    if(!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    buySelo(b.dataset.cleanBuySelo);
+  },true);
+
+  window.addEventListener('hashchange',()=>setTimeout(()=>{if($('#tab-store')?.classList.contains('active') && $('.shop-tabs [data-shop-tab="other"].active')) renderOutrosSelos();},250));
+  setTimeout(()=>{if($('#tab-store')?.classList.contains('active') && $('.shop-tabs [data-shop-tab="other"].active')) renderOutrosSelos();},500);
+})();
