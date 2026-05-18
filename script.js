@@ -12105,78 +12105,120 @@ document.addEventListener("click",(e)=>{
 })();
 
 
-/* ===== FIX CIRÚRGICO FINAL: Linkwuans da moldura sem piscar =====
-   Só sincroniza o preço do card/modal com os preços cadastrados no Admin.
-   Não mexe em avatar, música, perfil, admin, abas ou HTML da loja.
+/* ===== FIX SEGURO FINAL: loja sem travar + preço da moldura sem loop =====
+   Mexe SOMENTE na Loja.
+   Remove a necessidade de MutationObserver pesado e atualiza preço só quando o usuário troca a duração ou abre o modal.
 */
 (function(){
-  if(window.__dlinkyLinkwuansSemPiscarFinal) return;
-  window.__dlinkyLinkwuansSemPiscarFinal = true;
+  if(window.__dlinkyLojaLevePrecoFixFinal) return;
+  window.__dlinkyLojaLevePrecoFixFinal = true;
 
-  function q(s,r=document){return r.querySelector(s)}
-  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function read(k,fb){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(fb))}catch(e){return fb}}
-  function num(v){const m=String(v||'').match(/\d+/);return m?Number(m[0]):0}
-  function norm(v){return String(v||'').trim().toLowerCase()}
-  function frames(){
-    const list=[];
-    ['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'].forEach(k=>{
-      const arr=read(k,[]); if(Array.isArray(arr)) list.push(...arr);
-    });
+  const $ = (s,r=document)=>r.querySelector(s);
+  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  function readJSON(k,fb){
+    try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):fb; }catch(e){ return fb; }
+  }
+  function onlyNum(v){
+    const m=String(v??'').match(/\d+/); return m?Number(m[0]):0;
+  }
+  function clean(v){ return String(v??'').trim().toLowerCase(); }
+  function allFrames(){
+    const keys=['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
+    const out=[];
+    keys.forEach(k=>{ const arr=readJSON(k,[]); if(Array.isArray(arr)) out.push(...arr); });
     const seen=new Set();
-    return list.filter(f=>{
-      const key=norm(f?.url||f?.frameUrl||f?.id||f?.name);
-      if(!key||seen.has(key))return false; seen.add(key); return true;
+    return out.filter(f=>{
+      const key=clean(f?.url||f?.frameUrl||f?.id||f?.name);
+      if(!key || seen.has(key)) return false;
+      seen.add(key); return true;
     });
   }
-  function priceOf(f,dur,fallback){
-    const p=Number(f?.prices?.[dur]);
-    if(Number.isFinite(p)&&p>0)return p;
-    const p2=Number(f?.precos?.[dur]);
-    if(Number.isFinite(p2)&&p2>0)return p2;
-    if(dur==='Permanente'){
-      const pp=Number(f?.prices?.Permanente||f?.precos?.Permanente);
-      if(Number.isFinite(pp)&&pp>0)return pp;
+  function frameByCard(card,idx){
+    const frames=allFrames();
+    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.frame-img,.real-inv-frame');
+    const src=clean(img?.getAttribute('src')||img?.src||'');
+    if(src){
+      const bySrc=frames.find(f=>clean(f?.url||f?.frameUrl)===src);
+      if(bySrc) return bySrc;
     }
-    return num(f?.price||f?.preco||f?.valor||fallback||0);
+    const title=clean(card?.querySelector('.frame-info b,.asset-body b,b')?.textContent||'');
+    if(title){
+      const byName=frames.find(f=>title.includes(clean(f?.name)) || clean(f?.name).includes(title));
+      if(byName) return byName;
+    }
+    return frames[idx] || null;
   }
-  function frameForCard(card,idx){
-    const arr=frames();
-    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.real-inv-frame,.frame-img');
-    const src=norm(img?.getAttribute?.('src')||img?.src||'');
-    if(src){const by=arr.find(f=>norm(f?.url||f?.frameUrl)===src); if(by)return by;}
-    return arr[idx] || null;
-  }
-  function sync(){
-    const store=q('#tab-store');
-    if(!store || !store.classList.contains('active')) return;
-    qa('[data-frame-card],.frame-shop-card,.asset-card',store).forEach((card,i)=>{
-      const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration]');
-      if(!sel) return;
-      const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||i);
-      const f=frameForCard(card,idx);
-      const label=card.querySelector('[data-price-label],[data-v3-price]');
-      if(!label) return;
-      const price=priceOf(f,sel.value,label.textContent);
-      if(price>0) label.textContent=price+' Linkwuans';
-    });
-    const m=q('#frameBuyModal.show');
-    if(m){
-      const name=q('#frameBuyName')?.textContent?.trim();
-      const dur=q('#frameBuyDuration')?.textContent?.trim()||m.dataset.duration||'3 dias';
-      const img=norm(q('#frameBuyImg')?.getAttribute('src')||'');
-      const f=frames().find(x=>norm(x?.url||x?.frameUrl)===img) || frames().find(x=>norm(x?.name)===norm(name));
-      const label=q('#frameBuyPrice');
-      if(label){
-        const price=priceOf(f,dur,label.textContent);
-        if(price>0){ label.textContent=price+' Linkwuans'; m.dataset.price=String(price); }
+  function priceFor(frame,duration,fallback){
+    if(frame){
+      const maps=[frame.prices,frame.precos,frame.priceMap];
+      for(const map of maps){
+        if(map && map[duration]!=null){
+          const n=Number(map[duration]);
+          if(Number.isFinite(n) && n>0) return n;
+        }
       }
+      const direct=onlyNum(frame.price||frame.preco||frame.valor);
+      if(direct>0) return direct;
+    }
+    return onlyNum(fallback) || 0;
+  }
+  function updateCard(card){
+    if(!card) return;
+    const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration],select.frame-duration');
+    if(!sel) return;
+    const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||0);
+    const label=card.querySelector('[data-price-label],[data-v3-price],.frame-price b');
+    if(!label) return;
+    const frame=frameByCard(card,idx);
+    const price=priceFor(frame,sel.value,label.textContent);
+    if(price>0){
+      const txt=price+' Linkwuans';
+      if(label.textContent.trim()!==txt) label.textContent=txt;
     }
   }
-  document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration]')){sync();setTimeout(sync,30);setTimeout(sync,160);}},true);
-  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame],#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){setTimeout(sync,30);setTimeout(sync,160);setTimeout(sync,350);}},true);
-  const mo=new MutationObserver(()=>sync());
-  function start(){const s=q('#tab-store');if(s)mo.observe(s,{childList:true,subtree:true});sync();}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
-  setTimeout(sync,200);setTimeout(sync,800);
+  function updateVisibleCards(){
+    const store=$('#tab-store');
+    if(!store || !store.classList.contains('active')) return;
+    $$('#tab-store .frame-shop-card,#tab-store [data-frame-card]').forEach(updateCard);
+  }
+  function updateModal(){
+    const modal=$('#frameBuyModal.show');
+    if(!modal) return;
+    const name=clean($('#frameBuyName')?.textContent||'');
+    const dur=($('#frameBuyDuration')?.textContent||modal.dataset.duration||'3 dias').trim();
+    const img=clean($('#frameBuyImg')?.getAttribute('src')||'');
+    const frames=allFrames();
+    const frame=frames.find(f=>clean(f?.url||f?.frameUrl)===img) || frames.find(f=>name && clean(f?.name)===name);
+    const label=$('#frameBuyPrice');
+    if(!label) return;
+    const price=priceFor(frame,dur,label.textContent||modal.dataset.price);
+    if(price>0){
+      const txt=price+' Linkwuans';
+      if(label.textContent.trim()!==txt) label.textContent=txt;
+      modal.dataset.price=String(price);
+    }
+  }
+
+  document.addEventListener('change',function(e){
+    const sel=e.target && e.target.closest && e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration],#tab-store select.frame-duration');
+    if(!sel) return;
+    updateCard(sel.closest('.frame-shop-card,[data-frame-card],.asset-card'));
+  },true);
+
+  document.addEventListener('click',function(e){
+    if(e.target && e.target.closest && e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]')){
+      const btn=e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]');
+      updateCard(btn.closest('.frame-shop-card,[data-frame-card],.asset-card'));
+      setTimeout(updateModal,30);
+      setTimeout(updateModal,120);
+    }
+    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){
+      setTimeout(updateVisibleCards,80);
+    }
+  },true);
+
+  // Atualiza só algumas vezes quando entra na loja. Não fica em loop observando o HTML.
+  window.addEventListener('hashchange',()=>setTimeout(updateVisibleCards,120));
+  setTimeout(updateVisibleCards,300);
 })();
