@@ -12887,3 +12887,171 @@ document.addEventListener("click",(e)=>{
   setTimeout(syncInventoryWithAdmin, 100);
   setTimeout(renderInventoryOnlyAdmin, 500);
 })();
+
+
+
+/* ===== FIX DEFINITIVO: ABAS DA LOJA NÃO VOLTAM SOZINHAS ===== */
+(function(){
+  if(window.__dlinkyFixAbasLojaNaoVoltar) return;
+  window.__dlinkyFixAbasLojaNaoVoltar = true;
+
+  const q=(s,r=document)=>r.querySelector(s);
+  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+  let lockedShopMode = localStorage.getItem("dlinkyShopModeAtual") || "coins";
+
+  function getFrames(){
+    try{return JSON.parse(localStorage.getItem("dlinkyCustomFrames")||"[]").filter(f=>f&&f.url)}catch(e){return []}
+  }
+
+  function getUser(){
+    try{return JSON.parse(localStorage.getItem("dlinkyUser")||"{}")}catch(e){return {}}
+  }
+
+  function setActiveShopButton(mode){
+    qa("#tab-store [data-shop-tab]").forEach(btn=>{
+      btn.classList.toggle("active", btn.dataset.shopTab === mode);
+    });
+  }
+
+  function renderShopStable(mode){
+    const grid = q("#shopGrid");
+    if(!grid) return;
+
+    mode = mode || lockedShopMode || "coins";
+    lockedShopMode = mode;
+    localStorage.setItem("dlinkyShopModeAtual", mode);
+
+    try{ shopMode = mode; }catch(e){}
+    window.shopMode = mode;
+    setActiveShopButton(mode);
+
+    if(mode === "frames"){
+      const frames = getFrames();
+      grid.classList.add("frames-shop-grid");
+
+      if(!frames.length){
+        window.__dlinkyVisibleFrames = [];
+        grid.innerHTML = `<div class="panel empty-frames-help">
+          <h2>Nenhuma moldura cadastrada</h2>
+          <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
+        </div>`;
+        return;
+      }
+
+      const u = getUser();
+      const avatar = esc(u.avatar || "");
+      window.__dlinkyVisibleFrames = frames.map((f,i)=>[
+        f.name || "Moldura personalizada",
+        f.price || "20 Linkwuans",
+        "custom-"+i,
+        f.desc || "Moldura custom",
+        "Disponível",
+        f.url || "",
+        f.prices || null,
+        f.id || f.url || ("frame_"+i)
+      ]);
+
+      grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
+        const base = String(x[1]).match(/\d+/)?.[0] || 20;
+        return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
+          <div class="frame-shop-preview real-frame-preview">
+            <div class="frame-avatar-demo zyo-person-demo" style="background-image:${avatar?`url('${avatar}')`:"none"}!important"></div>
+            <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
+          </div>
+          <div class="frame-info clean-info"><b>${esc(x[0])}</b><small>${esc(x[3])}</small></div>
+          <div class="frame-price">Preço: <b data-price-label="${i}">${esc(x[1])}</b></div>
+          <select class="frame-duration" data-frame-duration="${i}">
+            <option>3 dias</option>
+            <option>7 dias</option>
+            <option>15 dias</option>
+            <option>Permanente</option>
+          </select>
+          <div class="frame-actions">
+            <button class="btn primary small" type="button" data-clean-buy-frame="${i}">Comprar</button>
+          </div>
+        </div>`;
+      }).join("");
+      return;
+    }
+
+    grid.classList.remove("frames-shop-grid");
+
+    const fallback = {
+      coins:[["345 Linkwuans","R$ 30,00"],["650 Linkwuans","R$ 50,00"],["1450 Linkwuans","R$ 100,00"],["3300 Linkwuans","R$ 200,00"]],
+      effects:[["Neon no Nome","180 Linkwuans"],["Nome Brilhante","220 Linkwuans"],["Nome Colorido","240 Linkwuans"],["Ocultar Views","150 Linkwuans"]],
+      other:[["Cursor Custom","120 Linkwuans"],["Tema Cyber","300 Linkwuans"]],
+      badges:[]
+    };
+
+    let data = [];
+    try{
+      if(typeof shopData !== "undefined" && shopData && Array.isArray(shopData[mode])) data = shopData[mode];
+    }catch(e){}
+    if(!data.length && fallback[mode]) data = fallback[mode];
+
+    grid.innerHTML = data.length ? data.map((x,i)=>`<div class="asset-card">
+      <div class="asset-preview shop-preview">${mode==="coins"?"◈":"✦"}</div>
+      <div class="asset-body">
+        <b>${esc(x[0])}</b>
+        <small>${esc(x[1]||"")}</small>
+        <button class="btn primary small" type="button" data-buy-shop="${i}">Comprar</button>
+      </div>
+    </div>`).join("") : "<p>Nada cadastrado aqui.</p>";
+  }
+
+  function forceStable(mode){
+    lockedShopMode = mode || lockedShopMode || "coins";
+    localStorage.setItem("dlinkyShopModeAtual", lockedShopMode);
+
+    // vários códigos antigos chamam renderShop com atraso; isso vence eles sem alterar o resto
+    [0,30,80,160,350,700,1200].forEach(ms=>{
+      setTimeout(()=>renderShopStable(lockedShopMode), ms);
+    });
+  }
+
+  // Clique nas abas da loja: trava a aba escolhida e impede outro listener antigo de trocar de volta.
+  document.addEventListener("click", function(e){
+    const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
+    if(!tab) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    forceStable(tab.dataset.shopTab || "coins");
+  }, true);
+
+  // Se algum código antigo mexer no botão ativo ou no conteúdo, volta para a aba que o usuário escolheu.
+  const store = q("#tab-store");
+  if(store && window.MutationObserver){
+    const obs = new MutationObserver(()=>{
+      const active = q("#tab-store [data-shop-tab].active");
+      const activeMode = active?.dataset?.shopTab;
+      if(activeMode !== lockedShopMode){
+        renderShopStable(lockedShopMode);
+      }
+    });
+    obs.observe(store, {subtree:true, childList:true, attributes:true, attributeFilter:["class"]});
+  }
+
+  // Sobrescreve renderShop no final, porque o bug é função duplicada antiga chamando a aba anterior.
+  window.renderShop = function(){ renderShopStable(lockedShopMode); };
+  try{ renderShop = window.renderShop; }catch(e){}
+
+  const oldOpenTab = window.openTab;
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__fixAbasLojaNaoVoltar){
+    const patched = function(id){
+      const r = oldOpenTab.apply(this, arguments);
+      if(id === "store") forceStable(lockedShopMode);
+      return r;
+    };
+    patched.__fixAbasLojaNaoVoltar = true;
+    window.openTab = patched;
+    try{ openTab = patched; }catch(e){}
+  }
+
+  // Ao carregar, mantém a última aba escolhida sem deixar voltar sozinha.
+  setTimeout(()=>forceStable(lockedShopMode), 500);
+})();
