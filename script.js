@@ -12753,131 +12753,92 @@ document.addEventListener("click",(e)=>{
 })();
 
 
-/* ===== FIX DUPLICATE EMPTY FRAME BOX ===== */
+/* ===== CORREÇÃO FINAL 100%: Loja > Molduras sem sobrepor Recarga/Voucher ===== */
 (function(){
-  if(window.__fixDuplicateEmptyFrameBox) return;
-  window.__fixDuplicateEmptyFrameBox = true;
+  if(window.__dlinkyStoreFramesFinal100) return;
+  window.__dlinkyStoreFramesFinal100 = true;
 
-  function cleanDuplicateBoxes(){
-    const boxes = Array.from(document.querySelectorAll('.empty-frames-help, .panel.empty-frames-help'));
+  const q=(s,r=document)=>r.querySelector(s);
+  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
-    if(boxes.length <= 1) return;
+  let currentStoreMode = "coins";
+  let lastForced = 0;
 
-    boxes.forEach((el, i) => {
-      if(i > 0){
-        el.remove();
-      }
-    });
-
-    const grid = document.querySelector('#shopGrid');
-    if(grid && boxes[0]){
-      grid.innerHTML = '';
-      grid.appendChild(boxes[0]);
-    }
-  }
-
-  setInterval(cleanDuplicateBoxes, 500);
-  window.addEventListener('load', cleanDuplicateBoxes);
-})();
-/* ===== PATCH: remover caixa "Nenhuma moldura cadastrada" da loja ===== */
-(function(){
-  if(window.__dlinkyRemoveEmptyFrameBox) return;
-  window.__dlinkyRemoveEmptyFrameBox = true;
-
-  const style = document.createElement("style");
-  style.textContent = `
-    #tab-store .empty-frames-help,
-    #shopGrid .empty-frames-help {
-      display: none !important;
-      visibility: hidden !important;
-      height: 0 !important;
-      min-height: 0 !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      border: 0 !important;
-      overflow: hidden !important;
-    }
-  `;
-  document.head.appendChild(style);
-
-  function removeBox(){
-    document.querySelectorAll("#tab-store .empty-frames-help, #shopGrid .empty-frames-help").forEach(el => el.remove());
-
-    const grid = document.querySelector("#shopGrid");
-    const active = document.querySelector("#tab-store [data-shop-tab].active");
-
-    if(grid && active && active.dataset.shopTab === "frames"){
-      const hasFrame = grid.querySelector(".frame-shop-card");
-      if(!hasFrame){
-        grid.innerHTML = "";
-      }
-    }
-  }
-
-  document.addEventListener("click", function(e){
-    const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
-    if(tab && tab.dataset.shopTab === "frames"){
-      setTimeout(removeBox, 50);
-      setTimeout(removeBox, 300);
-      setTimeout(removeBox, 800);
-    }
-  }, true);
-
-  const obs = new MutationObserver(removeBox);
-  obs.observe(document.body, {childList:true, subtree:true});
-
-  removeBox();
-  setInterval(removeBox, 1000);
-})();
-/* ===== PATCH FINAL: Molduras vazia sem ir pra Recarga ===== */
-(function(){
-  if(window.__dlinkyFixMoldurasSemRecarga) return;
-  window.__dlinkyFixMoldurasSemRecarga = true;
-
-  let shopLockedMode = null;
-
-  function q(s,r=document){ return r.querySelector(s); }
-  function qa(s,r=document){ return Array.from(r.querySelectorAll(s)); }
-
-  function isStoreVisible(){
-    const tab = q("#tab-store");
-    return tab && tab.classList.contains("active");
+  function escapeHtml(v){
+    return String(v ?? "").replace(/[&<>"']/g,m=>({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[m]));
   }
 
   function getFrames(){
     try{
       const frames = JSON.parse(localStorage.getItem("dlinkyCustomFrames") || "[]");
-      return Array.isArray(frames) ? frames.filter(f => f && f.url) : [];
+      return Array.isArray(frames) ? frames.filter(f => f && String(f.url || "").trim()) : [];
     }catch(e){
       return [];
     }
   }
 
-  function setActiveButton(mode){
+  function setActive(mode){
     qa("#tab-store [data-shop-tab]").forEach(btn=>{
       btn.classList.toggle("active", btn.dataset.shopTab === mode);
     });
   }
 
-  function renderMoldurasOnly(){
-    if(!isStoreVisible()) return;
+  function hideRechargePanels(){
+    const store = q("#tab-store");
+    if(!store) return;
+    store.classList.add("dlinky-store-frames-mode");
 
+    // esconde Valor personalizado e Código voucher quando está em Molduras
+    qa("#tab-store > .grid2, #tab-store .grid2").forEach(el=>{
+      el.style.setProperty("display", "none", "important");
+      el.style.setProperty("visibility", "hidden", "important");
+      el.style.setProperty("height", "0px", "important");
+      el.style.setProperty("min-height", "0px", "important");
+      el.style.setProperty("overflow", "hidden", "important");
+      el.style.setProperty("margin", "0px", "important");
+      el.style.setProperty("padding", "0px", "important");
+    });
+  }
+
+  function showRechargePanels(){
+    const store = q("#tab-store");
+    if(!store) return;
+    store.classList.remove("dlinky-store-frames-mode");
+
+    qa("#tab-store > .grid2, #tab-store .grid2").forEach(el=>{
+      el.style.removeProperty("display");
+      el.style.removeProperty("visibility");
+      el.style.removeProperty("height");
+      el.style.removeProperty("min-height");
+      el.style.removeProperty("overflow");
+      el.style.removeProperty("margin");
+      el.style.removeProperty("padding");
+    });
+  }
+
+  function renderFramesOnly(){
+    const store = q("#tab-store");
     const grid = q("#shopGrid");
-    if(!grid) return;
+    if(!store || !grid) return;
 
-    shopLockedMode = "frames";
-
-    try{ shopMode = "frames"; }catch(e){}
+    currentStoreMode = "frames";
     window.shopMode = "frames";
-    setActiveButton("frames");
+    try{ shopMode = "frames"; }catch(e){}
+
+    setActive("frames");
+    hideRechargePanels();
 
     const frames = getFrames();
-
     grid.classList.add("frames-shop-grid");
 
+    // Se não tem moldura, fica vazio mesmo. Sem card grande e sem recarga.
     if(!frames.length){
-      // Molduras vazia: fica vazio mesmo, sem caixa e sem recarga.
+      window.__dlinkyVisibleFrames = [];
       grid.innerHTML = "";
+      grid.style.minHeight = "0px";
+      grid.style.marginBottom = "0px";
       return;
     }
 
@@ -12899,11 +12860,11 @@ document.addEventListener("click",(e)=>{
       return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
         <div class="frame-shop-preview real-frame-preview">
           <div class="frame-avatar-demo zyo-person-demo" style="background-image:url('${String(avatar).replace(/'/g,"%27")}')!important"></div>
-          <img class="frame-img big" src="${String(x[5]).replace(/"/g,"&quot;")}" alt="${String(x[0]).replace(/"/g,"&quot;")}">
+          <img class="frame-img big" src="${escapeHtml(x[5])}" alt="${escapeHtml(x[0])}">
         </div>
         <div class="frame-info clean-info">
-          <b>${String(x[0])}</b>
-          <small>${String(x[3])}</small>
+          <b>${escapeHtml(x[0])}</b>
+          <small>${escapeHtml(x[3])}</small>
         </div>
         <div class="frame-price">Preço: <b data-price-label="${i}">${base} Linkwuans</b></div>
         <select class="frame-duration" data-frame-duration="${i}">
@@ -12913,94 +12874,113 @@ document.addEventListener("click",(e)=>{
           <option>Permanente</option>
         </select>
         <div class="frame-actions">
-          <button class="btn primary small" data-confirm-frame="${i}">Comprar</button>
+          <button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button>
         </div>
       </div>`;
     }).join("");
   }
 
-  function clearVoucherPanelsWhenFrames(){
-    if(!isStoreVisible()) return;
-    const active = q("#tab-store [data-shop-tab].active");
-    if(!active || active.dataset.shopTab !== "frames") return;
-
-    // Esconde o bloco de recarga/voucher somente quando está em Molduras.
-    qa("#tab-store .grid2").forEach(el=>{
-      el.style.display = "none";
-    });
+  function isStoreActive(){
+    const store = q("#tab-store");
+    return store && store.classList.contains("active");
   }
 
-  function showVoucherPanelsWhenNotFrames(){
-    if(!isStoreVisible()) return;
-    const active = q("#tab-store [data-shop-tab].active");
-    if(active && active.dataset.shopTab === "frames") return;
+  function enforceFramesMode(){
+    if(!isStoreActive()) return;
+    if(currentStoreMode !== "frames") return;
 
-    qa("#tab-store .grid2").forEach(el=>{
-      el.style.display = "";
-    });
+    const active = q("#tab-store [data-shop-tab].active");
+    const grid = q("#shopGrid");
+
+    // se algum código antigo voltou pra Recarga, força Molduras de novo
+    if(!active || active.dataset.shopTab !== "frames"){
+      renderFramesOnly();
+      return;
+    }
+
+    // se algum código antigo renderizou recarga/voucher junto, limpa
+    hideRechargePanels();
+
+    if(grid){
+      const text = (grid.textContent || "").toLowerCase();
+      if(text.includes("345 linkwuans") || text.includes("650 linkwuans") || text.includes("r$ 30")){
+        renderFramesOnly();
+      }
+      grid.querySelectorAll(".empty-frames-help").forEach(el=>el.remove());
+    }
   }
 
+  // Clique nas abas da loja
   document.addEventListener("click", function(e){
     const btn = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
     if(!btn) return;
 
     const mode = btn.dataset.shopTab;
 
-    shopLockedMode = mode;
-    try{ shopMode = mode; }catch(err){}
-    window.shopMode = mode;
+    currentStoreMode = mode || "coins";
+    window.shopMode = currentStoreMode;
+    try{ shopMode = currentStoreMode; }catch(err){}
 
     if(mode === "frames"){
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
 
-      renderMoldurasOnly();
-      clearVoucherPanelsWhenFrames();
-
-      setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 80);
-      setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 300);
-      setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 800);
+      renderFramesOnly();
+      [50,150,350,800,1500].forEach(ms=>setTimeout(renderFramesOnly, ms));
       return;
     }
 
-    showVoucherPanelsWhenNotFrames();
+    showRechargePanels();
   }, true);
 
-  // Se algum código antigo tentar voltar pra Recarga, força Molduras de volta.
-  setInterval(function(){
-    if(!isStoreVisible()) return;
-
-    const active = q("#tab-store [data-shop-tab].active");
-    const activeMode = active ? active.dataset.shopTab : "";
-
-    if(shopLockedMode === "frames"){
-      if(activeMode !== "frames"){
-        renderMoldurasOnly();
-      }
-
-      const grid = q("#shopGrid");
-      if(grid && !getFrames().length && grid.textContent.includes("345 Linkwuans")){
-        renderMoldurasOnly();
-      }
-
-      clearVoucherPanelsWhenFrames();
-    }else{
-      showVoucherPanelsWhenNotFrames();
-    }
-  }, 250);
-
+  // Quando abrir Loja pela sidebar
   const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__dlinkyFixMoldurasSemRecarga){
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__dlinkyStoreFramesFinal100){
     const patched = function(id){
       const r = oldOpenTab.apply(this, arguments);
-      if(id === "store" && shopLockedMode === "frames"){
-        setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 100);
+
+      if(id === "store"){
+        if(currentStoreMode === "frames"){
+          [50,200,600].forEach(ms=>setTimeout(renderFramesOnly, ms));
+        }else{
+          setTimeout(showRechargePanels, 100);
+        }
       }
+
       return r;
     };
-    patched.__dlinkyFixMoldurasSemRecarga = true;
+    patched.__dlinkyStoreFramesFinal100 = true;
     window.openTab = patched;
     try{ openTab = patched; }catch(e){}
   }
+
+  // CSS final para garantir que não aparece recarga/voucher em Molduras
+  const style = document.createElement("style");
+  style.id = "dlinky-store-frames-final100-style";
+  style.textContent = `
+    #tab-store.dlinky-store-frames-mode .grid2 {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+    }
+
+    #tab-store.dlinky-store-frames-mode #shopGrid:empty {
+      min-height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    #tab-store.dlinky-store-frames-mode .empty-frames-help {
+      display: none !important;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Guarda contra código antigo que roda depois e volta pra recarga
+  setInterval(enforceFramesMode, 200);
 })();
