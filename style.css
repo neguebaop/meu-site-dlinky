@@ -4427,3 +4427,86 @@ body:has(#profile.active) #particlesCanvas{display:none!important;}
 #frameAdjustModal.dlinky-clean-adjust .adjust-actions{display:flex!important;justify-content:flex-end!important;gap:10px!important;margin-top:20px!important;position:relative!important;z-index:5!important;}
 #frameAdjustModal.dlinky-clean-adjust .adjust-close{position:absolute!important;right:16px!important;top:16px!important;width:36px!important;height:36px!important;border:0!important;border-radius:10px!important;background:rgba(255,255,255,.08)!important;color:#fff!important;font-size:22px!important;cursor:pointer!important;}
 @media(max-width:600px){#frameAdjustModal.dlinky-clean-adjust .adjust-grid{grid-template-columns:1fr!important}#frameAdjustModal.dlinky-clean-adjust .adjust-card{padding:20px!important}}
+
+/* =========================================================
+   DLINKY FIX FINAL — ÍCONE/AVATAR DO PERFIL VISÍVEL
+   Corrige o erro onde CSS antigo escondia #profileAvatar.
+   ========================================================= */
+#profileCard.profile-wrap,
+#profileCard,
+.profile-wrap{
+  overflow:visible!important;
+}
+#avatarDecoration,
+#avatarDecoration.dlinky-avatar-lite-on,
+#avatarDecoration.dlinky-avatar-final-lock,
+#avatarDecoration.dlinky-hard-avatar-v8,
+#avatarDecoration.dlinky-clean-avatar-v7,
+#avatarDecoration.dlinky-final-avatar-stage,
+#avatarDecoration.dlinky-no-flicker-lock{
+  display:block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  position:relative!important;
+  width:112px!important;
+  height:112px!important;
+  min-width:112px!important;
+  min-height:112px!important;
+  max-width:112px!important;
+  max-height:112px!important;
+  margin:-56px auto 12px!important;
+  overflow:visible!important;
+  transform:none!important;
+  z-index:2147480!important;
+  isolation:isolate!important;
+}
+#avatarDecoration > #profileAvatar,
+#avatarDecoration.dlinky-avatar-lite-on > #profileAvatar,
+#avatarDecoration.dlinky-avatar-final-lock > #profileAvatar,
+#avatarDecoration.dlinky-hard-avatar-v8 > #profileAvatar,
+#avatarDecoration.dlinky-clean-avatar-v7 > #profileAvatar,
+#avatarDecoration.dlinky-final-avatar-stage > #profileAvatar,
+#avatarDecoration.dlinky-no-flicker-lock > #profileAvatar,
+#profileAvatar.avatar.big-avatar,
+#profileAvatar{
+  display:block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  position:absolute!important;
+  left:50%!important;
+  top:50%!important;
+  width:96px!important;
+  height:96px!important;
+  min-width:96px!important;
+  min-height:96px!important;
+  max-width:96px!important;
+  max-height:96px!important;
+  transform:translate(-50%,-50%)!important;
+  border-radius:50%!important;
+  object-fit:cover!important;
+  object-position:center!important;
+  background-size:cover!important;
+  background-position:center!important;
+  background-repeat:no-repeat!important;
+  z-index:2147482!important;
+  border:3px solid rgba(255,255,255,.96)!important;
+  box-shadow:0 0 0 4px rgba(10,5,18,.70),0 0 30px rgba(168,85,247,.85)!important;
+  pointer-events:none!important;
+  background-color:#151020!important;
+  animation:none!important;
+  transition:none!important;
+}
+#avatarDecoration > #profileFrame,
+#profileFrame{
+  position:absolute!important;
+  left:50%!important;
+  top:50%!important;
+  z-index:2147483!important;
+  pointer-events:none!important;
+}
+#avatarDecoration > .decor-css{z-index:2147484!important;pointer-events:none!important;}
+#dlinkyProfileAvatarV4,
+#dlinkyIconV3,
+#dlinkyProfileIconOnly2026{
+  display:none!important;
+}
