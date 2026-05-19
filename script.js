@@ -13184,3 +13184,140 @@ document.addEventListener("click",(e)=>{
   if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
   run();
 })();
+
+/* ===== DLINKY HARD FIX — ÍCONE/AVATAR DO PERFIL SEM MEXER NO RESTO =====
+   Cria uma camada própria do avatar dentro do card, por cima do layout.
+   Não altera loja, inventário, molduras, links, banner, fundo ou Firebase data. */
+(function(){
+  if(window.__dlinkyHardFixAvatarPerfilApenas) return;
+  window.__dlinkyHardFixAvatarPerfilApenas = true;
+
+  var FALLBACK = 'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif';
+
+  function q(s,r){return (r||document).querySelector(s)}
+  function clean(v){
+    v = String(v || '').trim();
+    var m = v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v = m[1];
+    return v.replace(/^['"]|['"]$/g,'').trim();
+  }
+  function isImg(v){
+    v = clean(v);
+    return !!v && v !== 'none' && v !== 'null' && v !== 'undefined' && /^(https?:\/\/|data:image\/|blob:|assets\/|\.\/|\/)/i.test(v) && !/\.(mp4|webm|mp3|wav|ogg)(\?|#|$)/i.test(v);
+  }
+  function slug(){
+    var h = String(location.hash || '').replace(/^#\/?/,'').split('/')[0] || '';
+    var p = String(location.pathname || '').replace(/^\/+|\/+$/g,'').split('/')[0] || '';
+    var deny = {login:1,register:1,dashboard:1,profile:1,assets:1,premium:1,admin:1,store:1,'index.html':1,'':1};
+    var s = p && !deny[p.toLowerCase()] ? p : h;
+    try{ if((!s || deny[String(s).toLowerCase()]) && typeof user === 'object' && user) s = user.slug || ''; }catch(e){}
+    return String(s || '').toLowerCase().trim();
+  }
+  function pick(data){
+    data = data || {};
+    var keys = ['avatar','avatarUrl','avatarURL','photoURL','photoUrl','photo','foto','icon','icone','iconUrl','profileAvatar','profileIcon','pfp'];
+    for(var i=0;i<keys.length;i++){ if(isImg(data[keys[i]])) return clean(data[keys[i]]); }
+    for(var k in data){
+      if(!Object.prototype.hasOwnProperty.call(data,k)) continue;
+      var lk = String(k).toLowerCase();
+      if(/banner|background|bg|cover|capa|frame|moldura|music|audio|video|cursor/.test(lk)) continue;
+      if(/avatar|foto|photo|icon|icone|pfp|pic|image|img/.test(lk) && isImg(data[k])) return clean(data[k]);
+    }
+    return '';
+  }
+  function syncAvatar(){
+    var list = [];
+    try{ if(typeof user === 'object' && user) list.push(pick(user)); }catch(e){}
+    try{ if(window.user && typeof window.user === 'object') list.push(pick(window.user)); }catch(e){}
+    try{ if(window.DlinkyStore) list.push(pick(JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {})); }catch(e){}
+    ['#cfgAvatar','#uploadAvatar'].forEach(function(sel){ var el=q(sel); if(el && isImg(el.value)) list.push(el.value); });
+    ['#profileAvatar','#dashAvatar','#sideAvatar','#frameBuyAvatar','#adjustAvatar','.dlinky-v4-avatar','.dlinky-final-avatar'].forEach(function(sel){
+      var el=q(sel); if(!el) return;
+      var src = el.tagName === 'IMG' ? (el.getAttribute('src') || el.src || '') : (el.style.backgroundImage || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : ''));
+      if(isImg(src)) list.push(src);
+    });
+    try{ if(window.firebase && firebase.auth && firebase.auth().currentUser && isImg(firebase.auth().currentUser.photoURL)) list.push(firebase.auth().currentUser.photoURL); }catch(e){}
+    for(var i=0;i<list.length;i++){ if(isImg(list[i])) return clean(list[i]); }
+    return '';
+  }
+  async function firebaseAvatar(){
+    try{
+      if(!window.firebase || !firebase.firestore) return '';
+      var db = firebase.firestore();
+      var s = slug();
+      var src = '';
+      if(s){
+        try{ var p = await db.collection('profiles').doc(s).get(); if(p.exists) src = pick(p.data() || {}); }catch(e){}
+        if(!isImg(src)){
+          try{ var qs = await db.collection('users').where('slug','==',s).limit(1).get(); if(!qs.empty) src = pick(qs.docs[0].data() || {}); }catch(e){}
+        }
+      }
+      if(!isImg(src) && firebase.auth && firebase.auth().currentUser){
+        try{ var cu = firebase.auth().currentUser; var u = await db.collection('users').doc(cu.uid).get(); if(u.exists) src = pick(u.data() || {}); if(!isImg(src)) src = cu.photoURL || ''; }catch(e){}
+      }
+      return isImg(src) ? clean(src) : '';
+    }catch(e){ return ''; }
+  }
+  function css(){
+    if(q('#dlinky-hard-avatar-css')) return;
+    var st = document.createElement('style');
+    st.id = 'dlinky-hard-avatar-css';
+    st.textContent = `
+      #profileCard{position:relative!important;overflow:visible!important;}
+      #dlinkyHardAvatarPerfil{
+        width:98px!important;height:98px!important;min-width:98px!important;min-height:98px!important;
+        position:absolute!important;left:50%!important;top:135px!important;transform:translate(-50%,-50%)!important;
+        border-radius:999px!important;z-index:2147483646!important;display:block!important;visibility:visible!important;opacity:1!important;
+        object-fit:cover!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        background-color:#1b1324!important;border:4px solid rgba(255,255,255,.14)!important;
+        box-shadow:0 0 0 1px rgba(168,85,247,.35),0 0 30px rgba(168,85,247,.75)!important;
+        pointer-events:none!important;overflow:hidden!important;
+      }
+      #avatarDecoration,#profileAvatar{display:block!important;visibility:visible!important;opacity:1!important;}
+    `;
+    document.head.appendChild(st);
+  }
+  function place(src){
+    css();
+    src = clean(src || syncAvatar() || FALLBACK);
+    var card = q('#profileCard') || (q('#profileName') && q('#profileName').closest('.profile-card')) || (q('#profileName') && q('#profileName').parentElement);
+    if(!card || !q('#profileName')) return false;
+
+    var img = q('#dlinkyHardAvatarPerfil');
+    if(!img){
+      img = document.createElement('img');
+      img.id = 'dlinkyHardAvatarPerfil';
+      img.alt = '';
+      card.appendChild(img);
+    }
+    if(isImg(src)) img.src = src;
+    img.style.setProperty('display','block','important');
+    img.style.setProperty('visibility','visible','important');
+    img.style.setProperty('opacity','1','important');
+
+    var old = q('#profileAvatar');
+    if(old && isImg(src)){
+      if(old.tagName === 'IMG') old.src = src;
+      else old.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
+    }
+    return true;
+  }
+  function run(){
+    place(syncAvatar() || FALLBACK);
+    firebaseAvatar().then(function(src){ place(src || syncAvatar() || FALLBACK); });
+    [80,180,350,700,1200,2200,4000,7000].forEach(function(t){ setTimeout(function(){ place(syncAvatar() || FALLBACK); }, t); });
+  }
+
+  var old = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
+  if(typeof old === 'function' && !old.__dlinkyHardFixAvatarPerfilApenas){
+    var patched = function(){ var r = old.apply(this,arguments); run(); return r; };
+    patched.__dlinkyHardFixAvatarPerfilApenas = true;
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded', run, {once:true});
+  window.addEventListener('load', run);
+  window.addEventListener('hashchange', run);
+  if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
+  run();
+})();
