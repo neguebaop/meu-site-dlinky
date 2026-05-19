@@ -12430,894 +12430,218 @@ document.addEventListener("click",(e)=>{
   };
 })();
 
-/* ===== FIX CIRÚRGICO — ÍCONE/AVATAR DO PERFIL VOLTAR A APARECER =====
-   Só mexe no #profileAvatar. Não altera loja, inventário, molduras, exclusão,
-   ajuste, links, banner ou dados salvos. Busca o avatar no user atual e no Firebase. */
+/* =========================================================
+   DLINKY HOTFIX FINAL — SOMENTE ÍCONE DO PERFIL + LOGIN REAL
+   - Não mexe em loja, inventário, molduras ou ajustes.
+   - Ícone: cria uma camada própria visível no card, puxando avatar do user/Firebase.
+   - Login: bloqueia login com senha errada; só entra via Firebase Auth.
+   ========================================================= */
 (function(){
-  if(window.__dlinkyFixProfileAvatarOnlyFirebase) return;
-  window.__dlinkyFixProfileAvatarOnlyFirebase = true;
+  'use strict';
+  if(window.__DLINKY_HOTFIX_ICON_LOGIN_FINAL_2026__) return;
+  window.__DLINKY_HOTFIX_ICON_LOGIN_FINAL_2026__ = true;
 
-  function q(s,r=document){ return r.querySelector(s); }
-  function clean(v){
-    v = String(v || '').trim();
-    if(!v || v === 'none' || v === 'null' || v === 'undefined') return '';
-    const m = v.match(/url\(["']?(.+?)["']?\)/i);
-    if(m) v = m[1];
-    return v.replace(/^['"]|['"]$/g,'').trim();
-  }
-  function readStoreUser(){
-    try{ return JSON.parse((window.DlinkyStore && window.DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }
-    catch(e){ return {}; }
-  }
-  function getGlobalUser(){
-    try{ if(typeof user === 'object' && user) return user; }catch(e){}
-    return window.user || {};
-  }
-  function bestAvatarSync(){
-    const u = Object.assign({}, readStoreUser(), getGlobalUser());
-    const fromInput = clean(q('#cfgAvatar')?.value || q('#uploadAvatar')?.value || '');
-    const fromImg = clean(q('#profileAvatar')?.getAttribute?.('src') || q('#profileAvatar')?.style?.backgroundImage || '');
-    const fbPhoto = clean(window.firebase?.auth?.()?.currentUser?.photoURL || '');
-    return clean(u.avatar || u.photoURL || u.foto || u.icon || u.avatarUrl || fromInput || fromImg || fbPhoto);
-  }
-  function saveAvatarInCurrentUser(src){
-    if(!src) return;
-    try{
-      const u = Object.assign({}, readStoreUser(), getGlobalUser());
-      u.avatar = src;
-      if(typeof user === 'object' && user) user.avatar = src;
-      window.user = Object.assign(window.user || {}, {avatar:src});
-      if(window.DlinkyStore) window.DlinkyStore.setItem('dlinkyUser', JSON.stringify(u));
-    }catch(e){}
-  }
-  function paintAvatar(src){
-    src = clean(src || bestAvatarSync());
-    const av = q('#profileAvatar');
-    if(!av || !src) return false;
-
-    if(av.tagName === 'IMG'){
-      av.src = src;
-      av.removeAttribute('hidden');
-    }else{
-      av.style.setProperty('background-image', 'url("'+src.replace(/"/g,'%22')+'")', 'important');
-      av.style.setProperty('background-size', 'cover', 'important');
-      av.style.setProperty('background-position', 'center', 'important');
-      av.style.setProperty('background-repeat', 'no-repeat', 'important');
-    }
-
-    av.style.setProperty('display','block','important');
-    av.style.setProperty('visibility','visible','important');
-    av.style.setProperty('opacity','1','important');
-    av.style.setProperty('width','96px','important');
-    av.style.setProperty('height','96px','important');
-    av.style.setProperty('min-width','96px','important');
-    av.style.setProperty('min-height','96px','important');
-    av.style.setProperty('border-radius','50%','important');
-    av.style.setProperty('background-color','rgba(255,255,255,.08)','important');
-    av.style.setProperty('z-index','3','important');
-    saveAvatarInCurrentUser(src);
-    return true;
-  }
-  async function fetchFirebaseAvatar(){
-    try{
-      if(!window.firebase || !firebase.auth || !firebase.firestore) return '';
-      const fbUser = firebase.auth().currentUser;
-      if(!fbUser) return '';
-      const db = firebase.firestore();
-      const snap = await db.collection('users').doc(fbUser.uid).get();
-      let data = snap.exists ? (snap.data() || {}) : {};
-      let src = clean(data.avatar || data.photoURL || data.foto || data.icon || data.avatarUrl || fbUser.photoURL || '');
-      if(!src && data.slug){
-        const ps = await db.collection('profiles').doc(String(data.slug).toLowerCase()).get();
-        if(ps.exists){
-          const p = ps.data() || {};
-          src = clean(p.avatar || p.photoURL || p.foto || p.icon || p.avatarUrl || '');
-        }
-      }
-      if(src){ saveAvatarInCurrentUser(src); paintAvatar(src); }
-      return src;
-    }catch(e){ return ''; }
-  }
-  function apply(){
-    paintAvatar(bestAvatarSync());
-    fetchFirebaseAvatar();
-  }
-
-  const oldRenderProfile = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
-  if(typeof oldRenderProfile === 'function' && !oldRenderProfile.__avatarOnlyPatched){
-    const patched = function(){
-      const r = oldRenderProfile.apply(this, arguments);
-      setTimeout(apply, 0);
-      setTimeout(apply, 150);
-      setTimeout(apply, 700);
-      return r;
-    };
-    patched.__avatarOnlyPatched = true;
-    window.renderProfile = patched;
-    try{ renderProfile = patched; }catch(e){}
-  }
-
-  if(window.firebase && firebase.auth){
-    try{ firebase.auth().onAuthStateChanged(()=>setTimeout(apply,300)); }catch(e){}
-  }
-  document.addEventListener('DOMContentLoaded',()=>setTimeout(apply,300),{once:true});
-  window.addEventListener('hashchange',()=>setTimeout(apply,250));
-  setTimeout(apply,300);
-  setTimeout(apply,1200);
-})();
-
-/* ===== FIX FINAL REAL — AVATAR VISÍVEL QUANDO NÃO TEM MOLDURA ATIVA =====
-   Corrige só o ícone do perfil. Não mexe em loja, inventário, compras,
-   exclusão, ajuste de moldura, banner ou links. */
-(function(){
-  if(window.__dlinkyAvatarVisibleNoFrameFinal) return;
-  window.__dlinkyAvatarVisibleNoFrameFinal = true;
-
-  function q(s,r=document){return r.querySelector(s)}
-  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function clean(v){
-    v=String(v||'').trim();
-    if(!v||v==='none'||v==='null'||v==='undefined') return '';
-    const m=v.match(/url\(["']?(.+?)["']?\)/i);
-    if(m) v=m[1];
-    return v.replace(/^["']|["']$/g,'').trim();
-  }
-  function currentUser(){
-    try{ if(typeof user==='object' && user) return user; }catch(e){}
-    return window.user||{};
-  }
-  function hasActiveFrame(){
-    const u=currentUser();
-    if(clean(u.frame)) return true;
-    const st=q('#dlinkyFinalProfileStage,#dlinkyV4ProfileStage');
-    const fr=st && q('img',st);
-    return !!clean(fr && fr.getAttribute('src'));
-  }
-  function bestAvatar(){
-    const u=currentUser();
-    let src=clean(u.avatar||u.photoURL||u.foto||u.icon||u.avatarUrl||'');
-    if(!src) src=clean(q('#cfgAvatar')?.value||q('#uploadAvatar')?.value||'');
-    if(!src) src=clean(q('#dashAvatar')?.style?.backgroundImage||q('#sideAvatar')?.style?.backgroundImage||'');
-    if(!src) src=clean(window.firebase?.auth?.()?.currentUser?.photoURL||'');
-    return src;
-  }
-  function forceAvatar(){
-    const deco=q('#avatarDecoration');
-    let av=q('#profileAvatar');
-    if(!deco) return;
-
-    if(!av){
-      av=document.createElement('span');
-      av.id='profileAvatar';
-      av.className='big-avatar';
-      deco.insertBefore(av,deco.firstChild);
-    }
-
-    const src=bestAvatar();
-    if(src){
-      av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-      try{ currentUser().avatar=src; window.user=currentUser(); }catch(e){}
-    }
-
-    av.style.setProperty('display','block','important');
-    av.style.setProperty('visibility','visible','important');
-    av.style.setProperty('opacity','1','important');
-    av.style.setProperty('width','96px','important');
-    av.style.setProperty('height','96px','important');
-    av.style.setProperty('min-width','96px','important');
-    av.style.setProperty('min-height','96px','important');
-    av.style.setProperty('border-radius','50%','important');
-    av.style.setProperty('background-size','cover','important');
-    av.style.setProperty('background-position','center','important');
-    av.style.setProperty('background-repeat','no-repeat','important');
-    av.style.setProperty('background-color','rgba(255,255,255,.08)','important');
-    av.style.setProperty('position','relative','important');
-    av.style.setProperty('z-index','10','important');
-
-    if(!hasActiveFrame()){
-      qa('#dlinkyFinalProfileStage,#dlinkyV4ProfileStage',deco).forEach(el=>el.remove());
-      deco.classList.remove('dlinky-final-only','dlinky-v5-only-frame','dlinky-v6-profile-frame','dlinky-v4-lock');
-    }
-  }
-  function run(){
-    [0,80,200,500,1000,1800,2600,3400].forEach(t=>setTimeout(forceAvatar,t));
-  }
-
-  const old=window.renderProfile || (typeof renderProfile==='function'?renderProfile:null);
-  if(typeof old==='function'){
-    const patched=function(){const r=old.apply(this,arguments); run(); return r;};
-    window.renderProfile=patched;
-    try{renderProfile=patched;}catch(e){}
-  }
-  document.addEventListener('DOMContentLoaded',run,{once:true});
-  window.addEventListener('hashchange',run);
-  run();
-})();
-
-/* ===== FIX DEFINITIVO E ISOLADO — AVATAR/ÍCONE DO PERFIL =====
-   Usa somente o código antigo do avatar como base: pega user.avatar e pinta o ícone.
-   Não mexe em loja, inventário, molduras, excluir, ajuste, links, banner ou fundos. */
-(function(){
-  if(window.__dlinkyRescueProfileIconOnlyV2) return;
-  window.__dlinkyRescueProfileIconOnlyV2 = true;
-
-  function q(s,r){return (r||document).querySelector(s)}
-  function clean(v){
-    v = String(v || '').trim();
-    if(!v || v === 'none' || v === 'null' || v === 'undefined') return '';
-    var m = v.match(/url\(["']?(.+?)["']?\)/i);
-    if(m) v = m[1];
-    return v.replace(/^['"]|['"]$/g,'').trim();
-  }
-  function good(v){
+  const $ = (s,r=document)=>r.querySelector(s);
+  const clean = v => String(v || '').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/["']/g,'');
+  const good = v => {
     v = clean(v);
-    return !!v && /^(https?:|data:image|blob:)/i.test(v);
-  }
-  function currentSlug(){
-    var path = String(location.pathname || '').replace(/^\/+|\/+$/g,'').split('/')[0] || '';
-    var hash = String(location.hash || '').replace(/^#\/?/,'').split('/')[0] || '';
-    var blocked = {login:1,register:1,dashboard:1,assets:1,premium:1,community:1,admin:1,store:1,'index.html':1};
-    var s = (path && !blocked[path.toLowerCase()]) ? path : hash;
-    try{ if(!s && typeof user === 'object' && user) s = user.slug || ''; }catch(e){}
-    return String(s || '').toLowerCase().trim();
+    return !!v && v !== 'none' && v !== 'null' && v !== 'undefined' && !v.startsWith('blob:null');
+  };
+  const slugClean = v => String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30) || 'usuario';
+  const toastSafe = msg => { try{ if(typeof toast === 'function') toast(msg); }catch(e){ alert(msg); } };
+
+  function readStoreUser(){
+    try{ return JSON.parse((window.DlinkyStore && DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }catch(e){ return {}; }
   }
   function currentUserObj(){
-    var out = {};
-    try{ if(window.user && typeof window.user === 'object') Object.assign(out, window.user); }catch(e){}
-    try{ if(typeof user === 'object' && user) Object.assign(out, user); }catch(e){}
+    const a = readStoreUser();
+    let b = {};
+    try{ if(typeof user !== 'undefined' && user) b = user; }catch(e){}
+    try{ if(window.user) b = Object.assign({}, b, window.user); }catch(e){}
+    return Object.assign({}, a, b);
+  }
+  function pickAvatar(u){
+    const fields = ['avatar','avatarUrl','photoURL','photoUrl','foto','icon','iconUrl','profileAvatar','profileImage','image','pfp','picture'];
+    for(const k of fields){ if(good(u && u[k])) return clean(u[k]); }
     try{
-      if(window.DlinkyStore && window.DlinkyStore.getItem){
-        var saved = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {};
-        Object.assign(out, saved, out);
+      const inputVals = ['#cfgAvatar','#uploadAvatar','#avatarUrl','#profileAvatarUrl'].map(sel=>$(sel)?.value).filter(good);
+      if(inputVals[0]) return clean(inputVals[0]);
+    }catch(e){}
+    try{
+      const els = ['#dashAvatar','#sideAvatar','#frameBuyAvatar','#adjustAvatar','#profileAvatar'];
+      for(const sel of els){
+        const el = $(sel); if(!el) continue;
+        if(el.tagName === 'IMG' && good(el.getAttribute('src'))) return clean(el.getAttribute('src'));
+        const bg = (el.style && el.style.backgroundImage) || getComputedStyle(el).backgroundImage || '';
+        const m = bg.match(/url\(["']?(.*?)["']?\)/);
+        if(m && good(m[1])) return clean(m[1]);
       }
     }catch(e){}
-    return out;
-  }
-  function fromEl(sel){
-    var el = q(sel); if(!el) return '';
-    if(el.tagName === 'IMG') return clean(el.getAttribute('src') || el.src || '');
-    return clean(el.style.backgroundImage || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : ''));
-  }
-  function bestAvatarSync(){
-    var u = currentUserObj();
-    var list = [
-      u.avatar, u.avatarUrl, u.photoURL, u.photo, u.foto, u.icon,
-      q('#cfgAvatar') && q('#cfgAvatar').value,
-      q('#uploadAvatar') && q('#uploadAvatar').value,
-      fromEl('#profileAvatar'), fromEl('#dashAvatar'), fromEl('#sideAvatar'),
-      fromEl('#dlinkyStableAvatarImg'), fromEl('.dlinky-final-avatar')
-    ];
-    for(var i=0;i<list.length;i++){ if(good(list[i])) return clean(list[i]); }
     return '';
   }
-  function saveAvatar(src){
-    src = clean(src); if(!src) return;
-    try{ if(typeof user === 'object' && user) user.avatar = src; }catch(e){}
-    try{ window.user = Object.assign(window.user || {}, {avatar:src}); }catch(e){}
+
+  async function fetchAvatarFromFirebase(u){
     try{
-      if(window.DlinkyStore && window.DlinkyStore.getItem && window.DlinkyStore.setItem){
-        var u = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {};
-        u.avatar = src;
-        window.DlinkyStore.setItem('dlinkyUser', JSON.stringify(u));
-      }
-    }catch(e){}
-  }
-  function ensureCss(){
-    if(q('#dlinky-rescue-avatar-css')) return;
-    var st = document.createElement('style');
-    st.id = 'dlinky-rescue-avatar-css';
-    st.textContent = `
-      #dlinkyAvatarRescue{
-        width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;
-        margin:-54px auto 14px auto!important;border-radius:50%!important;
-        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-        position:relative!important;z-index:999!important;display:block!important;visibility:visible!important;opacity:1!important;
-        box-shadow:0 0 0 4px rgba(255,255,255,.10),0 0 28px rgba(168,85,247,.45)!important;
-        background-color:#19121f!important;overflow:hidden!important;pointer-events:none!important;
-      }
-      #avatarDecoration #profileAvatar{
-        display:block!important;visibility:visible!important;opacity:1!important;
-        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-      }
-    `;
-    document.head.appendChild(st);
-  }
-  function originalAvatarVisible(){
-    var final = q('#dlinkyFinalProfileStage .dlinky-final-avatar, #dlinkyStableAvatarStage #dlinkyStableAvatarImg');
-    if(!final) return false;
-    var cs = getComputedStyle(final);
-    var rect = final.getBoundingClientRect();
-    return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0 && rect.width > 20 && rect.height > 20;
-  }
-  function paint(src){
-    src = clean(src || bestAvatarSync());
-    if(!good(src)) return false;
-    saveAvatar(src);
-    ensureCss();
-
-    var av = q('#profileAvatar');
-    if(av){
-      if(av.tagName === 'IMG') av.src = src;
-      else av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-      av.style.setProperty('display','block','important');
-      av.style.setProperty('visibility','visible','important');
-      av.style.setProperty('opacity','1','important');
-      av.style.setProperty('width','96px','important');
-      av.style.setProperty('height','96px','important');
-      av.style.setProperty('border-radius','50%','important');
-    }
-
-    var name = q('#profileName');
-    var card = q('#profileCard') || (name && name.closest('.profile-card')) || (name && name.parentElement);
-    if(!card || !name) return true;
-
-    var rescue = q('#dlinkyAvatarRescue');
-    if(!rescue){
-      rescue = document.createElement('div');
-      rescue.id = 'dlinkyAvatarRescue';
-      name.parentNode.insertBefore(rescue, name);
-    }
-    rescue.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-    rescue.style.setProperty('display', originalAvatarVisible() ? 'none' : 'block', 'important');
-    return true;
-  }
-  async function fetchFromFirebase(){
-    try{
-      if(!window.firebase || !firebase.firestore) return '';
-      var db = firebase.firestore();
-      var slug = currentSlug();
-      var src = '';
-
-      if(slug){
-        try{
-          var p = await db.collection('profiles').doc(slug).get();
-          if(p.exists){
-            var pd = p.data() || {};
-            src = clean(pd.avatar || pd.avatarUrl || pd.photoURL || pd.photo || pd.foto || pd.icon || '');
-          }
-        }catch(e){}
-        if(!good(src)){
-          try{
-            var qs = await db.collection('users').where('slug','==',slug).limit(1).get();
-            if(!qs.empty){
-              var ud = qs.docs[0].data() || {};
-              src = clean(ud.avatar || ud.avatarUrl || ud.photoURL || ud.photo || ud.foto || ud.icon || '');
-            }
-          }catch(e){}
+      if(!(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore)) return '';
+      const db = firebase.firestore();
+      const slugs = [u.slug, (location.hash||'').replace(/^#\/?/,''), window.__dlinkyDirectProfileSlug].map(slugClean).filter(Boolean);
+      for(const s of [...new Set(slugs)]){
+        const snap = await db.collection('profiles').doc(s).get();
+        if(snap.exists){
+          const d = snap.data() || {};
+          const av = pickAvatar(d);
+          if(good(av)) return av;
         }
       }
-
-      if(!good(src) && firebase.auth && firebase.auth().currentUser){
-        try{
-          var u = firebase.auth().currentUser;
-          var snap = await db.collection('users').doc(u.uid).get();
-          var data = snap.exists ? (snap.data() || {}) : {};
-          src = clean(data.avatar || data.avatarUrl || data.photoURL || data.photo || data.foto || data.icon || u.photoURL || '');
-        }catch(e){}
-      }
-      if(good(src)) paint(src);
-      return src;
-    }catch(e){ return ''; }
-  }
-  function run(){
-    var ok = paint(bestAvatarSync());
-    fetchFromFirebase().then(function(src){ if(!ok && src) paint(src); });
-    [80,200,500,900,1500,2500,4000].forEach(function(t){setTimeout(function(){ paint(bestAvatarSync()); }, t);});
-  }
-
-  var oldRender = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
-  if(typeof oldRender === 'function' && !oldRender.__dlinkyRescueProfileIconOnlyV2){
-    var patched = function(){ var r = oldRender.apply(this, arguments); run(); return r; };
-    patched.__dlinkyRescueProfileIconOnlyV2 = true;
-    window.renderProfile = patched;
-    try{ renderProfile = patched; }catch(e){}
-  }
-  document.addEventListener('DOMContentLoaded', run, {once:true});
-  window.addEventListener('load', run);
-  window.addEventListener('hashchange', run);
-  if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
-  run();
-})();
-
-/* ===== DLINKY FIX FINALÍSSIMO — ÍCONE DO PERFIL VISÍVEL =====
-   Mexe somente no ícone/avatar do perfil. Não altera loja, inventário, molduras,
-   exclusão, ajuste, links, banner, fundo ou compras. */
-(function(){
-  if(window.__dlinkyIconePerfilVisivelFinalissimo) return;
-  window.__dlinkyIconePerfilVisivelFinalissimo = true;
-
-  function q(s,r){return (r||document).querySelector(s)}
-  function clean(v){
-    v = String(v || '').trim();
-    if(!v || v === 'none' || v === 'null' || v === 'undefined') return '';
-    var m = v.match(/url\(["']?(.+?)["']?\)/i);
-    if(m) v = m[1];
-    return v.replace(/^["']|["']$/g,'').trim();
-  }
-  function isImg(v){
-    v = clean(v);
-    return !!v && /^(https?:\/\/|data:image\/|blob:)/i.test(v) && !/\.(mp4|webm|mp3|wav)(\?|$)/i.test(v);
-  }
-  function slug(){
-    var path = String(location.pathname || '').replace(/^\/+|\/+$/g,'').split('/')[0] || '';
-    var hash = String(location.hash || '').replace(/^#\/?/,'').split('/')[0] || '';
-    var block = {login:1,register:1,dashboard:1,assets:1,premium:1,community:1,admin:1,store:1,'index.html':1};
-    var s = path && !block[path.toLowerCase()] ? path : hash;
-    try{ if(!s && typeof user === 'object' && user) s = user.slug || ''; }catch(e){}
-    return String(s || '').toLowerCase().trim();
-  }
-  function userObj(){
-    var u = {};
-    try{ if(window.DlinkyStore){ Object.assign(u, JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {}); } }catch(e){}
-    try{ if(typeof user === 'object' && user) Object.assign(u, user); }catch(e){}
-    try{ if(window.user && typeof window.user === 'object') Object.assign(u, window.user); }catch(e){}
-    return u;
-  }
-  function fromEl(sel){
-    var el = q(sel); if(!el) return '';
-    if(el.tagName === 'IMG') return clean(el.getAttribute('src') || el.src || '');
-    return clean(el.style.backgroundImage || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : ''));
-  }
-  function syncSrc(){
-    var u = userObj();
-    var arr = [
-      u.avatar, u.avatarUrl, u.avatarURL, u.photoURL, u.photoUrl, u.photo, u.foto, u.icon, u.iconUrl, u.profileAvatar, u.profileIcon,
-      q('#cfgAvatar') && q('#cfgAvatar').value,
-      q('#uploadAvatar') && q('#uploadAvatar').value,
-      fromEl('#profileAvatar'), fromEl('#dashAvatar'), fromEl('#sideAvatar'), fromEl('#frameBuyAvatar'), fromEl('#adjustAvatar'),
-      fromEl('.dlinky-final-avatar'), fromEl('#dlinkyStableAvatarImg'), fromEl('.profile-avatar'), fromEl('.big-avatar')
-    ];
-    for(var i=0;i<arr.length;i++){ if(isImg(arr[i])) return clean(arr[i]); }
-    try{ if(window.firebase && firebase.auth && firebase.auth().currentUser && isImg(firebase.auth().currentUser.photoURL)) return clean(firebase.auth().currentUser.photoURL); }catch(e){}
-    return '';
-  }
-  function saveSrc(src){
-    src = clean(src); if(!isImg(src)) return;
-    try{ if(typeof user === 'object' && user) user.avatar = src; }catch(e){}
-    try{ window.user = Object.assign(window.user || {}, {avatar:src}); }catch(e){}
-  }
-  function css(){
-    if(q('#dlinky-icone-perfil-visivel-css')) return;
-    var st = document.createElement('style');
-    st.id = 'dlinky-icone-perfil-visivel-css';
-    st.textContent = `
-      #dlinkyAvatarPerfilFinal{
-        width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;
-        margin:-54px auto 16px auto!important;border-radius:50%!important;
-        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-        background-color:#19121f!important;display:block!important;visibility:visible!important;opacity:1!important;
-        position:relative!important;z-index:9999!important;overflow:hidden!important;pointer-events:none!important;
-        box-shadow:0 0 0 4px rgba(255,255,255,.10),0 0 26px rgba(168,85,247,.55)!important;
-      }
-      #profileAvatar{
-        display:block!important;visibility:visible!important;opacity:1!important;
-        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-      }
-    `;
-    document.head.appendChild(st);
-  }
-  function paint(src){
-    src = clean(src || syncSrc());
-    if(!isImg(src)) return false;
-    saveSrc(src); css();
-
-    var av = q('#profileAvatar');
-    if(av){
-      if(av.tagName === 'IMG') av.src = src;
-      else av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-      av.style.setProperty('display','block','important');
-      av.style.setProperty('visibility','visible','important');
-      av.style.setProperty('opacity','1','important');
-      av.style.setProperty('width','96px','important');
-      av.style.setProperty('height','96px','important');
-      av.style.setProperty('min-width','96px','important');
-      av.style.setProperty('min-height','96px','important');
-      av.style.setProperty('border-radius','50%','important');
-    }
-
-    var name = q('#profileName');
-    if(name && name.parentNode){
-      var box = q('#dlinkyAvatarPerfilFinal');
-      if(!box){
-        box = document.createElement('div');
-        box.id = 'dlinkyAvatarPerfilFinal';
-        name.parentNode.insertBefore(box, name);
-      }
-      box.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-      box.style.setProperty('display','block','important');
-      box.style.setProperty('visibility','visible','important');
-      box.style.setProperty('opacity','1','important');
-    }
-    return true;
-  }
-  function pickImageFromData(data){
-    data = data || {};
-    var preferred = ['avatar','avatarUrl','avatarURL','photoURL','photoUrl','photo','foto','icon','iconUrl','profileAvatar','profileIcon'];
-    for(var i=0;i<preferred.length;i++){ if(isImg(data[preferred[i]])) return clean(data[preferred[i]]); }
-    for(var k in data){
-      if(!Object.prototype.hasOwnProperty.call(data,k)) continue;
-      var lk = String(k).toLowerCase();
-      if(/banner|background|bg|frame|moldura|music|audio|video|cover/.test(lk)) continue;
-      if(/avatar|foto|photo|icon/.test(lk) && isImg(data[k])) return clean(data[k]);
-    }
-    return '';
-  }
-  async function fetchFirebase(){
-    try{
-      if(!window.firebase || !firebase.firestore) return '';
-      var db = firebase.firestore();
-      var s = slug();
-      var src = '';
-      if(s){
-        try{ var p = await db.collection('profiles').doc(s).get(); if(p.exists) src = pickImageFromData(p.data() || {}); }catch(e){}
-        if(!isImg(src)){
-          try{
-            var qs = await db.collection('users').where('slug','==',s).limit(1).get();
-            if(!qs.empty) src = pickImageFromData(qs.docs[0].data() || {});
-          }catch(e){}
+      if(firebase.auth && firebase.auth().currentUser){
+        const us = await db.collection('users').doc(firebase.auth().currentUser.uid).get();
+        if(us.exists){
+          const d = us.data() || {};
+          const av = pickAvatar(d);
+          if(good(av)) return av;
         }
       }
-      if(!isImg(src) && firebase.auth && firebase.auth().currentUser){
-        try{
-          var fb = firebase.auth().currentUser;
-          var u = await db.collection('users').doc(fb.uid).get();
-          if(u.exists) src = pickImageFromData(u.data() || {});
-          if(!isImg(src)) src = fb.photoURL || '';
-        }catch(e){}
-      }
-      if(isImg(src)) paint(src);
-      return src;
-    }catch(e){ return ''; }
-  }
-  function run(){
-    var ok = paint(syncSrc());
-    fetchFirebase().then(function(src){ if(src) paint(src); });
-    [50,150,350,700,1200,2000,3500,5500].forEach(function(t){setTimeout(function(){ paint(syncSrc()); }, t);});
-  }
-  var old = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
-  if(typeof old === 'function' && !old.__dlinkyIconePerfilVisivelFinalissimo){
-    var patched = function(){ var r = old.apply(this, arguments); run(); return r; };
-    patched.__dlinkyIconePerfilVisivelFinalissimo = true;
-    window.renderProfile = patched;
-    try{ renderProfile = patched; }catch(e){}
-  }
-  document.addEventListener('DOMContentLoaded', run, {once:true});
-  window.addEventListener('load', run);
-  window.addEventListener('hashchange', run);
-  if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
-  run();
-})();
-
-/* ===== DLINKY — RESGATE DEFINITIVO DO ÍCONE DO PERFIL =====
-   Corrige SOMENTE a exibição do avatar/ícone no perfil.
-   Não altera loja, inventário, molduras, links, banner, fundo, exclusões ou ajustes.
-   Também não usa localStorage: lê do objeto atual e do Firebase/Firestore. */
-(function(){
-  if(window.__dlinkyAvatarPerfilResgateDefinitivo) return;
-  window.__dlinkyAvatarPerfilResgateDefinitivo = true;
-
-  var FALLBACK_AVATAR = 'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif';
-
-  function q(s,r){return (r||document).querySelector(s)}
-  function clean(v){
-    v = String(v || '').trim();
-    if(!v || v === 'none' || v === 'null' || v === 'undefined') return '';
-    var m = v.match(/url\(["']?(.+?)["']?\)/i);
-    if(m) v = m[1];
-    return v.replace(/^['"]|['"]$/g,'').trim();
-  }
-  function isImage(v){
-    v = clean(v);
-    return !!v && /^(https?:\/\/|data:image\/|blob:)/i.test(v) && !/\.(mp4|webm|mp3|wav|ogg)(\?|#|$)/i.test(v);
-  }
-  function currentSlug(){
-    var hash = String(location.hash || '').replace(/^#\/?/,'').split('/')[0] || '';
-    var path = String(location.pathname || '').replace(/^\/+|\/+$/g,'').split('/')[0] || '';
-    var deny = {login:1,register:1,dashboard:1,assets:1,premium:1,community:1,admin:1,store:1,'index.html':1,'':1};
-    var s = path && !deny[path.toLowerCase()] ? path : hash;
-    try{ if((!s || deny[String(s).toLowerCase()]) && typeof user === 'object' && user) s = user.slug || ''; }catch(e){}
-    return String(s || '').toLowerCase().trim();
-  }
-  function allUserObjects(){
-    var arr=[];
-    try{ if(typeof user === 'object' && user) arr.push(user); }catch(e){}
-    try{ if(window.user && typeof window.user === 'object') arr.push(window.user); }catch(e){}
-    try{ if(window.DlinkyStore){ var u=JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {}; arr.push(u); } }catch(e){}
-    return arr;
-  }
-  function valueFromElement(sel){
-    var el=q(sel); if(!el) return '';
-    if(el.tagName === 'IMG') return clean(el.getAttribute('src') || el.src || '');
-    return clean(el.style.backgroundImage || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : ''));
-  }
-  function scoreKey(key){
-    key = String(key || '').toLowerCase();
-    if(/banner|background|bg|cover|capa|frame|moldura|music|audio|video|cursor/.test(key)) return -999;
-    if(/avatar|profileavatar|perfilavatar|pfp|profilepic|profilepicture/.test(key)) return 140;
-    if(/foto.*perfil|perfil.*foto/.test(key)) return 135;
-    if(/photo|foto|icon|icone|image|img|picture|pic/.test(key)) return 80;
-    return 5;
-  }
-  function bestFromData(data){
-    var best='', bestScore=-1000;
-    function walk(obj,path,depth){
-      if(!obj || depth > 4) return;
-      if(typeof obj === 'string'){
-        var sc = scoreKey(path);
-        if(sc > bestScore && isImage(obj)){ best = clean(obj); bestScore = sc; }
-        return;
-      }
-      if(Array.isArray(obj)){
-        obj.forEach(function(v,i){ walk(v, path + '.item' + i, depth+1); });
-        return;
-      }
-      if(typeof obj === 'object'){
-        Object.keys(obj).forEach(function(k){ walk(obj[k], path ? path + '.' + k : k, depth+1); });
-      }
-    }
-    walk(data,'',0);
-    return bestScore > -999 ? best : '';
-  }
-  function bestSync(){
-    var list=[];
-    allUserObjects().forEach(function(u){ list.push(bestFromData(u)); });
-    list.push(q('#cfgAvatar') && q('#cfgAvatar').value);
-    list.push(q('#uploadAvatar') && q('#uploadAvatar').value);
-    list.push(valueFromElement('#profileAvatar'));
-    list.push(valueFromElement('#dashAvatar'));
-    list.push(valueFromElement('#sideAvatar'));
-    list.push(valueFromElement('.dlinky-final-avatar'));
-    list.push(valueFromElement('.dlinky-v4-avatar'));
-    try{ list.push(firebase.auth().currentUser && firebase.auth().currentUser.photoURL); }catch(e){}
-    for(var i=0;i<list.length;i++){ if(isImage(list[i])) return clean(list[i]); }
+    }catch(e){ console.warn('Dlinky avatar Firebase fetch:', e); }
     return '';
   }
-  function ensureCss(){
-    if(q('#dlinky-avatar-resgate-css')) return;
-    var st=document.createElement('style');
-    st.id='dlinky-avatar-resgate-css';
-    st.textContent = `
-      #dlinkyAvatarPerfilResgatado{
-        width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;
-        border-radius:999px!important;margin:-50px auto 14px auto!important;
-        display:flex!important;align-items:center!important;justify-content:center!important;
-        visibility:visible!important;opacity:1!important;position:relative!important;z-index:2147483000!important;
-        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-        background-color:#1b1324!important;box-shadow:0 0 0 4px rgba(255,255,255,.12),0 0 28px rgba(168,85,247,.60)!important;
-        overflow:hidden!important;color:#fff!important;font:700 34px system-ui,Arial!important;text-transform:uppercase!important;
-      }
-      #profileAvatar{
-        display:block!important;visibility:visible!important;opacity:1!important;
-        width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;
-        border-radius:999px!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-        z-index:2147482999!important;
-      }
-    `;
-    document.head.appendChild(st);
-  }
-  function initials(){
-    var name='';
-    try{ if(typeof user === 'object' && user) name = user.name || user.slug || ''; }catch(e){}
-    name = name || (q('#profileName') && q('#profileName').textContent) || 'U';
-    return String(name).trim().charAt(0) || 'U';
-  }
-  function paint(src){
-    ensureCss();
-    src = clean(src || bestSync() || FALLBACK_AVATAR);
 
-    var av=q('#profileAvatar');
-    if(av){
-      if(isImage(src)){
-        if(av.tagName === 'IMG') av.src = src;
-        else av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-      }
-      av.style.setProperty('display','block','important');
-      av.style.setProperty('visibility','visible','important');
-      av.style.setProperty('opacity','1','important');
-      av.style.setProperty('width','96px','important');
-      av.style.setProperty('height','96px','important');
-      av.style.setProperty('min-width','96px','important');
-      av.style.setProperty('min-height','96px','important');
-      av.style.setProperty('border-radius','999px','important');
-    }
-
-    var name=q('#profileName');
-    if(!name || !name.parentNode) return false;
-    var box=q('#dlinkyAvatarPerfilResgatado');
-    if(!box){
-      box=document.createElement('div');
-      box.id='dlinkyAvatarPerfilResgatado';
-      name.parentNode.insertBefore(box,name);
-    }
-    if(isImage(src)){
-      box.textContent='';
-      box.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-    }else{
-      box.textContent=initials();
-      box.style.removeProperty('background-image');
-    }
-    box.style.setProperty('display','flex','important');
-    box.style.setProperty('visibility','visible','important');
-    box.style.setProperty('opacity','1','important');
-    return true;
-  }
-  async function fetchFirebase(){
-    try{
-      if(!window.firebase || !firebase.firestore) return '';
-      var db=firebase.firestore();
-      var s=currentSlug();
-      var src='';
-      if(s){
-        try{ var p=await db.collection('profiles').doc(s).get(); if(p.exists) src=bestFromData(p.data()||{}); }catch(e){}
-        if(!isImage(src)){
-          try{ var qs=await db.collection('users').where('slug','==',s).limit(1).get(); if(!qs.empty) src=bestFromData(qs.docs[0].data()||{}); }catch(e){}
-        }
-        if(!isImage(src)){
-          try{ var qs2=await db.collection('users').where('username','==',s).limit(1).get(); if(!qs2.empty) src=bestFromData(qs2.docs[0].data()||{}); }catch(e){}
-        }
-      }
-      if(!isImage(src) && firebase.auth && firebase.auth().currentUser){
-        try{ var cu=firebase.auth().currentUser; var u=await db.collection('users').doc(cu.uid).get(); if(u.exists) src=bestFromData(u.data()||{}); if(!isImage(src)) src=cu.photoURL||''; }catch(e){}
-      }
-      if(isImage(src)){
-        try{ if(typeof user === 'object' && user) user.avatar=src; window.user=Object.assign(window.user||{}, {avatar:src}); }catch(e){}
-        paint(src);
-      }
-      return src;
-    }catch(e){ return ''; }
-  }
-  function run(){
-    paint(bestSync());
-    fetchFirebase().then(function(src){ paint(src || bestSync()); });
-    [60,180,420,900,1600,2800,4500,7000].forEach(function(t){ setTimeout(function(){ paint(bestSync()); }, t); });
-  }
-  var old=window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
-  if(typeof old === 'function' && !old.__dlinkyAvatarPerfilResgateDefinitivo){
-    var patched=function(){ var r=old.apply(this,arguments); run(); return r; };
-    patched.__dlinkyAvatarPerfilResgateDefinitivo=true;
-    window.renderProfile=patched;
-    try{ renderProfile=patched; }catch(e){}
-  }
-  document.addEventListener('DOMContentLoaded', run, {once:true});
-  window.addEventListener('load', run);
-  window.addEventListener('hashchange', run);
-  if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
-  run();
-})();
-
-/* ===== DLINKY HARD FIX — ÍCONE/AVATAR DO PERFIL SEM MEXER NO RESTO =====
-   Cria uma camada própria do avatar dentro do card, por cima do layout.
-   Não altera loja, inventário, molduras, links, banner, fundo ou Firebase data. */
-(function(){
-  if(window.__dlinkyHardFixAvatarPerfilApenas) return;
-  window.__dlinkyHardFixAvatarPerfilApenas = true;
-
-  var FALLBACK = 'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif';
-
-  function q(s,r){return (r||document).querySelector(s)}
-  function clean(v){
-    v = String(v || '').trim();
-    var m = v.match(/url\(["']?(.+?)["']?\)/i);
-    if(m) v = m[1];
-    return v.replace(/^['"]|['"]$/g,'').trim();
-  }
-  function isImg(v){
-    v = clean(v);
-    return !!v && v !== 'none' && v !== 'null' && v !== 'undefined' && /^(https?:\/\/|data:image\/|blob:|assets\/|\.\/|\/)/i.test(v) && !/\.(mp4|webm|mp3|wav|ogg)(\?|#|$)/i.test(v);
-  }
-  function slug(){
-    var h = String(location.hash || '').replace(/^#\/?/,'').split('/')[0] || '';
-    var p = String(location.pathname || '').replace(/^\/+|\/+$/g,'').split('/')[0] || '';
-    var deny = {login:1,register:1,dashboard:1,profile:1,assets:1,premium:1,admin:1,store:1,'index.html':1,'':1};
-    var s = p && !deny[p.toLowerCase()] ? p : h;
-    try{ if((!s || deny[String(s).toLowerCase()]) && typeof user === 'object' && user) s = user.slug || ''; }catch(e){}
-    return String(s || '').toLowerCase().trim();
-  }
-  function pick(data){
-    data = data || {};
-    var keys = ['avatar','avatarUrl','avatarURL','photoURL','photoUrl','photo','foto','icon','icone','iconUrl','profileAvatar','profileIcon','pfp'];
-    for(var i=0;i<keys.length;i++){ if(isImg(data[keys[i]])) return clean(data[keys[i]]); }
-    for(var k in data){
-      if(!Object.prototype.hasOwnProperty.call(data,k)) continue;
-      var lk = String(k).toLowerCase();
-      if(/banner|background|bg|cover|capa|frame|moldura|music|audio|video|cursor/.test(lk)) continue;
-      if(/avatar|foto|photo|icon|icone|pfp|pic|image|img/.test(lk) && isImg(data[k])) return clean(data[k]);
-    }
-    return '';
-  }
-  function syncAvatar(){
-    var list = [];
-    try{ if(typeof user === 'object' && user) list.push(pick(user)); }catch(e){}
-    try{ if(window.user && typeof window.user === 'object') list.push(pick(window.user)); }catch(e){}
-    try{ if(window.DlinkyStore) list.push(pick(JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {})); }catch(e){}
-    ['#cfgAvatar','#uploadAvatar'].forEach(function(sel){ var el=q(sel); if(el && isImg(el.value)) list.push(el.value); });
-    ['#profileAvatar','#dashAvatar','#sideAvatar','#frameBuyAvatar','#adjustAvatar','.dlinky-v4-avatar','.dlinky-final-avatar'].forEach(function(sel){
-      var el=q(sel); if(!el) return;
-      var src = el.tagName === 'IMG' ? (el.getAttribute('src') || el.src || '') : (el.style.backgroundImage || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : ''));
-      if(isImg(src)) list.push(src);
-    });
-    try{ if(window.firebase && firebase.auth && firebase.auth().currentUser && isImg(firebase.auth().currentUser.photoURL)) list.push(firebase.auth().currentUser.photoURL); }catch(e){}
-    for(var i=0;i<list.length;i++){ if(isImg(list[i])) return clean(list[i]); }
-    return '';
-  }
-  async function firebaseAvatar(){
-    try{
-      if(!window.firebase || !firebase.firestore) return '';
-      var db = firebase.firestore();
-      var s = slug();
-      var src = '';
-      if(s){
-        try{ var p = await db.collection('profiles').doc(s).get(); if(p.exists) src = pick(p.data() || {}); }catch(e){}
-        if(!isImg(src)){
-          try{ var qs = await db.collection('users').where('slug','==',s).limit(1).get(); if(!qs.empty) src = pick(qs.docs[0].data() || {}); }catch(e){}
-        }
-      }
-      if(!isImg(src) && firebase.auth && firebase.auth().currentUser){
-        try{ var cu = firebase.auth().currentUser; var u = await db.collection('users').doc(cu.uid).get(); if(u.exists) src = pick(u.data() || {}); if(!isImg(src)) src = cu.photoURL || ''; }catch(e){}
-      }
-      return isImg(src) ? clean(src) : '';
-    }catch(e){ return ''; }
-  }
-  function css(){
-    if(q('#dlinky-hard-avatar-css')) return;
-    var st = document.createElement('style');
-    st.id = 'dlinky-hard-avatar-css';
+  function ensureAvatarCss(){
+    if($('#dlinkyOnlyIconCss2026')) return;
+    const st = document.createElement('style');
+    st.id = 'dlinkyOnlyIconCss2026';
     st.textContent = `
       #profileCard{position:relative!important;overflow:visible!important;}
-      #dlinkyHardAvatarPerfil{
-        width:98px!important;height:98px!important;min-width:98px!important;min-height:98px!important;
-        position:absolute!important;left:50%!important;top:135px!important;transform:translate(-50%,-50%)!important;
-        border-radius:999px!important;z-index:2147483646!important;display:block!important;visibility:visible!important;opacity:1!important;
-        object-fit:cover!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-        background-color:#1b1324!important;border:4px solid rgba(255,255,255,.14)!important;
-        box-shadow:0 0 0 1px rgba(168,85,247,.35),0 0 30px rgba(168,85,247,.75)!important;
+      #dlinkyProfileIconOnly2026{
+        position:absolute!important;left:50%!important;top:112px!important;
+        width:88px!important;height:88px!important;border-radius:50%!important;
+        transform:translateX(-50%)!important;z-index:9999!important;display:none;
+        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        border:3px solid rgba(255,255,255,.92)!important;
+        box-shadow:0 0 0 4px rgba(20,10,30,.60),0 0 28px rgba(168,85,247,.80)!important;
         pointer-events:none!important;overflow:hidden!important;
       }
-      #avatarDecoration,#profileAvatar{display:block!important;visibility:visible!important;opacity:1!important;}
+      #dlinkyProfileIconOnly2026 img{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:50%!important;display:block!important;}
+      #avatarDecoration #profileAvatar{display:none!important;}
     `;
     document.head.appendChild(st);
   }
-  function place(src){
-    css();
-    src = clean(src || syncAvatar() || FALLBACK);
-    var card = q('#profileCard') || (q('#profileName') && q('#profileName').closest('.profile-card')) || (q('#profileName') && q('#profileName').parentElement);
-    if(!card || !q('#profileName')) return false;
 
-    var img = q('#dlinkyHardAvatarPerfil');
-    if(!img){
-      img = document.createElement('img');
-      img.id = 'dlinkyHardAvatarPerfil';
-      img.alt = '';
-      card.appendChild(img);
+  async function forceProfileIcon(){
+    ensureAvatarCss();
+    const card = $('#profileCard') || $('.profile-card') || $('.profile-card-box');
+    if(!card) return;
+    let holder = $('#dlinkyProfileIconOnly2026', card);
+    if(!holder){
+      holder = document.createElement('div');
+      holder.id = 'dlinkyProfileIconOnly2026';
+      holder.innerHTML = '<img alt="avatar">';
+      card.appendChild(holder);
     }
-    if(isImg(src)) img.src = src;
-    img.style.setProperty('display','block','important');
-    img.style.setProperty('visibility','visible','important');
-    img.style.setProperty('opacity','1','important');
-
-    var old = q('#profileAvatar');
-    if(old && isImg(src)){
-      if(old.tagName === 'IMG') old.src = src;
-      else old.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
+    let u = currentUserObj();
+    let av = pickAvatar(u);
+    if(!good(av)) av = await fetchAvatarFromFirebase(u);
+    if(good(av)){
+      const img = $('img', holder);
+      if(img && img.getAttribute('src') !== av) img.setAttribute('src', av);
+      holder.style.backgroundImage = `url("${av.replace(/"/g,'%22')}")`;
+      holder.style.setProperty('display','block','important');
+      try{
+        if(typeof user !== 'undefined' && user) user.avatar = av;
+        if(window.user) window.user.avatar = av;
+      }catch(e){}
+    }else{
+      holder.style.setProperty('display','none','important');
     }
-    return true;
-  }
-  function run(){
-    place(syncAvatar() || FALLBACK);
-    firebaseAvatar().then(function(src){ place(src || syncAvatar() || FALLBACK); });
-    [80,180,350,700,1200,2200,4000,7000].forEach(function(t){ setTimeout(function(){ place(syncAvatar() || FALLBACK); }, t); });
   }
 
-  var old = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
-  if(typeof old === 'function' && !old.__dlinkyHardFixAvatarPerfilApenas){
-    var patched = function(){ var r = old.apply(this,arguments); run(); return r; };
-    patched.__dlinkyHardFixAvatarPerfilApenas = true;
+  const oldRenderProfile = window.renderProfile || (typeof renderProfile !== 'undefined' ? renderProfile : null);
+  if(typeof oldRenderProfile === 'function'){
+    const patched = function(){
+      const r = oldRenderProfile.apply(this, arguments);
+      [0,80,250,700,1400].forEach(t=>setTimeout(forceProfileIcon,t));
+      return r;
+    };
     window.renderProfile = patched;
     try{ renderProfile = patched; }catch(e){}
   }
-  document.addEventListener('DOMContentLoaded', run, {once:true});
-  window.addEventListener('load', run);
-  window.addEventListener('hashchange', run);
-  if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
-  run();
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(forceProfileIcon,250));
+  window.addEventListener('hashchange',()=>setTimeout(forceProfileIcon,250));
+  setTimeout(forceProfileIcon,500);
+
+  function firebaseReady(){ return !!(window.firebase && firebase.apps && firebase.apps.length && firebase.auth && firebase.firestore); }
+  function blankUser(email,name,slug){
+    return {name:name||'Usuário',slug:slugClean(slug||name||'usuario'),email:String(email||'').toLowerCase().trim(),bio:'',avatar:'',banner:'',bg:'',video:'',frame:'',music:'',welcome:'Clique aqui',color:'#a855f7',particles:false,particleType:'none',verified:false,hideViews:false,template:'default',decoration:'none',views:0,links:[],socials:[],history:['Conta criada no Dlinky'],coins:0,inventory:[],purchases:[],embeds:[],tags:[]};
+  }
+  async function saveFirebaseUser(u){
+    if(!firebaseReady() || !firebase.auth().currentUser) return;
+    const fb = firebase.auth().currentUser;
+    u.uid = fb.uid; u.email = (fb.email || u.email || '').toLowerCase().trim();
+    await firebase.firestore().collection('users').doc(fb.uid).set(Object.assign({},u,{updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
+    if(u.slug){ await firebase.firestore().collection('profiles').doc(slugClean(u.slug)).set(Object.assign({},u,{slug:slugClean(u.slug),updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true}); }
+    if(window.DlinkyStore) window.DlinkyStore.setItem('dlinkyUser', JSON.stringify(u));
+    try{ window.user = u; user = u; }catch(e){ window.user = u; }
+  }
+  async function realRegister(e){
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    if(!firebaseReady()) return toastSafe('Firebase não carregou. Verifique os scripts do Firebase no HTML.');
+    const email = String($('#regEmail')?.value||'').trim().toLowerCase();
+    const p1 = $('#regPass')?.value || '';
+    const p2 = $('#regPass2')?.value || '';
+    const name = String($('#regName')?.value||'').trim() || 'Usuário';
+    const slug = slugClean($('#regSlug')?.value || name);
+    if(!email) return toastSafe('Digite seu e-mail.');
+    if(p1.length < 6) return toastSafe('A senha precisa ter pelo menos 6 caracteres.');
+    if(p1 !== p2) return toastSafe('As senhas não conferem.');
+    try{
+      const cred = await firebase.auth().createUserWithEmailAndPassword(email,p1);
+      const u = blankUser(email,name,slug); u.uid = cred.user.uid;
+      await saveFirebaseUser(u);
+      toastSafe('Conta criada com sucesso!');
+      location.hash = '#/dashboard';
+      setTimeout(()=>{try{renderDash();}catch(_){ }},120);
+    }catch(err){
+      const code = String(err && err.code || '');
+      if(code.includes('email-already-in-use')) return toastSafe('Esse e-mail já tem conta. Faça login.');
+      if(code.includes('weak-password')) return toastSafe('Senha fraca. Use pelo menos 6 caracteres.');
+      if(code.includes('operation-not-allowed')) return toastSafe('Ative Email/Senha no Firebase Authentication.');
+      toastSafe('Erro ao criar conta: ' + (err.message || 'tente novamente'));
+    }
+  }
+  async function realLogin(e){
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    if(!firebaseReady()) return toastSafe('Firebase não carregou. Verifique os scripts do Firebase no HTML.');
+    const email = String($('#loginEmail')?.value||'').trim().toLowerCase();
+    const pass = $('#loginPass')?.value || '';
+    if(!email) return toastSafe('Digite seu e-mail.');
+    if(!pass) return toastSafe('Digite sua senha.');
+    try{
+      const cred = await firebase.auth().signInWithEmailAndPassword(email,pass);
+      const snap = await firebase.firestore().collection('users').doc(cred.user.uid).get();
+      let u = snap.exists ? (snap.data() || {}) : blankUser(email,email.split('@')[0],email.split('@')[0]);
+      u = Object.assign(blankUser(email,email.split('@')[0],email.split('@')[0]), u, {uid:cred.user.uid,email});
+      await saveFirebaseUser(u);
+      toastSafe('Login efetuado');
+      location.hash = '#/dashboard';
+      setTimeout(()=>{try{renderDash();}catch(_){ }},120);
+    }catch(err){
+      return toastSafe('E-mail ou senha incorretos.');
+    }
+  }
+  function bindAuthHard(){
+    const reg = $('#registerForm');
+    if(reg && !reg.__dlinkyRealFirebaseFinal){
+      reg.__dlinkyRealFirebaseFinal = true;
+      reg.addEventListener('submit', realRegister, true);
+      reg.onsubmit = realRegister;
+    }
+    const log = $('#loginForm');
+    if(log && !log.__dlinkyRealFirebaseFinal){
+      log.__dlinkyRealFirebaseFinal = true;
+      log.addEventListener('submit', realLogin, true);
+      log.onsubmit = realLogin;
+    }
+  }
+  bindAuthHard();
+  document.addEventListener('DOMContentLoaded', bindAuthHard);
+  setTimeout(bindAuthHard,500);
 })();
