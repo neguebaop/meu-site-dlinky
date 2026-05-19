@@ -1,9 +1,91 @@
+
+/* ===== DLINKY FIREBASE STORE — sem salvar nada no navegador =====
+   Usa Firebase Auth + Firestore. Carregue firebase-app, firebase-auth,
+   firebase-firestore e sua configuração Firebase antes deste arquivo. */
+(function(){
+  if(window.DlinkyStore) return;
+  const cache = Object.create(null);
+  const pending = Object.create(null);
+  const enc = k => encodeURIComponent(String(k||'key')).replace(/\./g,'%2E');
+  function fbReady(){ return !!(window.firebase && firebase.apps && firebase.apps.length && firebase.auth && firebase.firestore); }
+  function uid(){ try{return firebase.auth().currentUser && firebase.auth().currentUser.uid || '';}catch(e){return ''} }
+  function db(){ return firebase.firestore(); }
+  async function readDoc(key){
+    if(!fbReady()) return null;
+    const id = uid();
+    try{
+      if(key==='dlinkyUser' && id){
+        const snap = await db().collection('users').doc(id).get();
+        if(snap.exists) return JSON.stringify(snap.data() || {});
+      }
+      const snap = await db().collection('dlinkyStore').doc(enc(key)).get();
+      if(snap.exists) return snap.data().value || null;
+    }catch(e){ console.warn('DlinkyStore read:', key, e); }
+    return null;
+  }
+  async function writeDoc(key,value){
+    if(!fbReady()) return;
+    const id = uid();
+    try{
+      if(key==='dlinkyUser' && id){
+        let data={};
+        try{data=JSON.parse(value||'{}')||{};}catch(e){}
+        data.uid=id;
+        data.email=(firebase.auth().currentUser.email || data.email || '').toLowerCase().trim();
+        data.updatedAt=firebase.firestore.FieldValue.serverTimestamp();
+        await db().collection('users').doc(id).set(data,{merge:true});
+        if(data.slug){
+          const slug=String(data.slug).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario';
+          await db().collection('profiles').doc(slug).set(Object.assign({},data,{slug,updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
+        }
+        return;
+      }
+      await db().collection('dlinkyStore').doc(enc(key)).set({key,value:String(value||''),updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+    }catch(e){ console.warn('DlinkyStore write:', key, e); }
+  }
+  async function removeDoc(key){
+    if(!fbReady()) return;
+    try{ await db().collection('dlinkyStore').doc(enc(key)).delete(); }catch(e){}
+  }
+  const api={
+    getItem(key){ return Object.prototype.hasOwnProperty.call(cache,key) ? cache[key] : null; },
+    setItem(key,value){ cache[key]=String(value); pending[key]=writeDoc(key,String(value)); return undefined; },
+    removeItem(key){ delete cache[key]; pending[key]=removeDoc(key); },
+    clear(){ Object.keys(cache).forEach(k=>delete cache[k]); },
+    key(i){ return Object.keys(cache)[i] || null; },
+    get length(){ return Object.keys(cache).length; },
+    async loadKey(key){ const v=await readDoc(key); if(v!==null) cache[key]=v; return v; },
+    async ready(){
+      if(!fbReady()) return;
+      await Promise.all(['dlinkyUser','dlinkyCustomFrames','dlinkyAdminGifts','dlinkyAdminGrants','dlinkyFeaturedUsers'].map(k=>api.loadKey(k)));
+    },
+    async flush(){ await Promise.all(Object.values(pending)); }
+  };
+  window.DlinkyStore=api;
+  function boot(){
+    if(!fbReady()) return;
+    firebase.auth().onAuthStateChanged(async function(){
+      await api.ready();
+      try{
+        if(cache.dlinkyUser){
+          const loaded=JSON.parse(cache.dlinkyUser||'{}')||{};
+          if(window.user) Object.assign(window.user, loaded);
+          try{ if(typeof user!=='undefined' && user) Object.assign(user, loaded); }catch(e){}
+          if(typeof renderDash==='function') renderDash();
+          if(typeof renderProfile==='function' && String(location.hash||'').includes('profile')) renderProfile();
+        }
+      }catch(e){}
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot,{once:true}); else boot();
+})();
+
 const $=(s,root=document)=>root.querySelector(s);const $$=(s,root=document)=>[...root.querySelectorAll(s)];
 
 /* ===== FIX GLOBAL: avatar real para preview da loja ===== */
 window.__dlinkyGetBestAvatar = window.__dlinkyGetBestAvatar || function(){
   try{
-    const read=(k)=>{try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}};
+    const read=(k)=>{try{return JSON.parse(window.DlinkyStore.getItem(k)||'{}')}catch(e){return {}}};
     const u=read('dlinkyUser');
     let v = u.avatar || u.photoURL || u.foto || u.icon || '';
     if(!v && typeof user==='object' && user) v = user.avatar || user.photoURL || user.foto || user.icon || '';
@@ -12,7 +94,7 @@ window.__dlinkyGetBestAvatar = window.__dlinkyGetBestAvatar || function(){
         'dlinky_avatar_clean_'+(u.email||u.slug||'local'),
         'dlinkyAvatarPreserve_'+(u.email||u.slug||'local')
       ];
-      for(const k of keys){ const x=localStorage.getItem(k); if(x){v=x;break;} }
+      for(const k of keys){ const x=window.DlinkyStore.getItem(k); if(x){v=x;break;} }
     }
     if(!v){
       const els=['#dashAvatar','#sideAvatar','#profileAvatar','#frameBuyAvatar','#adjustAvatar'];
@@ -54,11 +136,11 @@ const presetUrls={
   banner2:'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
   avatar1:'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif'
 };
-const defaultUser={name:'linkroubadao',slug:'linkroubadao',email:'',bio:'o mundo esta perdido. Eu serei a salvaçao',avatar:presetUrls.avatar1,banner:presetUrls.banner1,bg:presetUrls.bg1,video:'',frame:'',music:'',welcome:'Clique aqui',color:'#a855f7',particles:true,particleType:'snow',verified:true,hideViews:false,template:'default',decoration:'purple-ring',views:0,links:[{name:'Instagram',url:'https://instagram.com/'},{name:'TikTok',url:'https://tiktok.com/'},{name:'Discord',url:'https://discord.com/'},{name:'YouTube',url:'https://youtube.com/'}],socials:[{name:'Instagram',url:'https://instagram.com/',on:true},{name:'Spotify',url:'https://spotify.com/',on:true},{name:'TikTok',url:'https://tiktok.com/',on:true},{name:'Discord',url:'https://discord.com/',on:false},{name:'YouTube',url:'https://youtube.com/',on:false}],history:['Conta criada no Dlinky','Tema roxo aplicado','Sistema de decorações ativado']};
+const defaultUser={name:'Usuário',slug:'usuario',email:'',bio:'',avatar:'',banner:'',bg:'',video:'',frame:'',music:'',welcome:'Clique aqui',color:'#a855f7',particles:false,particleType:'none',verified:false,hideViews:false,template:'default',decoration:'none',views:0,links:[],socials:[],history:['Conta criada no Dlinky'],coins:0,inventory:[],purchases:[],embeds:[],tags:[]};
 let user=loadUser();let assetMode='backgrounds';
-function loadUser(){try{return {...defaultUser,...JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}}catch{return {...defaultUser}}}
-function saveUser(){localStorage.setItem('dlinkyUser',JSON.stringify(user));renderDash();toast('Salvo com sucesso!')}
-function addHistory(t){user.history=[`${new Date().toLocaleString('pt-BR')} — ${t}`,...(user.history||[])].slice(0,20);localStorage.setItem('dlinkyUser',JSON.stringify(user))}
+function loadUser(){try{return {...defaultUser,...JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')}}catch{return {...defaultUser}}}
+function saveUser(){window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));renderDash();toast('Salvo com sucesso!')}
+function addHistory(t){user.history=[`${new Date().toLocaleString('pt-BR')} — ${t}`,...(user.history||[])].slice(0,20);window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user))}
 function toast(t){const el=$('#toast');el.textContent=t;el.className='show';setTimeout(()=>el.className='',2200)}
 function route(){const __pathSlug=window.__dlinkyDirectProfileSlug||'';const h=location.hash||(__pathSlug?'#/'+__pathSlug:'#/');$$('.page').forEach(p=>p.classList.remove('active'));if((h==='#/'||h==='#')&&!__pathSlug){ $('#landing').classList.add('active')}else if(h==='#/register'){ $('#auth').classList.add('active');$('#registerForm').style.display='block';$('#loginForm').style.display='none'}else if(h==='#/login'){ $('#auth').classList.add('active');$('#registerForm').style.display='none';$('#loginForm').style.display='block'}else if(h==='#/dashboard'){ $('#dashboard').classList.add('active');renderDash()}else if(h==='#/profile'||h==='#/'+user.slug||(__pathSlug&&h==='#/'+__pathSlug)){ if(__pathSlug){user.slug=__pathSlug;} $('#profile').classList.add('active');renderProfile()}else if(h==='#/assets'){simple('Linky Assets','No painel existe uma área com backgrounds, banners, decorações e músicas prontas para aplicar no perfil.')}else if(h==='#/premium'){simple('Premium Dlinky','Aqui você poderá vender decorações, backgrounds, músicas, selo verificado, esconder views e remover marca.')}else{simple('Comunidade Dlinky','Página de comunidade em construção.')}}
 function simple(t,p){$('#simple').classList.add('active');$('#simpleTitle').textContent=t;$('#simpleText').textContent=p}
@@ -86,7 +168,7 @@ function setBg(el,url){
     el.style.backgroundImage=url?`url("${url}")`:'';
   }
 }
-$('#viewProfile').onclick=$('#viewProfile2').onclick=()=>{user.views=(user.views||0)+1;localStorage.setItem('dlinkyUser',JSON.stringify(user));location.hash='#/profile'};$('#logoutBtn').onclick=()=>location.hash='#/';
+$('#viewProfile').onclick=$('#viewProfile2').onclick=()=>{user.views=(user.views||0)+1;window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));location.hash='#/profile'};$('#logoutBtn').onclick=()=>location.hash='#/';
 $('#saveAccount').onclick=()=>{user.name=$('#cfgName').value.trim()||user.name;user.slug=cleanSlug($('#cfgSlug').value);user.bio=$('#cfgBio').value;user.music=$('#cfgMusic').value.trim();user.welcome=$('#cfgWelcome').value.trim()||'Clique aqui';addHistory('Configurações da conta alteradas');saveUser()};
 $('#saveImages').onclick=()=>{
   const novoAvatar=$('#cfgAvatar').value.trim();
@@ -101,7 +183,7 @@ $('#saveImages').onclick=()=>{
   user.video=novoVideo;
   if(novaFrame) user.frame=novaFrame;
 
-  if(user.avatar) localStorage.setItem('dlinkyAvatarPreserve_'+(user.email||user.slug||'local'),user.avatar);
+  if(user.avatar) window.DlinkyStore.setItem('dlinkyAvatarPreserve_'+(user.email||user.slug||'local'),user.avatar);
 
   addHistory('Imagens/fundos alterados');
   saveUser();
@@ -123,8 +205,8 @@ if(sessionStorage.getItem(__entryKey)==='1'){
 }else{
   $('#entryOverlay').classList.remove('hidden');
 }
-$('#profileName').textContent=user.name;$('#profileSlug2').textContent='@'+user.slug;$('#profileBio').textContent=user.bio||'';$('#verifiedBadge').style.display=user.verified?'inline':'none';$('#profileViews').style.display=user.hideViews?'none':'inline-block';$('#profileViews').textContent=`👁 ${user.views||0} views`;const __avatarClean=user.avatar||localStorage.getItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'))||'';
-if(__avatarClean){user.avatar=__avatarClean;localStorage.setItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'),__avatarClean);}
+$('#profileName').textContent=user.name;$('#profileSlug2').textContent='@'+user.slug;$('#profileBio').textContent=user.bio||'';$('#verifiedBadge').style.display=user.verified?'inline':'none';$('#profileViews').style.display=user.hideViews?'none':'inline-block';$('#profileViews').textContent=`👁 ${user.views||0} views`;const __avatarClean=user.avatar||window.DlinkyStore.getItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'))||'';
+if(__avatarClean){user.avatar=__avatarClean;window.DlinkyStore.setItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'),__avatarClean);}
 setBg($('#profileAvatar'),__avatarClean);setBg($('#profileBanner'),user.banner);setBg($('#profileBg'),user.bg);const vid=$('#profileVideo');vid.classList.remove('show');vid.removeAttribute('src');if(user.video){vid.src=user.video;vid.load();vid.classList.add('show');vid.play().catch(()=>{})}$('#profileFrame').src=user.frame||'';$('#profileFrame').style.display=user.frame?'block':'none';const deco=$('#avatarDecoration');deco.className='avatar-decoration '+(user.decoration||'none');$('#profileLinks').innerHTML=(user.links||[]).map(l=>`<a target="_blank" href="${safeUrl(l.url)}">${escapeHtml(l.name)}</a>`).join('');$('#profileSocials').innerHTML=(user.socials||[]).filter(s=>s.on).map(s=>`<a class="social-icon brand-${String(s.name||'link').toLowerCase().replace(/[^a-z0-9]/g,'')}" target="_blank" title="${s.name}" href="${safeUrl(s.url)}"><i class="${icons[s.name]||'fa-solid fa-link'}"></i></a>`).join('');const audio=$('#profileAudio'); if(audio){ const ms=user.music||''; if(audio.getAttribute('src')!==ms){ audio.src=ms; audio.load(); } } createProfileParticles(user.particleType||'snow')}
 $('#entryOverlay').onclick=()=>{
   const __entryKey='dlinky_entry_ok_'+(user.slug||user.email||'local');
@@ -157,7 +239,7 @@ renderDash();
     user.opacity=user.opacity||100; user.blur=user.blur||0; user.layout=user.layout||'card'; user.center=user.center||'no'; user.cursor=user.cursor||'';
     user.cardColor=user.cardColor||'#06030b'; user.textColor=user.textColor||'#ffffff'; user.bioColor=user.bioColor||'#eeeeee'; user.bgFx=user.bgFx||'none';
   }
-  function persist(msg){ ensure(); localStorage.setItem('dlinkyUser',JSON.stringify(user)); if(msg) addHistory(msg); if(typeof renderDash==='function') renderDash(); toast('Salvo com sucesso!'); }
+  function persist(msg){ ensure(); window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user)); if(msg) addHistory(msg); if(typeof renderDash==='function') renderDash(); toast('Salvo com sucesso!'); }
   const originalOpenTab=window.openTab || openTab;
   window.openTab=openTab=function(id){
     qa('.dash-tab').forEach(x=>x.classList.remove('active')); q('#tab-'+id)?.classList.add('active'); qa('.side-link').forEach(x=>x.classList.toggle('active',x.dataset.tab===id)); q('.sidebar')?.classList.remove('open');
@@ -195,7 +277,7 @@ renderDash();
     }[kind]||`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220"><circle cx="110" cy="110" r="72" fill="none" stroke="#a855f7" stroke-width="8"/></svg>`;
     return 'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg);
   }
-  function customFrames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
+  function customFrames(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
   function framePriceNumber(price){
     const n=String(price||'20').match(/\d+/); return n?Number(n[0]):20;
   }
@@ -272,7 +354,7 @@ renderDash();
 /* ===== correções limpas: persistência, áudio, sidebar, PIX ===== */
 (function(){
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
-  function saveSilent(){localStorage.setItem('dlinkyUser',JSON.stringify(user));}
+  function saveSilent(){window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}
   const oldToast = window.toast || toast;
   window.toast = toast = function(t){ if(location.hash==='#/profile'||location.hash==='#/'+user.slug) return; oldToast(t); };
   function stopProfileMedia(){const a=q('#profileAudio'); if(a){a.pause(); a.currentTime=0;} const v=q('#profileVideo'); if(v){v.pause();}}
@@ -344,10 +426,10 @@ renderDash();
   const ADMIN_EMAIL='jailtonsilas48@gmail.com';
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
   function isAdmin(){return (user.email||'').toLowerCase().trim()===ADMIN_EMAIL}
-  function frames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
-  function saveFrames(v){localStorage.setItem('dlinkyCustomFrames',JSON.stringify(v))}
-  function gifts(){try{return JSON.parse(localStorage.getItem('dlinkyAdminGifts')||'[]')}catch{return []}}
-  function saveGifts(v){localStorage.setItem('dlinkyAdminGifts',JSON.stringify(v))}
+  function frames(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
+  function saveFrames(v){window.DlinkyStore.setItem('dlinkyCustomFrames',JSON.stringify(v))}
+  function gifts(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyAdminGifts')||'[]')}catch{return []}}
+  function saveGifts(v){window.DlinkyStore.setItem('dlinkyAdminGifts',JSON.stringify(v))}
   function showAdmin(){qa('.admin-only').forEach(el=>{el.classList.toggle('show',isAdmin()); el.style.display=isAdmin()?'flex':'none'});}
   function openPixAdmin(itemName,valueText){const modal=q('#paymentModal'); if(!modal)return; q('#payDesc').textContent=`Compra: ${itemName} • ${valueText}`; const pix=(user.payPix||user.pay?.pix||'configure-sua-chave-pix'); q('#pixCode').value=`DLINKY|MISTICPAY|ITEM:${itemName}|VALOR:${valueText}|PIX:${pix}`; const qr=q('#pixQr'); qr.innerHTML=''; for(let i=0;i<81;i++){let el=document.createElement(((i*7+i%4)%3===0)?'span':'i');qr.appendChild(el)} modal.classList.add('show');}
   const oldRenderDash2=window.renderDash||renderDash;
@@ -361,7 +443,7 @@ renderDash();
   function receiveGifts(){
     if(!user.email)return; let arr=gifts(); let mine=arr.filter(g=>(g.email||'').toLowerCase().trim()===(user.email||'').toLowerCase().trim()&&!g.received);
     if(!mine.length)return; user.inventory=user.inventory||[]; mine.forEach(g=>{user.inventory=user.inventory||[]; user.inventory.push({type:'frames',name:g.name||'Presente',value:'custom-gift',url:g.url,duration:'Presente',price:'0 Linkwuans',gift:true,date:Date.now()}); if(g.url) user.frame=g.url; g.received=true;});
-    saveGifts(arr); localStorage.setItem('dlinkyUser',JSON.stringify(user));
+    saveGifts(arr); window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));
   }
   document.addEventListener('click',function(e){
     if(e.target && e.target.id==='adminAddFrame'){
@@ -375,8 +457,8 @@ renderDash();
     if(e.target?.dataset?.adminDelFrame!==undefined){const arr=frames();arr.splice(+e.target.dataset.adminDelFrame,1);saveFrames(arr);renderAdminList();toast('Moldura removida')}
     if(e.target && e.target.id==='adminApplyUser'){
       const email=q('#adminUserEmail').value.trim().toLowerCase(); const coins=Number(q('#adminCoins').value||0); const amount=Number(q('#adminPremiumAmount').value||0); const unit=q('#adminPremiumUnit').value;
-      const grants=JSON.parse(localStorage.getItem('dlinkyAdminGrants')||'[]'); grants.unshift({email,coins,amount,unit,date:new Date().toISOString()}); localStorage.setItem('dlinkyAdminGrants',JSON.stringify(grants));
-      if(email===(user.email||'').toLowerCase()){user.coins=(user.coins||0)+coins; if(amount>0){let ms={hours:3600000,days:86400000,months:2592000000,years:31536000000}[unit]*amount; user.premiumUntil=Date.now()+ms;} localStorage.setItem('dlinkyUser',JSON.stringify(user)); renderDash();}
+      const grants=JSON.parse(window.DlinkyStore.getItem('dlinkyAdminGrants')||'[]'); grants.unshift({email,coins,amount,unit,date:new Date().toISOString()}); window.DlinkyStore.setItem('dlinkyAdminGrants',JSON.stringify(grants));
+      if(email===(user.email||'').toLowerCase()){user.coins=(user.coins||0)+coins; if(amount>0){let ms={hours:3600000,days:86400000,months:2592000000,years:31536000000}[unit]*amount; user.premiumUntil=Date.now()+ms;} window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user)); renderDash();}
       toast('Benefício salvo para o usuário');
     }
     if(e.target && e.target.id==='adminSendGift'){
@@ -397,7 +479,7 @@ renderDash();
 /* ===== Compra de molduras com Linkwuans + modal estilo Zyo ===== */
 (function(){
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
-  function getCustomFrames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
+  function getCustomFrames(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')}catch{return []}}
   function parsePrice(v){const m=String(v||'20').match(/\d+/); return m?Number(m[0]):20;}
   function durationPrice(base,d){ return Number(base)||0; }
   function updateWallet(){ const ids=['walletCoins','coinCount','invCoins']; ids.forEach(id=>{const el=q('#'+id); if(el) el.textContent=user.coins||0;}); }
@@ -438,7 +520,7 @@ renderDash();
     user.inventory.unshift({type:'frames',name:item[0],value:'custom-frame',url:item[5],duration,price:price+' Linkwuans',date:Date.now()});
     user.frame=item[5];
     user.purchases.unshift({id:Date.now(),method:'Linkwuans',status:'Aprovado',value:price+' Linkwuans',date:new Date().toLocaleDateString('pt-BR')});
-    localStorage.setItem('dlinkyUser',JSON.stringify(user));
+    window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));
     modal.classList.remove('show'); updateWallet();
     if(typeof renderDash==='function') renderDash();
     if(typeof toast==='function') toast('Moldura comprada e aplicada!');
@@ -456,12 +538,12 @@ renderDash();
 /* ===== Ajustes finais: preview real no inventário + presentes por email ===== */
 (function(){
   const q=(s,r=document)=>r.querySelector(s);
-  function save(){localStorage.setItem('dlinkyUser',JSON.stringify(user));}
+  function save(){window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}
   window.__dlinkyReceiveGifts=function(){
     try{
       if(!user || !user.email) return;
       const email=(user.email||'').toLowerCase().trim();
-      const gifts=JSON.parse(localStorage.getItem('dlinkyAdminGifts')||'[]');
+      const gifts=JSON.parse(window.DlinkyStore.getItem('dlinkyAdminGifts')||'[]');
       let changed=false;
       user.inventory=user.inventory||[];
       gifts.forEach(g=>{
@@ -471,7 +553,7 @@ renderDash();
           g.received=true; changed=true;
         }
       });
-      if(changed){localStorage.setItem('dlinkyAdminGifts',JSON.stringify(gifts)); save();}
+      if(changed){window.DlinkyStore.setItem('dlinkyAdminGifts',JSON.stringify(gifts)); save();}
     }catch(e){}
   };
   const rd=window.renderDash||renderDash;
@@ -484,10 +566,10 @@ renderDash();
 (function(){
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
   const esc=v=>String(v??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
-  const getFrames=()=>{try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch{return []}};
-  const setFrames=v=>localStorage.setItem('dlinkyCustomFrames',JSON.stringify(v));
-  const getGifts=()=>{try{return JSON.parse(localStorage.getItem('dlinkyAdminGifts')||'[]')}catch{return []}};
-  const setGifts=v=>localStorage.setItem('dlinkyAdminGifts',JSON.stringify(v));
+  const getFrames=()=>{try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')}catch{return []}};
+  const setFrames=v=>window.DlinkyStore.setItem('dlinkyCustomFrames',JSON.stringify(v));
+  const getGifts=()=>{try{return JSON.parse(window.DlinkyStore.getItem('dlinkyAdminGifts')||'[]')}catch{return []}};
+  const setGifts=v=>window.DlinkyStore.setItem('dlinkyAdminGifts',JSON.stringify(v));
   const num=v=>{const m=String(v||'').match(/\d+/);return m?Number(m[0]):20};
   function priceFor(frame,dur){
     const base=num(frame.price);
@@ -522,7 +604,7 @@ renderDash();
         }
       });
       normalizeInventory();
-      if(changed){ setGifts(arr); localStorage.setItem('dlinkyUser',JSON.stringify(user)); }
+      if(changed){ setGifts(arr); window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user)); }
     }catch(e){}
   };
   window.renderInventory=function(){
@@ -535,7 +617,7 @@ renderDash();
       const isFrame=it.url||String(it.type||'').includes('frame');
       return `<div class="asset-card inv-item-card"><div class="asset-preview shop-preview inv-preview">${isFrame?`<span class="inv-avatar-preview zyo-person-demo" style="background-image:url('${av}')!important"></span><img class="inv-frame-preview" src="${esc(it.url||'')}" alt="${esc(it.name||'moldura')}">`:'✦'}</div><div class="asset-body"><b>${esc(it.name||'Item')}</b><small>${esc(it.gift?'Presente':(it.duration||it.type||'item'))}</small>${it.message?`<small>“${esc(it.message)}”</small>`:''}<button class="btn primary small" data-use-inv="${i}">Usar</button></div></div>`
     }).join(''):'<p>Você ainda não possui itens no inventário.</p>';
-    localStorage.setItem('dlinkyUser',JSON.stringify(user));
+    window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));
   };
   function refreshGiftSelect(){
     const sel=q('#giftItemSelect'); if(!sel)return;
@@ -585,7 +667,7 @@ renderDash();
     const price=Number(m.dataset.price||0); user.coins=user.coins||0; if(user.coins<price){toast('Saldo insuficiente em Linkwuans.');return;}
     user.coins-=price;
     const arr=getGifts(); arr.unshift({email:target.replace(/^@/,''),slug:target.replace(/^@/,''),name:f.name||'Moldura',url:f.url||'',duration:m.dataset.duration||'3 dias',message:q('#giftFrameMsg').value||'',received:false,date:new Date().toISOString()}); setGifts(arr);
-    localStorage.setItem('dlinkyUser',JSON.stringify(user)); m.classList.remove('show'); if(renderDash)renderDash(); toast('Presente enviado!');
+    window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user)); m.classList.remove('show'); if(renderDash)renderDash(); toast('Presente enviado!');
   }
   // abrir arquivos locais nos Ativos e transformar em data URL para prévia funcionando
   function setupDrop(inputId, kind){
@@ -628,8 +710,8 @@ renderDash();
 (function(){
   const q=s=>document.querySelector(s), qa=s=>Array.from(document.querySelectorAll(s));
   const esc=s=>String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
-  function getUser(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}}
-  function saveUser(u){try{localStorage.setItem('dlinkyUser',JSON.stringify(u)); if(window.user) Object.assign(window.user,u);}catch(e){}}
+  function getUser(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')}catch(e){return {}}}
+  function saveUser(u){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(u)); if(window.user) Object.assign(window.user,u);}catch(e){}}
   function defaultFeatured(){
     const u=getUser();
     return [
@@ -641,10 +723,10 @@ renderDash();
     ];
   }
   function getFeatured(){
-    try{const arr=JSON.parse(localStorage.getItem('dlinkyFeaturedUsers')||'null'); if(Array.isArray(arr)&&arr.length)return arr;}catch(e){}
+    try{const arr=JSON.parse(window.DlinkyStore.getItem('dlinkyFeaturedUsers')||'null'); if(Array.isArray(arr)&&arr.length)return arr;}catch(e){}
     return defaultFeatured();
   }
-  function setFeatured(arr){localStorage.setItem('dlinkyFeaturedUsers',JSON.stringify(arr));}
+  function setFeatured(arr){window.DlinkyStore.setItem('dlinkyFeaturedUsers',JSON.stringify(arr));}
   function normalizeAvatar(v){return v?`style="background-image:url('${esc(v)}')"`:''}
   function renderLandingExtras(){
     const landing=q('#landing'); if(!landing)return;
@@ -727,7 +809,7 @@ renderDash();
 (function(){
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const platformIcons={Instagram:'fa-brands fa-instagram',TikTok:'fa-brands fa-tiktok',Discord:'fa-brands fa-discord',YouTube:'fa-brands fa-youtube',Spotify:'fa-brands fa-spotify',WhatsApp:'fa-brands fa-whatsapp',Twitch:'fa-brands fa-twitch',Steam:'fa-brands fa-steam',Github:'fa-brands fa-github',Roblox:'fa-solid fa-square',Telegram:'fa-brands fa-telegram',X:'fa-brands fa-x-twitter'};
-  function save(){try{localStorage.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
+  function save(){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
   window.renderSocialEditor=function(){
     const box=q('#socialEditor'); if(!box)return;
     user.socials=user.socials&&user.socials.length?user.socials:[{name:'Instagram',url:'https://instagram.com/',on:true},{name:'TikTok',url:'https://tiktok.com/',on:true},{name:'Discord',url:'https://discord.com/',on:true}];
@@ -790,7 +872,7 @@ renderDash();
   let editingFrameId='';
   let dragging=false,startX=0,startY=0,oldX=0,oldY=0;
 
-  function persist(){ try{ localStorage.setItem('dlinkyUser',JSON.stringify(user)); }catch(e){} }
+  function persist(){ try{ window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user)); }catch(e){} }
   function cleanAdj(a){ return {x:Number(a?.x)||0,y:Number(a?.y)||0,scale:Number(a?.scale)||1,rotate:Number(a?.rotate)||0}; }
   function isFrame(it){ return !!(it && (it.url || String(it.type||'').toLowerCase().includes('frame') || String(it.name||'').toLowerCase().includes('moldura'))); }
   function makeFrameId(it){
@@ -1022,7 +1104,7 @@ renderDash();
     const base=(norm(it.url)||String(it.name||'moldura')).replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'');
     return 'frame_'+(base||'item').slice(-70);
   }
-  function save(){try{localStorage.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
+  function save(){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
   function ensure(){
     user.inventory=Array.isArray(user.inventory)?user.inventory:[];
     user.frameAdjustments=user.frameAdjustments||{};
@@ -1062,7 +1144,7 @@ renderDash();
     const deco=q('#avatarDecoration'), av=q('#profileAvatar'), img=q('#profileFrame');
     if(!deco||!img)return;
     deco.classList.add('dlinky-frame-v3','has-img-frame','frame-final-fit');
-    const __avClean=user.avatar||localStorage.getItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'))||localStorage.getItem('dlinky_avatar_real_'+(user.email||user.slug||'local'))||'';
+    const __avClean=user.avatar||window.DlinkyStore.getItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'))||window.DlinkyStore.getItem('dlinky_avatar_real_'+(user.email||user.slug||'local'))||'';
     if(av&&__avClean){
       if(av.tagName==='IMG'){
         av.src=__avClean;
@@ -1121,7 +1203,7 @@ renderDash();
     const base=(norm(it.url)||String(it.name||'moldura')).replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'');
     return 'frame_'+(base||'item').slice(-80);
   }
-  function save(){try{localStorage.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
+  function save(){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
   function ensure(){
     user.inventory=Array.isArray(user.inventory)?user.inventory:[];
     user.frameAdjustments=user.frameAdjustments||{};
@@ -1244,7 +1326,7 @@ renderDash();
   const norm=v=>String(v||'').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/\\/g,'/').split('?')[0].toLowerCase();
   const clean=a=>({x:Number(a&&a.x)||0,y:Number(a&&a.y)||0,scale:Number(a&&a.scale)||1,rotate:Number(a&&a.rotate)||0});
   const isFrame=it=>!!(it&&(it.url||String(it.type||'').toLowerCase().includes('frame')||String(it.name||'').toLowerCase().includes('moldura')));
-  function save(){try{localStorage.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
+  function save(){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
   function makeId(it){
     if(!it)return'';
     if(it.id)return String(it.id);
@@ -1333,7 +1415,7 @@ renderDash();
 /* =========================================================
    DLINKY V6 — FIX FINAL PEDIDO
    1) Inventário sempre mostra Ajustar ao voltar do perfil, sem precisar atualizar.
-   2) Salvar ajuste persiste imediatamente em localStorage e mantém ativo.
+   2) Salvar ajuste persiste imediatamente em Firebase e mantém ativo.
    3) Botão de som melhorado com controle de volume.
    ========================================================= */
 (function(){
@@ -1343,7 +1425,7 @@ renderDash();
   const esc=s=>String(s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
   const isFrame=it=>!!(it&&(it.url||String(it.type||'').toLowerCase().includes('frame')||String(it.name||'').toLowerCase().includes('moldura')));
   const clean=a=>({x:Number(a&&a.x)||0,y:Number(a&&a.y)||0,scale:Number(a&&a.scale)||1,rotate:Number(a&&a.rotate)||0});
-  function save(){try{localStorage.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
+  function save(){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
   function makeId(it){
     if(!it)return'';
     if(it.id)return String(it.id);
@@ -1478,11 +1560,11 @@ renderDash();
     let box=q('#soundPanel');
     if(!box){box=document.createElement('div');box.id='soundPanel';box.innerHTML='<button id="soundPlayPause" type="button"><i class="fa-solid fa-play"></i></button><input id="soundVolume" type="range" min="0" max="100" value="70"><span id="soundPercent">70%</span>';document.body.appendChild(box);}
     const vol=q('#soundVolume'), pct=q('#soundPercent'), pp=q('#soundPlayPause');
-    audio.volume=Number(localStorage.getItem('dlinkyVolume')||70)/100; vol.value=Math.round(audio.volume*100); pct.textContent=vol.value+'%';
+    audio.volume=Number(window.DlinkyStore.getItem('dlinkyVolume')||70)/100; vol.value=Math.round(audio.volume*100); pct.textContent=vol.value+'%';
     function sync(){btn.innerHTML=audio.paused?'<i class="fa-solid fa-volume-high"></i>':'<i class="fa-solid fa-pause"></i>'; pp.innerHTML=audio.paused?'<i class="fa-solid fa-play"></i>':'<i class="fa-solid fa-pause"></i>';}
     btn.onclick=function(ev){ev.preventDefault();ev.stopPropagation();box.classList.toggle('show'); if(user.music&&audio.paused)audio.play().catch(()=>{}); sync();};
     pp.onclick=function(ev){ev.preventDefault();ev.stopPropagation(); if(!user.music)return; if(audio.paused)audio.play().catch(()=>{}); else audio.pause(); sync();};
-    vol.oninput=function(){audio.volume=Number(vol.value)/100;localStorage.setItem('dlinkyVolume',vol.value);pct.textContent=vol.value+'%';};
+    vol.oninput=function(){audio.volume=Number(vol.value)/100;window.DlinkyStore.setItem('dlinkyVolume',vol.value);pct.textContent=vol.value+'%';};
     audio.addEventListener('play',sync); audio.addEventListener('pause',sync); sync();
   }
   const oldEntry=q('#entryOverlay')?.onclick;
@@ -1503,7 +1585,7 @@ renderDash();
   const clean=a=>({x:Number(a?.x||0),y:Number(a?.y||0),scale:Math.max(.2,Number(a?.scale||1)),rotate:Number(a?.rotate||0)});
   const transform=a=>{a=clean(a);return `translate(calc(-50% + ${a.x}px),calc(-50% + ${a.y}px)) scale(${a.scale}) rotate(${a.rotate}deg)`};
   const isFrame=it=>it&&(it.type==='frame'||it.type==='frames'||it.kind==='frame'||/moldura|frame/i.test(String(it.name||''))||String(it.url||'').startsWith('data:image/svg+xml')||/\.(gif|png|webp|apng|svg)(\?|#|$)/i.test(String(it.url||'')));
-  function persist(){localStorage.setItem('dlinkyUser',JSON.stringify(user));}
+  function persist(){window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}
   function ensure(){
     user.inventory=Array.isArray(user.inventory)?user.inventory:[];
     user.frameAdjustments=user.frameAdjustments||{}; user.frameAdjust=user.frameAdjust||{};
@@ -1587,11 +1669,11 @@ renderDash();
   function setupSound(){
     const btn=q('#soundBtn'), audio=q('#profileAudio'); if(!btn||!audio)return; btn.innerHTML='<i class="fa-solid fa-volume-high"></i>'; btn.title='Som e volume';
     let box=q('#soundPanel'); if(!box){box=document.createElement('div');box.id='soundPanel';box.innerHTML='<button id="soundPlayPause" type="button"><i class="fa-solid fa-play"></i></button><input id="soundVolume" type="range" min="0" max="100" value="70"><span id="soundPercent">70%</span>';document.body.appendChild(box);} 
-    const vol=q('#soundVolume'), pct=q('#soundPercent'), pp=q('#soundPlayPause'); audio.volume=Number(localStorage.getItem('dlinkyVolume')||70)/100; vol.value=Math.round(audio.volume*100); pct.textContent=vol.value+'%';
+    const vol=q('#soundVolume'), pct=q('#soundPercent'), pp=q('#soundPlayPause'); audio.volume=Number(window.DlinkyStore.getItem('dlinkyVolume')||70)/100; vol.value=Math.round(audio.volume*100); pct.textContent=vol.value+'%';
     const sync=()=>{btn.innerHTML=audio.paused?'<i class="fa-solid fa-volume-high"></i>':'<i class="fa-solid fa-pause"></i>';pp.innerHTML=audio.paused?'<i class="fa-solid fa-play"></i>':'<i class="fa-solid fa-pause"></i>';};
     btn.onclick=ev=>{ev.preventDefault();ev.stopPropagation();box.classList.toggle('show');if(user.music&&audio.paused)audio.play().catch(()=>{});sync();};
     pp.onclick=ev=>{ev.preventDefault();ev.stopPropagation();if(!user.music)return;if(audio.paused)audio.play().catch(()=>{});else audio.pause();sync();};
-    vol.oninput=()=>{audio.volume=Number(vol.value)/100;localStorage.setItem('dlinkyVolume',vol.value);pct.textContent=vol.value+'%';};
+    vol.oninput=()=>{audio.volume=Number(vol.value)/100;window.DlinkyStore.setItem('dlinkyVolume',vol.value);pct.textContent=vol.value+'%';};
     audio.onplay=sync; audio.onpause=sync; sync();
   }
   window.addEventListener('hashchange',()=>setTimeout(()=>{if(location.hash==='#/dashboard')window.renderInventory();applyProfileFrame();setupSound();},300));
@@ -1647,7 +1729,7 @@ renderDash();
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const num=v=>{const m=String(v||'20').match(/\d+/);return m?Number(m[0]):20};
-  function getFrames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')||[]}catch(e){return []}}
+  function getFrames(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')||[]}catch(e){return []}}
   function priceFor(f,d='3 dias'){
     if(f && f.prices && f.prices[d]!=null && f.prices[d]!=='' && !Number.isNaN(Number(f.prices[d]))) return Number(f.prices[d]);
     const base=num(f && f.price || 20);
@@ -1733,7 +1815,7 @@ renderDash();
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const onlyNum=v=>{const m=String(v||'20').match(/\d+/); return m?Number(m[0]):20;};
-  function frames(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')||[]}catch(e){return []}}
+  function frames(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')||[]}catch(e){return []}}
   function priceFor(f,d){
     if(f && f.prices && f.prices[d]!==undefined && f.prices[d]!=='' && !Number.isNaN(Number(f.prices[d]))) return Number(f.prices[d]);
     const base=onlyNum(f&&f.price||20);
@@ -1807,23 +1889,23 @@ renderDash();
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
   function getUser(){
-    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')||{};}catch{return {};}
+    try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')||{};}catch{return {};}
   }
   function setUserPatch(patch){
     const u=getUser();
     const merged=Object.assign({},u,patch);
-    try{localStorage.setItem('dlinkyUser',JSON.stringify(merged));}catch{}
+    try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(merged));}catch{}
     if(window.user) Object.assign(window.user,patch);
     return merged;
   }
   function getStyle(){
     const u=getUser();
-    const v=localStorage.getItem(STYLE_KEY)||u.profileCardStyle||'normal';
+    const v=window.DlinkyStore.getItem(STYLE_KEY)||u.profileCardStyle||'normal';
     return VALID_STYLE.includes(v)?v:'normal';
   }
   function getMotion(){
     const u=getUser();
-    const v=localStorage.getItem(MOTION_KEY)||u.profileCardMotion||'none';
+    const v=window.DlinkyStore.getItem(MOTION_KEY)||u.profileCardMotion||'none';
     return VALID_MOTION.includes(v)?v:'none';
   }
   function saveClean(){
@@ -1831,8 +1913,8 @@ renderDash();
     const mo=q('#dlinkyCardMotionFixed')?.value||getMotion();
     const style=VALID_STYLE.includes(st)?st:'normal';
     const motion=VALID_MOTION.includes(mo)?mo:'none';
-    localStorage.setItem(STYLE_KEY,style);
-    localStorage.setItem(MOTION_KEY,motion);
+    window.DlinkyStore.setItem(STYLE_KEY,style);
+    window.DlinkyStore.setItem(MOTION_KEY,motion);
     setUserPatch({profileCardStyle:style,profileCardMotion:motion});
     applyClean();
     syncClean();
@@ -1952,11 +2034,11 @@ renderDash();
   const MOTION_KEY='dlinky_profile_card_motion';
   const styles=['normal','invisible','soft','glass','line'];
   const motions=['none','float','pulse','tilt','parallax'];
-  function readUser(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
-  function writeUser(patch){const u=Object.assign(readUser(),patch);try{localStorage.setItem('dlinkyUser',JSON.stringify(u));}catch{} if(window.user)Object.assign(window.user,patch);return u;}
-  function getStyle(){const u=readUser();const v=localStorage.getItem(STYLE_KEY)||u.profileCardStyle||'normal';return styles.includes(v)?v:'normal';}
-  function getMotion(){const u=readUser();const v=localStorage.getItem(MOTION_KEY)||u.profileCardMotion||'none';return motions.includes(v)?v:'none';}
-  function saveCardPrefs(){const s=q('#dlinkyCardStyleFixed')?.value||getStyle();const m=q('#dlinkyCardMotionFixed')?.value||getMotion();const st=styles.includes(s)?s:'normal';const mo=motions.includes(m)?m:'none';localStorage.setItem(STYLE_KEY,st);localStorage.setItem(MOTION_KEY,mo);writeUser({profileCardStyle:st,profileCardMotion:mo});}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
+  function writeUser(patch){const u=Object.assign(readUser(),patch);try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(u));}catch{} if(window.user)Object.assign(window.user,patch);return u;}
+  function getStyle(){const u=readUser();const v=window.DlinkyStore.getItem(STYLE_KEY)||u.profileCardStyle||'normal';return styles.includes(v)?v:'normal';}
+  function getMotion(){const u=readUser();const v=window.DlinkyStore.getItem(MOTION_KEY)||u.profileCardMotion||'none';return motions.includes(v)?v:'none';}
+  function saveCardPrefs(){const s=q('#dlinkyCardStyleFixed')?.value||getStyle();const m=q('#dlinkyCardMotionFixed')?.value||getMotion();const st=styles.includes(s)?s:'normal';const mo=motions.includes(m)?m:'none';window.DlinkyStore.setItem(STYLE_KEY,st);window.DlinkyStore.setItem(MOTION_KEY,mo);writeUser({profileCardStyle:st,profileCardMotion:mo});}
   function cleanDuplicateCardControls(){
     qa('#profileCardStyleCustom,#profileCardMotionCustom,#profileCardStyle,#profileCardMotion').forEach(el=>{const lab=el.closest('label'); if(lab)lab.remove(); else el.remove();});
     const styles=qa('#dlinkyCardStyleFixed'); styles.slice(1).forEach(el=>{const lab=el.closest('label'); if(lab)lab.remove(); else el.remove();});
@@ -2055,7 +2137,7 @@ renderDash();
    ========================================================= */
 (function(){
   const q=(s,r=document)=>r.querySelector(s);
-  function readUser(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
   function isProfileActive(){return !!q('#profile.page.active,#profile.active,.profile-page.active');}
   function clearOldProfileFx(){
     const layer=q('#profileParticleLayer');
@@ -2108,7 +2190,7 @@ renderDash();
         u.particles=false;
         u.particleType='none';
       }
-      localStorage.setItem('dlinkyUser',JSON.stringify(u));
+      window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(u));
       if(window.user)Object.assign(window.user,{bgFx:u.bgFx,particles:u.particles,particleType:u.particleType});
       setTimeout(applyOnlySelectedBgFx,20);
     }
@@ -2159,17 +2241,17 @@ renderDash();
     serif:'Georgia, Times New Roman, serif',
     cursive:'Comic Sans MS, Bradley Hand, cursive'
   };
-  function readUser(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
-  function writeUser(patch){const u=Object.assign({},readUser(),patch);try{localStorage.setItem('dlinkyUser',JSON.stringify(u));}catch{} if(window.user)Object.assign(window.user,patch);return u;}
-  function getMotion(){const u=readUser();const v=localStorage.getItem(MOTION_KEY)||u.profileCardMotion||'none';return validMotion.includes(v)?v:'none';}
-  function getFont(){const u=readUser();const v=localStorage.getItem(FONT_KEY)||u.profileFont||'inter';return validFont.includes(v)?v:'inter';}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
+  function writeUser(patch){const u=Object.assign({},readUser(),patch);try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(u));}catch{} if(window.user)Object.assign(window.user,patch);return u;}
+  function getMotion(){const u=readUser();const v=window.DlinkyStore.getItem(MOTION_KEY)||u.profileCardMotion||'none';return validMotion.includes(v)?v:'none';}
+  function getFont(){const u=readUser();const v=window.DlinkyStore.getItem(FONT_KEY)||u.profileFont||'inter';return validFont.includes(v)?v:'inter';}
   function saveMotionFont(){
     const m=q('#dlinkyCardMotionFixed')?.value||getMotion();
     const f=q('#dlinkyProfileFontFixed')?.value||getFont();
     const motion=validMotion.includes(m)?m:'none';
     const font=validFont.includes(f)?f:'inter';
-    localStorage.setItem(MOTION_KEY,motion);
-    localStorage.setItem(FONT_KEY,font);
+    window.DlinkyStore.setItem(MOTION_KEY,motion);
+    window.DlinkyStore.setItem(FONT_KEY,font);
     writeUser({profileCardMotion:motion,profileFont:font});
   }
   function ensureFontControl(){
@@ -2263,7 +2345,7 @@ renderDash();
 /* === HOTFIX: restaurar ícones sociais + partículas animadas reais === */
 (function(){
   const q=(s,r=document)=>r.querySelector(s);
-  function readUser(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
   function isProfile(){return !!q('#profile.active,.profile-page.active,#profile.page.active');}
   const iconMap={
     Instagram:'fa-brands fa-instagram', TikTok:'fa-brands fa-tiktok', Discord:'fa-brands fa-discord',
@@ -2333,8 +2415,8 @@ renderDash();
     Twitch:'fa-brands fa-twitch', Steam:'fa-brands fa-steam', Github:'fa-brands fa-github',
     Roblox:'fa-solid fa-square', Telegram:'fa-brands fa-telegram', X:'fa-brands fa-x-twitter'
   };
-  function readUser(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')||{};}catch(e){return {};}}
-  function saveUserObj(u){localStorage.setItem('dlinkyUser',JSON.stringify(u));}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')||{};}catch(e){return {};}}
+  function saveUserObj(u){window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(u));}
   function isProfile(){return !!q('#profile.active,.profile-page.active');}
   function safeUrl(u){u=String(u||'');return /^https?:\/\//i.test(u)?u:'#';}
   function brand(n){return String(n||'link').toLowerCase().replace(/[^a-z0-9]/g,'');}
@@ -2429,7 +2511,7 @@ renderDash();
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>[...r.querySelectorAll(s)];
   let raf=0, list=[], running='';
-  function readUser(){try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')||{};}catch{return {};}}
   function isProfile(){return !!q('#profile.active,.profile-page.active,#profile.page.active');}
   function killLegacyFx(){
     const ids=['#dlinkySingleBgFx','#dlinkyStableBgFx','#dlinkyFixedFallFxFinal'];
@@ -2550,10 +2632,10 @@ renderDash();
   function toastMsg(t){try{if(typeof toast==="function")return toast(t)}catch(e){} alert(t)}
 
   function readJSON(key, fallback){
-    try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback))}catch(e){return fallback}
+    try{return JSON.parse(window.DlinkyStore.getItem(key)||JSON.stringify(fallback))}catch(e){return fallback}
   }
   function writeJSON(key, value){
-    localStorage.setItem(key, JSON.stringify(value));
+    window.DlinkyStore.setItem(key, JSON.stringify(value));
   }
 
   function getUser(){
@@ -2573,18 +2655,18 @@ renderDash();
   }
 
   function getCoins(){
-    const fixed = localStorage.getItem(COINS_KEY);
+    const fixed = window.DlinkyStore.getItem(COINS_KEY);
     if(fixed !== null && fixed !== "") return Number(fixed || 0);
 
     const u = getUser();
     const initial = Number(u.coins ?? u.linkwuans ?? 0);
-    localStorage.setItem(COINS_KEY, String(initial));
+    window.DlinkyStore.setItem(COINS_KEY, String(initial));
     return initial;
   }
 
   function setCoins(value){
     value = Number(value || 0);
-    localStorage.setItem(COINS_KEY, String(value));
+    window.DlinkyStore.setItem(COINS_KEY, String(value));
     saveUser({coins:value, linkwuans:value});
 
     if(window.user){
@@ -3012,12 +3094,12 @@ renderDash();
         cardBg:"#000000",
         textColor:"#FFFFFF",
         bioColor:"#FFFFFF"
-      },JSON.parse(localStorage.getItem(KEY)||"{}"));
+      },JSON.parse(window.DlinkyStore.getItem(KEY)||"{}"));
     }catch(e){
       return {showFree:true,showDlinky:true,tags:["programador","artista","musico"],profileBg:"#1E40AF",cardBg:"#000000",textColor:"#FFFFFF",bioColor:"#FFFFFF"};
     }
   }
-  function save(c){localStorage.setItem(KEY,JSON.stringify(c))}
+  function save(c){window.DlinkyStore.setItem(KEY,JSON.stringify(c))}
 
   function renderAdmin(){
     const box=q("#ctTagsList");
@@ -3187,7 +3269,7 @@ setInterval(()=>{
   function getCfg(){
     for(const key of KEYS){
       try{
-        const raw = localStorage.getItem(key);
+        const raw = window.DlinkyStore.getItem(key);
         if(raw) return JSON.parse(raw);
       }catch(e){}
     }
@@ -3311,14 +3393,14 @@ function getCard(){
 
 function loadData(){
   try{
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    return JSON.parse(window.DlinkyStore.getItem(STORAGE_KEY)) || {};
   }catch(e){
     return {};
   }
 }
 
 function saveData(data){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  window.DlinkyStore.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 function removeEffects(){
@@ -3527,14 +3609,14 @@ document.addEventListener("click",(e)=>{
 
   function readUser(){
     try{
-      return JSON.parse(localStorage.getItem("dlinkyUser") || "{}");
+      return JSON.parse(window.DlinkyStore.getItem("dlinkyUser") || "{}");
     }catch(e){
       return {};
     }
   }
 
   function writeUser(u){
-    localStorage.setItem("dlinkyUser", JSON.stringify(u));
+    window.DlinkyStore.setItem("dlinkyUser", JSON.stringify(u));
 
     try{
       if(typeof user !== "undefined" && user){
@@ -3872,14 +3954,14 @@ document.addEventListener("click",(e)=>{
 
   function readUser(){
     try{
-      return JSON.parse(localStorage.getItem(USER_KEY) || "{}");
+      return JSON.parse(window.DlinkyStore.getItem(USER_KEY) || "{}");
     }catch(e){
       return {};
     }
   }
 
   function saveUser(u){
-    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    window.DlinkyStore.setItem(USER_KEY, JSON.stringify(u));
 
     try{
       if(typeof user !== "undefined" && user){
@@ -3895,9 +3977,9 @@ document.addEventListener("click",(e)=>{
     const valores = [
       Number(u.coins),
       Number(u.linkwuans),
-      Number(localStorage.getItem("linkwuans")),
-      Number(localStorage.getItem("dlinkyWalletCoins")),
-      Number(localStorage.getItem("dlinkyCleanCoins"))
+      Number(window.DlinkyStore.getItem("linkwuans")),
+      Number(window.DlinkyStore.getItem("dlinkyWalletCoins")),
+      Number(window.DlinkyStore.getItem("dlinkyCleanCoins"))
     ].filter(n => Number.isFinite(n) && n >= 0);
 
     return valores.length ? Math.max(...valores) : 0;
@@ -3913,11 +3995,11 @@ document.addEventListener("click",(e)=>{
     saveUser(u);
 
     // ESSA era a chave que estava voltando o valor fake.
-    localStorage.setItem("dlinkyCleanCoins", String(v));
+    window.DlinkyStore.setItem("dlinkyCleanCoins", String(v));
 
     // chaves antigas também sincronizadas
-    localStorage.setItem("linkwuans", String(v));
-    localStorage.setItem("dlinkyWalletCoins", String(v));
+    window.DlinkyStore.setItem("linkwuans", String(v));
+    window.DlinkyStore.setItem("dlinkyWalletCoins", String(v));
 
     try{
       if(typeof user !== "undefined" && user){
@@ -4119,18 +4201,18 @@ document.addEventListener("click",(e)=>{
 
   function readLocalUser(){
     try{
-      return JSON.parse(localStorage.getItem("dlinkyUser") || "{}");
+      return JSON.parse(window.DlinkyStore.getItem("dlinkyUser") || "{}");
     }catch(e){
       return {};
     }
   }
 
   function writeLocalUser(u){
-    localStorage.setItem("dlinkyUser", JSON.stringify(u));
+    window.DlinkyStore.setItem("dlinkyUser", JSON.stringify(u));
 
-    localStorage.setItem("dlinkyCleanCoins", String(Number(u.coins || 0)));
-    localStorage.setItem("linkwuans", String(Number(u.coins || 0)));
-    localStorage.setItem("dlinkyWalletCoins", String(Number(u.coins || 0)));
+    window.DlinkyStore.setItem("dlinkyCleanCoins", String(Number(u.coins || 0)));
+    window.DlinkyStore.setItem("linkwuans", String(Number(u.coins || 0)));
+    window.DlinkyStore.setItem("dlinkyWalletCoins", String(Number(u.coins || 0)));
 
     try{
       if(typeof user !== "undefined" && user){
@@ -4229,9 +4311,9 @@ document.addEventListener("click",(e)=>{
       bio: data?.bio || "",
       avatar: data?.avatar || (() => {
         try {
-          const local = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
+          const local = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}');
           const k = 'dlinkyAvatarPreserve_' + ((firebaseUser?.email || data?.email || local.email || local.slug || 'local').toLowerCase().trim());
-          return local.avatar || localStorage.getItem(k) || '';
+          return local.avatar || window.DlinkyStore.getItem(k) || '';
         } catch(e) { return ''; }
       })(),
       banner: data?.banner || "",
@@ -4275,9 +4357,9 @@ document.addEventListener("click",(e)=>{
       bio: u.bio || "",
       avatar: u.avatar || (() => {
         try {
-          const local = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
+          const local = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}');
           const k = 'dlinkyAvatarPreserve_' + ((u.email || u.slug || local.email || local.slug || 'local').toLowerCase().trim());
-          return local.avatar || localStorage.getItem(k) || '';
+          return local.avatar || window.DlinkyStore.getItem(k) || '';
         } catch(e) { return ''; }
       })(),
       banner: u.banner || "",
@@ -4357,9 +4439,9 @@ document.addEventListener("click",(e)=>{
     if(window.__dlinkyLocalStorageMirrorV2) return;
     window.__dlinkyLocalStorageMirrorV2 = true;
 
-    const originalSetItem = localStorage.setItem.bind(localStorage);
+    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
 
-    localStorage.setItem = function(key, value){
+    window.DlinkyStore.setItem = function(key, value){
       const result = originalSetItem(key, value);
 
       if(
@@ -4543,14 +4625,14 @@ document.addEventListener("click",(e)=>{
 
   function readUser(){
     try{
-      return JSON.parse(localStorage.getItem(USER_KEY) || "{}");
+      return JSON.parse(window.DlinkyStore.getItem(USER_KEY) || "{}");
     }catch(e){
       return {};
     }
   }
 
   function writeUser(u){
-    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    window.DlinkyStore.setItem(USER_KEY, JSON.stringify(u));
 
     try{
       if(typeof user !== "undefined" && user){
@@ -4577,7 +4659,7 @@ document.addEventListener("click",(e)=>{
       "dlinkyUserSelos",
       "dlinkyUserBadges"
     ].forEach(k=>{
-      try{ localStorage.removeItem(k); }catch(e){}
+      try{ window.DlinkyStore.removeItem(k); }catch(e){}
     });
   }
 
@@ -4649,7 +4731,7 @@ document.addEventListener("click",(e)=>{
 
   function getUser(){
     try{
-      return JSON.parse(localStorage.getItem("dlinkyUser") || "{}");
+      return JSON.parse(window.DlinkyStore.getItem("dlinkyUser") || "{}");
     }catch(e){
       return {};
     }
@@ -4772,14 +4854,14 @@ document.addEventListener("click",(e)=>{
 
   function readJSON(key, fallback){
     try{
-      return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+      return JSON.parse(window.DlinkyStore.getItem(key) || JSON.stringify(fallback));
     }catch(e){
       return fallback;
     }
   }
 
   function writeJSON(key, value){
-    localStorage.setItem(key, JSON.stringify(value || {}));
+    window.DlinkyStore.setItem(key, JSON.stringify(value || {}));
   }
 
   function saveOne(id, checked){
@@ -4797,7 +4879,7 @@ document.addEventListener("click",(e)=>{
     clean[cleanName] = !!checked;
     real[realName] = !!checked;
 
-    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    window.DlinkyStore.setItem(USER_KEY, JSON.stringify(u));
     writeJSON(CLEAN_KEY, clean);
     writeJSON(REAL_KEY, real);
 
@@ -5275,9 +5357,9 @@ document.addEventListener("click",(e)=>{
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
   function toastMsg(t){try{if(typeof toast==="function")return toast(t)}catch(e){} alert(t)}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v||[]))}
-  function getUser(){try{return JSON.parse(localStorage.getItem("dlinkyUser")||"{}")}catch(e){return {}}}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v||[]))}
+  function getUser(){try{return JSON.parse(window.DlinkyStore.getItem("dlinkyUser")||"{}")}catch(e){return {}}}
   function isAdmin(){return String(getUser().email||"").toLowerCase().trim()===ADMIN_EMAIL}
 
   let currentOrder = null;
@@ -5503,13 +5585,13 @@ document.addEventListener("click",(e)=>{
   const $=(s,r=document)=>r.querySelector(s);
   const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
   function slug(v){return norm(v).replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"")}
   function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
   function userObj(){return readJSON(USER_KEY,{})}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
   function toastMsg(t){try{if(typeof toast==="function")return toast(t)}catch(e){} console.log(t)}
 
   function rawCatalog(){const a=readJSON(CATALOG_KEY,[]);return Array.isArray(a)?a:[]}
@@ -5562,21 +5644,21 @@ document.addEventListener("click",(e)=>{
     u.selosOwned=ids;
     u.inventory=Array.isArray(u.inventory)?u.inventory.filter(it=>!["selo","selos"].includes(norm(it.type))):[];
     if(u.activeSelo && !ids.includes(String(u.activeSelo))) delete u.activeSelo;
-    if(localStorage.getItem(ACTIVE_KEY) && !ids.includes(String(localStorage.getItem(ACTIVE_KEY)))) localStorage.removeItem(ACTIVE_KEY);
+    if(window.DlinkyStore.getItem(ACTIVE_KEY) && !ids.includes(String(window.DlinkyStore.getItem(ACTIVE_KEY)))) window.DlinkyStore.removeItem(ACTIVE_KEY);
     writeJSON(OWNED_KEY,ids);
     saveUser(u);
     return ids;
   }
   function selo(id){return catalog().find(s=>String(s.id)===String(id))||null}
-  function active(){const u=userObj();const id=String(u.activeSelo||localStorage.getItem(ACTIVE_KEY)||"");return owned().includes(id)?id:""}
+  function active(){const u=userObj();const id=String(u.activeSelo||window.DlinkyStore.getItem(ACTIVE_KEY)||"");return owned().includes(id)?id:""}
   function size(){
     const el=$("#adminSeloSize")||$("#seloSize")||$("#dlinkySeloSize")||$("input[type='range'][id*='Selo']")||$("input[type='range'][id*='selo']");
-    let v=el?Number(el.value):Number(localStorage.getItem(SIZE_KEY)||userObj().seloSize||32);
+    let v=el?Number(el.value):Number(window.DlinkyStore.getItem(SIZE_KEY)||userObj().seloSize||32);
     if(!Number.isFinite(v)||v<12)v=32;if(v>80)v=80;return Math.round(v);
   }
   function applySize(){
     const v=size();
-    localStorage.setItem(SIZE_KEY,String(v));
+    window.DlinkyStore.setItem(SIZE_KEY,String(v));
     const u=userObj();u.seloSize=v;saveUser(u);
     document.documentElement.style.setProperty("--dlinky-selo-size",v+"px");
     $$("*").forEach(el=>{if(el.children.length===0 && /Tamanho atual:\s*\d+px/i.test(el.textContent||"")) el.textContent="Tamanho atual: "+v+"px";});
@@ -5665,13 +5747,13 @@ document.addEventListener("click",(e)=>{
     u.coins=coins-price; u.linkwuans=u.coins; u.selosOwned=Array.from(new Set([...(Array.isArray(u.selosOwned)?u.selosOwned:[]),String(id)])); saveUser(u); writeJSON(OWNED_KEY,owned().concat([String(id)])); renderShopOutros(); filterInv();
     try{if(typeof renderDash==="function")renderDash()}catch(e){}
   }
-  function use(id){if(!owned().includes(String(id)))return; const u=userObj(); u.activeSelo=String(id); localStorage.setItem(ACTIVE_KEY,String(id)); saveUser(u); renderSelos(); applyName();}
+  function use(id){if(!owned().includes(String(id)))return; const u=userObj(); u.activeSelo=String(id); window.DlinkyStore.setItem(ACTIVE_KEY,String(id)); saveUser(u); renderSelos(); applyName();}
   function remove(id){
     // REMOVER DO SELO = apenas desequipar do perfil. Não apaga compra/inventário.
     const u=userObj();
-    if(u.activeSelo===String(id) || localStorage.getItem(ACTIVE_KEY)===String(id)){
+    if(u.activeSelo===String(id) || window.DlinkyStore.getItem(ACTIVE_KEY)===String(id)){
       delete u.activeSelo;
-      localStorage.removeItem(ACTIVE_KEY);
+      window.DlinkyStore.removeItem(ACTIVE_KEY);
       saveUser(u);
     }
     applyName();
@@ -5710,8 +5792,8 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
   function slug(v){return norm(v).replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"")}
   function toastMsg(t){try{if(typeof toast==="function")return toast(t)}catch(e){} alert(t)}
@@ -5851,8 +5933,8 @@ document.addEventListener("click",(e)=>{
         const u = readJSON("dlinkyUser",{});
         if(Array.isArray(u.selosOwned)) u.selosOwned = u.selosOwned.filter(id=>String(id)!==String(removed.id));
         if(String(u.activeSelo)===String(removed.id)) delete u.activeSelo;
-        localStorage.setItem("dlinkyUser",JSON.stringify(u));
-        if(String(localStorage.getItem("dlinkyActiveSelo"))===String(removed.id)) localStorage.removeItem("dlinkyActiveSelo");
+        window.DlinkyStore.setItem("dlinkyUser",JSON.stringify(u));
+        if(String(window.DlinkyStore.getItem("dlinkyActiveSelo"))===String(removed.id)) window.DlinkyStore.removeItem("dlinkyActiveSelo");
       }catch(e){}
     }
 
@@ -5917,8 +5999,8 @@ document.addEventListener("click",(e)=>{
   const USER_KEY = "dlinkyUser";
 
   function q(s,r=document){return r.querySelector(s)}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||"{}")}catch(e){return {}}}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||"{}")}catch(e){return {}}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
   function toastMsg(t){try{if(typeof toast==="function")return toast(t)}catch(e){console.log(t)}}
 
   function num(v, fallback){
@@ -6024,8 +6106,8 @@ document.addEventListener("click",(e)=>{
   const KEY = 'dlinkyUser';
   const $ = (s,r=document)=>r.querySelector(s);
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
-  function read(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}}}
-  function write(u){localStorage.setItem(KEY, JSON.stringify(u||{})); try{ if(typeof user!=='undefined' && user) Object.assign(user,u||{}); }catch(e){}}
+  function read(){try{return JSON.parse(window.DlinkyStore.getItem(KEY)||'{}')}catch(e){return {}}}
+  function write(u){window.DlinkyStore.setItem(KEY, JSON.stringify(u||{})); try{ if(typeof user!=='undefined' && user) Object.assign(user,u||{}); }catch(e){}}
   function msg(t){try{ if(typeof toast==='function') return toast(t); }catch(e){} console.log(t);}
   const defaults = {type:'snow',count:45,speed:5,size:'medium'};
   function cfg(){const u=read(); return Object.assign({}, defaults, u.particleConfig||{}, {type:u.particleType||u.particleConfig?.type||defaults.type});}
@@ -6082,8 +6164,8 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||"{}")}catch(e){return {}}}
-  function writeUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||"{}")}catch(e){return {}}}
+  function writeUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
   function msg(t){try{if(typeof toast==="function")return toast(t)}catch(e){console.log(t)}}
 
   const defaults = {type:"none", count:45, speed:5, size:"medium"};
@@ -6359,10 +6441,10 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function getUser(){return readJSON(USER_KEY,{})}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
   function slug(v){return norm(v).replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"")}
   function clamp(n){n=Number(n); if(!Number.isFinite(n)) n=32; return Math.max(16,Math.min(120,Math.round(n)));}
@@ -6395,7 +6477,7 @@ document.addEventListener("click",(e)=>{
 
   function activeId(){
     const u=getUser();
-    return String(u.activeSelo || localStorage.getItem(ACTIVE_KEY) || "");
+    return String(u.activeSelo || window.DlinkyStore.getItem(ACTIVE_KEY) || "");
   }
 
   function getSizeFor(id){
@@ -6472,7 +6554,7 @@ document.addEventListener("click",(e)=>{
     delete u.activeSelo;
     delete u.seloAtivo;
     saveUser(u);
-    localStorage.removeItem(ACTIVE_KEY);
+    window.DlinkyStore.removeItem(ACTIVE_KEY);
     ["#dlinkySeloNomeClean","#dlinkySeloNomeFinal","#dlinkyActiveProfileSelo","#dlinkyActiveProfileSeloSafe","#dlinkyFinalFixedNameSelo",".perfil-selo"].forEach(sel=>{
       qa(sel).forEach(el=>el.remove());
     });
@@ -6556,8 +6638,8 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||"{}")}catch(e){return {}}}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||"{}")}catch(e){return {}}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
 
   function isSeloCard(card){
@@ -6578,7 +6660,7 @@ document.addEventListener("click",(e)=>{
     delete u.activeSelo;
     delete u.seloAtivo;
     saveUser(u);
-    localStorage.removeItem(ACTIVE_KEY);
+    window.DlinkyStore.removeItem(ACTIVE_KEY);
 
     [
       "#dlinkySeloNomeClean",
@@ -6638,10 +6720,10 @@ document.addEventListener("click",(e)=>{
   const ORDERS_KEY = "dlinkyPixRechargeOrders";
   const CREDIT_KEY = "dlinkyPixReleasedCreditsByEmail";
 
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function getUser(){return readJSON(USER_KEY,{})}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
   function toastMsg(t){try{if(typeof toast==="function")return toast(t)}catch(e){console.log(t)}}
   function emailKey(email){return String(email||"").toLowerCase().trim()}
 
@@ -6782,8 +6864,8 @@ document.addEventListener("click",(e)=>{
   const ADMIN_EMAIL = "jailtonsilas48@gmail.com";
 
   function q(s,r=document){return r.querySelector(s)}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function emailKey(v){return String(v||"").toLowerCase().trim()}
   function slug(v){
     return String(v||"")
@@ -6866,7 +6948,7 @@ document.addEventListener("click",(e)=>{
 
   function setCurrentAccount(u){
     user = Object.assign({}, u);
-    localStorage.setItem(CURRENT_KEY, JSON.stringify(user));
+    window.DlinkyStore.setItem(CURRENT_KEY, JSON.stringify(user));
     saveAccount(user);
   }
 
@@ -6874,7 +6956,7 @@ document.addEventListener("click",(e)=>{
     try{
       const old = saveUser;
       saveUser = function(){
-        localStorage.setItem(CURRENT_KEY, JSON.stringify(user));
+        window.DlinkyStore.setItem(CURRENT_KEY, JSON.stringify(user));
         saveAccount(user);
         try{ renderDash(); }catch(e){}
         toastMsg("Salvo com sucesso!");
@@ -7023,10 +7105,10 @@ document.addEventListener("click",(e)=>{
   const ADMIN_EMAIL = "jailtonsilas48@gmail.com";
 
   function q(s,r=document){return r.querySelector(s)}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function emailKey(v){return String(v||"").toLowerCase().trim()}
-  function saveUser(u){localStorage.setItem(CURRENT_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function saveUser(u){window.DlinkyStore.setItem(CURRENT_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
 
   function resetPaidItemsForNewUser(u){
     if(!u) return u;
@@ -7074,8 +7156,8 @@ document.addEventListener("click",(e)=>{
       u.activeSelo = '';
       u.seloAtivo = '';
       saveUser(u);
-      localStorage.removeItem(OWNED_SELOS_KEY);
-      localStorage.removeItem(ACTIVE_SELO_KEY);
+      window.DlinkyStore.removeItem(OWNED_SELOS_KEY);
+      window.DlinkyStore.removeItem(ACTIVE_SELO_KEY);
 
       const all = readJSON(ACCOUNTS_KEY,{});
       all[email] = u;
@@ -7102,8 +7184,8 @@ document.addEventListener("click",(e)=>{
             u.__cleanNewAccount = true;
             saveUser(u);
 
-            localStorage.removeItem(OWNED_SELOS_KEY);
-            localStorage.removeItem(ACTIVE_SELO_KEY);
+            window.DlinkyStore.removeItem(OWNED_SELOS_KEY);
+            window.DlinkyStore.removeItem(ACTIVE_SELO_KEY);
 
             const all = readJSON(ACCOUNTS_KEY,{});
             all[email] = u;
@@ -7197,11 +7279,11 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function emailKey(v){return String(v||"").toLowerCase().trim()}
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
 
   function isNewCleanUser(){
     const u = readJSON(USER_KEY,{});
@@ -7233,8 +7315,8 @@ document.addEventListener("click",(e)=>{
     saveUser(u);
 
     // IMPORTANTE: esses eram globais e faziam a conta nova puxar selo antigo.
-    localStorage.removeItem("dlinkyOwnedSelosClean");
-    localStorage.removeItem("dlinkyActiveSelo");
+    window.DlinkyStore.removeItem("dlinkyOwnedSelosClean");
+    window.DlinkyStore.removeItem("dlinkyActiveSelo");
 
     const all = readJSON(ACCOUNTS_KEY,{});
     if(all[email]){
@@ -7354,10 +7436,10 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function emailKey(v){return String(v||"").toLowerCase().trim()}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
 
   function isNonAdminCleanAccount(){
     const u = readJSON(USER_KEY,{});
@@ -7385,8 +7467,8 @@ document.addEventListener("click",(e)=>{
     saveUser(u);
 
     // Estes eram globais e faziam conta nova puxar selo comprado/cadastrado antigo.
-    localStorage.removeItem("dlinkyOwnedSelosClean");
-    localStorage.removeItem("dlinkyActiveSelo");
+    window.DlinkyStore.removeItem("dlinkyOwnedSelosClean");
+    window.DlinkyStore.removeItem("dlinkyActiveSelo");
 
     const all = readJSON(ACCOUNTS_KEY,{});
     const email = emailKey(u.email);
@@ -7519,8 +7601,8 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function saveUser(u){localStorage.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function saveUser(u){window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));try{if(typeof user!=="undefined"&&user)Object.assign(user,u||{})}catch(e){}}
   function emailKey(v){return String(v||"").toLowerCase().trim()}
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
 
@@ -7559,8 +7641,8 @@ document.addEventListener("click",(e)=>{
     }) : [];
 
     saveUser(u);
-    localStorage.removeItem("dlinkyOwnedSelosClean");
-    localStorage.removeItem("dlinkyActiveSelo");
+    window.DlinkyStore.removeItem("dlinkyOwnedSelosClean");
+    window.DlinkyStore.removeItem("dlinkyActiveSelo");
     return true;
   }
 
@@ -7657,7 +7739,7 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||"{}")}catch(e){return {}}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||"{}")}catch(e){return {}}}
   function emailKey(v){return String(v||"").toLowerCase().trim()}
   function isAdmin(){
     const u = readUser();
@@ -7785,9 +7867,9 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
   function saveLocalUser(u){
-    localStorage.setItem(USER_KEY, JSON.stringify(u || {}));
+    window.DlinkyStore.setItem(USER_KEY, JSON.stringify(u || {}));
     try{
       if(typeof user !== "undefined" && user){
         Object.keys(user).forEach(k=>delete user[k]);
@@ -7914,9 +7996,9 @@ document.addEventListener("click",(e)=>{
           bio: u.bio || "",
           avatar: u.avatar || (() => {
         try {
-          const local = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
+          const local = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}');
           const k = 'dlinkyAvatarPreserve_' + ((u.email || u.slug || local.email || local.slug || 'local').toLowerCase().trim());
-          return local.avatar || localStorage.getItem(k) || '';
+          return local.avatar || window.DlinkyStore.getItem(k) || '';
         } catch(e) { return ''; }
       })(),
           banner: u.banner || "",
@@ -8021,10 +8103,10 @@ document.addEventListener("click",(e)=>{
   }
 
   // Salva no Firebase depois de alterações, sem atrapalhar login/dashboard.
-  if(!localStorage.__dlinkyLinktreeFlowFix){
-    localStorage.__dlinkyLinktreeFlowFix = true;
-    const originalSetItem = localStorage.setItem.bind(localStorage);
-    localStorage.setItem = function(key,value){
+  if(!window.DlinkyStore.__dlinkyLinktreeFlowFix){
+    window.DlinkyStore.__dlinkyLinktreeFlowFix = true;
+    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
+    window.DlinkyStore.setItem = function(key,value){
       const r = originalSetItem(key,value);
       if(key === USER_KEY){
         clearTimeout(window.__dlinkyPublishProfileTimer);
@@ -8062,9 +8144,9 @@ document.addEventListener("click",(e)=>{
   const USER_KEY = "dlinkyUser";
 
   function q(s,r=document){return r.querySelector(s)}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
   function saveLocalUser(u){
-    localStorage.setItem(USER_KEY, JSON.stringify(u || {}));
+    window.DlinkyStore.setItem(USER_KEY, JSON.stringify(u || {}));
     try{
       if(typeof user !== "undefined" && user){
         Object.keys(user).forEach(k=>delete user[k]);
@@ -8236,11 +8318,11 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function getUser(){return readJSON(USER_KEY,{})}
   function saveUser(u){
-    localStorage.setItem(USER_KEY,JSON.stringify(u||{}));
+    window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));
     try{
       if(typeof user !== "undefined" && user){
         Object.keys(user).forEach(k=>delete user[k]);
@@ -8449,11 +8531,11 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function getUser(){return readJSON(USER_KEY,{})}
   function saveUser(u){
-    localStorage.setItem(USER_KEY,JSON.stringify(u||{}));
+    window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));
     try{
       if(typeof user !== "undefined" && user){
         Object.keys(user).forEach(k=>delete user[k]);
@@ -8493,7 +8575,7 @@ document.addEventListener("click",(e)=>{
   }
 
   function removeSpikeFallbacks(){
-    localStorage.removeItem(LAST_KEY);
+    window.DlinkyStore.removeItem(LAST_KEY);
 
     const frames = readJSON(FRAMES_KEY,[]);
     if(Array.isArray(frames)){
@@ -8690,9 +8772,9 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||"{}")}catch(e){return {}}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||"{}")}catch(e){return {}}}
   function writeUser(u){
-    localStorage.setItem(USER_KEY,JSON.stringify(u||{}));
+    window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));
     try{ if(typeof user!=="undefined"&&user) Object.assign(user,u||{}); }catch(e){}
   }
   function clean(v){
@@ -8708,10 +8790,10 @@ document.addEventListener("click",(e)=>{
   function avatar(){
     const u=readUser();
     if(ok(u.avatar)){
-      localStorage.setItem(key(u),clean(u.avatar));
+      window.DlinkyStore.setItem(key(u),clean(u.avatar));
       return clean(u.avatar);
     }
-    const saved=localStorage.getItem(key(u));
+    const saved=window.DlinkyStore.getItem(key(u));
     if(ok(saved)){
       u.avatar=clean(saved);
       writeUser(u);
@@ -8737,17 +8819,17 @@ document.addEventListener("click",(e)=>{
   }
 
   // Protege dlinkyUser: se algum código salvar sem avatar, recoloca o salvo.
-  if(!localStorage.__dlinkyIconCleanSetItem){
-    localStorage.__dlinkyIconCleanSetItem=true;
-    const oldSet=localStorage.setItem.bind(localStorage);
-    localStorage.setItem=function(k,v){
+  if(!window.DlinkyStore.__dlinkyIconCleanSetItem){
+    window.DlinkyStore.__dlinkyIconCleanSetItem=true;
+    const oldSet=window.DlinkyStore.setItem.bind(Firebase);
+    window.DlinkyStore.setItem=function(k,v){
       if(k===USER_KEY){
         try{
           const obj=JSON.parse(v||"{}");
           if(ok(obj.avatar)){
-            localStorage.setItem(key(obj),clean(obj.avatar));
+            window.DlinkyStore.setItem(key(obj),clean(obj.avatar));
           }else{
-            const saved=localStorage.getItem(key(obj));
+            const saved=window.DlinkyStore.getItem(key(obj));
             if(ok(saved)){
               obj.avatar=clean(saved);
               v=JSON.stringify(obj);
@@ -8778,7 +8860,7 @@ document.addEventListener("click",(e)=>{
       const u=readUser();
       u.avatar=clean(e.target.value);
       writeUser(u);
-      localStorage.setItem(key(u),u.avatar);
+      window.DlinkyStore.setItem(key(u),u.avatar);
       setTimeout(apply,80);
     }
   },true);
@@ -8805,9 +8887,9 @@ document.addEventListener("click",(e)=>{
   const USER_KEY='dlinkyUser';
 
   function q(s,r=document){return r.querySelector(s)}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||'{}')}catch(e){return {}}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||'{}')}catch(e){return {}}}
   function writeUser(u){
-    localStorage.setItem(USER_KEY,JSON.stringify(u||{}));
+    window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));
     try{if(typeof user!=='undefined'&&user)Object.assign(user,u||{});}catch(e){}
   }
   function clean(v){
@@ -8823,10 +8905,10 @@ document.addEventListener("click",(e)=>{
   function getAvatar(){
     const u=readUser();
     if(ok(u.avatar)){
-      localStorage.setItem(key(u),clean(u.avatar));
+      window.DlinkyStore.setItem(key(u),clean(u.avatar));
       return clean(u.avatar);
     }
-    const saved=localStorage.getItem(key(u));
+    const saved=window.DlinkyStore.getItem(key(u));
     if(ok(saved)){
       u.avatar=clean(saved);
       writeUser(u);
@@ -8886,17 +8968,17 @@ document.addEventListener("click",(e)=>{
   }
 
   // Protege o dlinkyUser: se algum código salvar sem avatar, restaura.
-  if(!localStorage.__dlinkyAvatarImgRealSetItem){
-    localStorage.__dlinkyAvatarImgRealSetItem=true;
-    const oldSet=localStorage.setItem.bind(localStorage);
-    localStorage.setItem=function(k,v){
+  if(!window.DlinkyStore.__dlinkyAvatarImgRealSetItem){
+    window.DlinkyStore.__dlinkyAvatarImgRealSetItem=true;
+    const oldSet=window.DlinkyStore.setItem.bind(Firebase);
+    window.DlinkyStore.setItem=function(k,v){
       if(k===USER_KEY){
         try{
           const obj=JSON.parse(v||'{}');
           if(ok(obj.avatar)){
-            localStorage.setItem(key(obj),clean(obj.avatar));
+            window.DlinkyStore.setItem(key(obj),clean(obj.avatar));
           }else{
-            const saved=localStorage.getItem(key(obj));
+            const saved=window.DlinkyStore.getItem(key(obj));
             if(ok(saved)){
               obj.avatar=clean(saved);
               v=JSON.stringify(obj);
@@ -8914,7 +8996,7 @@ document.addEventListener("click",(e)=>{
       const u=readUser();
       u.avatar=clean(e.target.value);
       writeUser(u);
-      localStorage.setItem(key(u),u.avatar);
+      window.DlinkyStore.setItem(key(u),u.avatar);
       setTimeout(apply,50);
     }
   },true);
@@ -8959,9 +9041,9 @@ document.addEventListener("click",(e)=>{
   const USER_KEY='dlinkyUser';
 
   function q(s,r=document){return r.querySelector(s)}
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||'{}')}catch(e){return {}}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||'{}')}catch(e){return {}}}
   function writeUser(u){
-    localStorage.setItem(USER_KEY,JSON.stringify(u||{}));
+    window.DlinkyStore.setItem(USER_KEY,JSON.stringify(u||{}));
     try{if(typeof user!=='undefined'&&user)Object.assign(user,u||{});}catch(e){}
   }
   function clean(v){
@@ -8975,10 +9057,10 @@ document.addEventListener("click",(e)=>{
   function getAvatar(){
     const u=readUser();
     if(ok(u.avatar)){
-      localStorage.setItem(key(u),clean(u.avatar));
+      window.DlinkyStore.setItem(key(u),clean(u.avatar));
       return clean(u.avatar);
     }
-    const saved=localStorage.getItem(key(u)) || localStorage.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'));
+    const saved=window.DlinkyStore.getItem(key(u)) || window.DlinkyStore.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'));
     if(ok(saved)){
       u.avatar=clean(saved);
       writeUser(u);
@@ -9063,7 +9145,7 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){ return r.querySelector(s); }
   function readUser(){
-    try { return JSON.parse(localStorage.getItem(USER_KEY) || "{}"); }
+    try { return JSON.parse(window.DlinkyStore.getItem(USER_KEY) || "{}"); }
     catch(e){ return {}; }
   }
   function clean(v){
@@ -9083,10 +9165,10 @@ document.addEventListener("click",(e)=>{
   function getAvatar(){
     const u = readUser();
     if(ok(u.avatar)){
-      localStorage.setItem(avatarBackupKey(u), clean(u.avatar));
+      window.DlinkyStore.setItem(avatarBackupKey(u), clean(u.avatar));
       return clean(u.avatar);
     }
-    return clean(localStorage.getItem(avatarBackupKey(u)) || "");
+    return clean(window.DlinkyStore.getItem(avatarBackupKey(u)) || "");
   }
   function applyAvatar(){
     const url = getAvatar();
@@ -9162,8 +9244,8 @@ document.addEventListener("click",(e)=>{
   function slug(v){return 'frame_'+Math.abs([...String(v||'frame')].reduce((a,c)=>((a<<5)-a+c.charCodeAt(0))|0,0));}
   function num(v){const n=Number(String(v??'').replace(/[^0-9.,-]/g,'').replace(',','.'));return Number.isFinite(n)?n:0;}
   function norm(v){return String(v||'').trim().toLowerCase();}
-  function read(k,fb){try{return JSON.parse(localStorage.getItem(k)||'')??fb}catch(e){return fb}}
-  function write(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+  function read(k,fb){try{return JSON.parse(window.DlinkyStore.getItem(k)||'')??fb}catch(e){return fb}}
+  function write(k,v){try{window.DlinkyStore.setItem(k,JSON.stringify(v))}catch(e){}}
   function userData(){const u=read(USER_KEY,{});u.inventory=Array.isArray(u.inventory)?u.inventory:[];u.purchases=Array.isArray(u.purchases)?u.purchases:[];u.coins=Number(u.coins??u.linkwuans??0);u.linkwuans=u.coins;return u;}
   function saveUser(u){u.coins=Number(u.coins??u.linkwuans??0);u.linkwuans=u.coins;write(USER_KEY,u);try{if(typeof user!=='undefined'&&user)Object.assign(user,u)}catch(e){};try{if(window.user)Object.assign(window.user,u)}catch(e){};saveOnline(u);}
   async function saveOnline(u){try{if(!window.firebase||!firebase.auth||!firebase.firestore)return;const fb=firebase.auth().currentUser;if(!fb)return;const db=firebase.firestore();await db.collection('users').doc(fb.uid).set(Object.assign({},u,{updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});if(u.slug)await db.collection('profiles').doc(u.slug).set({uid:fb.uid,name:u.name||'Usuário',slug:u.slug,email:u.email||'',bio:u.bio||'',avatar:u.avatar||'',banner:u.banner||'',bg:u.bg||'',video:u.video||'',frame:u.frame||'',frameUrl:u.frameUrl||u.frame||'',activeFrameId:u.activeFrameId||'',frameAdjustments:u.frameAdjustments||{},music:u.music||'',color:u.color||'#a855f7',particleType:u.particleType||'snow',particles:u.particles!==false,verified:!!u.verified,links:Array.isArray(u.links)?u.links:[],socials:Array.isArray(u.socials)?u.socials:[],tags:Array.isArray(u.tags)?u.tags:[],embeds:Array.isArray(u.embeds)?u.embeds:[],decoration:u.decoration||'',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});}catch(e){console.warn('Dlinky V3 saveOnline',e)}}
@@ -9231,7 +9313,7 @@ document.addEventListener("click",(e)=>{
 
   function readUser(){
     try{
-      const stored = JSON.parse(localStorage.getItem(USER_KEY) || '{}');
+      const stored = JSON.parse(window.DlinkyStore.getItem(USER_KEY) || '{}');
       if(typeof user !== 'undefined' && user && typeof user === 'object') return Object.assign({}, stored, user);
       return stored;
     }catch(e){
@@ -9251,10 +9333,10 @@ document.addEventListener("click",(e)=>{
   function getAvatar(u){
     const av = clean(u.avatar || '');
     if(ok(av)){
-      try{ localStorage.setItem(avatarKey(u), av); }catch(e){}
+      try{ window.DlinkyStore.setItem(avatarKey(u), av); }catch(e){}
       return av;
     }
-    return clean(localStorage.getItem(avatarKey(u)) || localStorage.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')) || '');
+    return clean(window.DlinkyStore.getItem(avatarKey(u)) || window.DlinkyStore.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')) || '');
   }
   function getFrame(u){
     return clean(u.frame || u.frameUrl || '');
@@ -9361,7 +9443,7 @@ document.addEventListener("click",(e)=>{
    DLINKY — FIX DEFINITIVO INVENTÁRIO DE MOLDURAS 2026
    Problema: patches antigos salvavam dlinkyUser sem inventory/frame
    ao abrir perfil/voltar para dashboard. Esta trava cria um backup por
-   conta e mescla molduras antes de qualquer gravação em localStorage.
+   conta e mescla molduras antes de qualquer gravação em window.DlinkyStore.
    Mexe só em: inventory de molduras, frame ativo e ajustes.
    ========================================================= */
 (function(){
@@ -9379,8 +9461,8 @@ document.addEventListener("click",(e)=>{
   const frameUrl = it => String(it?.url || it?.frameUrl || it?.image || it?.src || '').trim();
   const makeId = it => String(it?.id || it?.frameId || ('frame_' + Math.abs([...norm(frameUrl(it)||it?.name||Date.now())].reduce((a,c)=>((a<<5)-a+c.charCodeAt(0))|0,0))));
 
-  function readJSON(k,fb){ try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(fb));}catch(e){return fb;} }
-  function rawWrite(k,v){ try{ localStorage.setItem.__dlinkyOriginal ? localStorage.setItem.__dlinkyOriginal(k,v) : Storage.prototype.setItem.call(localStorage,k,v); }catch(e){ try{Storage.prototype.setItem.call(localStorage,k,v)}catch(_){} } }
+  function readJSON(k,fb){ try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(fb));}catch(e){return fb;} }
+  function rawWrite(k,v){ try{ window.DlinkyStore.setItem.__dlinkyOriginal ? window.DlinkyStore.setItem.__dlinkyOriginal(k,v) : Storage.prototype.setItem.call(Firebase,k,v); }catch(e){ try{Storage.prototype.setItem.call(Firebase,k,v)}catch(_){} } }
   function accountKey(u){
     const email = String(u?.email||'').toLowerCase().trim();
     const slug = String(u?.slug||'').toLowerCase().trim();
@@ -9463,8 +9545,8 @@ document.addEventListener("click",(e)=>{
   }
 
   // Captura qualquer gravação antiga em dlinkyUser e impede ela de apagar molduras compradas.
-  if(!localStorage.setItem.__dlinkyFrameVaultPatched){
-    const original = localStorage.setItem.bind(localStorage);
+  if(!window.DlinkyStore.setItem.__dlinkyFrameVaultPatched){
+    const original = window.DlinkyStore.setItem.bind(Firebase);
     const patched = function(key,value){
       if(key === USER_KEY){
         try{
@@ -9478,7 +9560,7 @@ document.addEventListener("click",(e)=>{
     };
     patched.__dlinkyOriginal = original;
     patched.__dlinkyFrameVaultPatched = true;
-    localStorage.setItem = patched;
+    window.DlinkyStore.setItem = patched;
   }
 
   function currentUser(){
@@ -9600,7 +9682,7 @@ document.addEventListener("click",(e)=>{
   const norm=u=>String(u||'').trim().replace(/^url\(["']?|["']?\)$/g,'').split('?')[0];
   const clean=a=>({x:Number(a&&a.x)||0,y:Number(a&&a.y)||0,scale:Math.max(.2,Number(a&&a.scale)||1),rotate:Number(a&&a.rotate)||0});
   const isFrame=it=>!!(it&&(it.type==='frame'||it.type==='frames'||it.kind==='frame'||/moldura|frame/i.test(String(it.name||''))||/\.(gif|png|webp|apng|svg)(\?|#|$)/i.test(String(it.url||''))||String(it.url||'').startsWith('data:image/svg+xml')));
-  function saveUserNow(){ try{ localStorage.setItem('dlinkyUser',JSON.stringify(window.user||user)); }catch(e){} }
+  function saveUserNow(){ try{ window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(window.user||user)); }catch(e){} }
   function findEditingFrame(){
     const u=window.user||user;
     u.inventory=Array.isArray(u.inventory)?u.inventory:[];
@@ -9662,7 +9744,7 @@ document.addEventListener("click",(e)=>{
   const norm=v=>String(v||'').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/\\/g,'/').split('?')[0].toLowerCase();
   const isFrame=it=>!!(it&&(it.url||/moldura|frame/i.test(String(it.name||''))||/frame/i.test(String(it.type||it.kind||''))));
   const frameUrl=it=>String((it&&(it.url||it.value||it.src))||'');
-  function readUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||'{}')}catch(e){return (window.user||{})}}
+  function readUser(){try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||'{}')}catch(e){return (window.user||{})}}
   function clean(a){let s=Number(a&&a.scale); if(!s)s=1; if(s>10)s=s/100; return {x:Number(a&&a.x)||0,y:Number(a&&a.y)||0,scale:s,rotate:Number(a&&a.rotate)||0};}
   function makeId(it){if(!it)return''; if(it.id)return String(it.id); return 'frame_'+(norm(frameUrl(it))||String(it.name||'moldura')).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(-70);}
   function activeFrame(u){const inv=Array.isArray(u.inventory)?u.inventory:[];const frames=inv.filter(isFrame);return frames.find(it=>String(makeId(it))===String(u.activeFrameId))||frames.find(it=>norm(frameUrl(it))===norm(u.frame||u.frameUrl))||frames[0];}
@@ -9714,7 +9796,7 @@ document.addEventListener("click",(e)=>{
   const makeId=it=>String((it&&(it.id||it.frameId))||('frame_'+(norm(urlOf(it))||String(it&&it.name||'moldura')).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(-80)));
   const clean=a=>{let s=Number(a&&a.scale); if(!s) s=1; if(s>10) s=s/100; return {x:Number(a&&a.x)||0,y:Number(a&&a.y)||0,scale:Math.max(.2,Math.min(3,s)),rotate:Number(a&&a.rotate)||0};};
   function u(){return window.user||user;}
-  function save(){try{localStorage.setItem('dlinkyUser',JSON.stringify(u()));}catch(e){}}
+  function save(){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(u()));}catch(e){}}
   function ensure(){const user=u(); user.inventory=Array.isArray(user.inventory)?user.inventory:[]; user.frameAdjustments=user.frameAdjustments||{}; user.frameAdjust=user.frameAdjust||{}; user.inventory.forEach(it=>{if(isFrame(it)){it.id=makeId(it); it.url=urlOf(it); it.type=it.type||'frames';}});}
   function frameById(id){ensure(); const user=u(); return user.inventory.find(it=>isFrame(it)&&(String(makeId(it))===String(id)||norm(urlOf(it))===norm(id))) || user.inventory.find(it=>isFrame(it)&&norm(urlOf(it))===norm(user.frame||user.frameUrl)) || user.inventory.find(isFrame);}
   function activeFrame(){ensure(); const user=u(); return frameById(user.activeFrameId)||frameById(user.frame);}
@@ -9770,8 +9852,8 @@ document.addEventListener("click",(e)=>{
       .split('?')[0]
       .toLowerCase();
   }
-  function read(k,fb){ try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(fb));}catch(e){return fb;} }
-  function write(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
+  function read(k,fb){ try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(fb));}catch(e){return fb;} }
+  function write(k,v){ try{window.DlinkyStore.setItem(k,JSON.stringify(v));}catch(e){} }
   function urlOf(it){ return normUrl(it && (it.url || it.frameUrl || it.image || it.src || it.value || it.frame)); }
   function nameOf(it){ return normText(it && (it.name || it.nome || it.title || it.frameName)); }
   function idOf(it){ return normText(it && (it.id || it.frameId || it.value)); }
@@ -9867,7 +9949,7 @@ document.addEventListener("click",(e)=>{
   }
 
   function cleanEverything(){
-    localStorage.removeItem(LAST_KEY);
+    window.DlinkyStore.removeItem(LAST_KEY);
     cleanArrayKey(CUSTOM_FRAMES_KEY);
     cleanArrayKey(OLD_FRAMES_KEY);
     cleanVault();
@@ -9879,8 +9961,8 @@ document.addEventListener("click",(e)=>{
   }
 
   // Protege contra qualquer patch antigo que tente salvar essas duas molduras de volta.
-  if(!localStorage.setItem.__dlinkyRemoveFakeFramesPatched){
-    const originalSetItem = localStorage.setItem.bind(localStorage);
+  if(!window.DlinkyStore.setItem.__dlinkyRemoveFakeFramesPatched){
+    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
     const patched = function(key, value){
       try{
         if(key === USER_KEY){ value = JSON.stringify(cleanUserObject(JSON.parse(value || '{}'))); }
@@ -9901,7 +9983,7 @@ document.addEventListener("click",(e)=>{
       return originalSetItem(key, value);
     };
     patched.__dlinkyRemoveFakeFramesPatched = true;
-    localStorage.setItem = patched;
+    window.DlinkyStore.setItem = patched;
   }
 
   const oldRenderInventory = window.renderInventory;
@@ -9956,13 +10038,13 @@ document.addEventListener("click",(e)=>{
 
   function getUser(){
     try{
-      const data = JSON.parse(localStorage.getItem(USER_KEY)||'{}') || {};
+      const data = JSON.parse(window.DlinkyStore.getItem(USER_KEY)||'{}') || {};
       if(typeof window.user === 'object' && window.user) Object.assign(window.user, data);
       return (typeof window.user === 'object' && window.user) ? window.user : data;
     }catch(e){ return (typeof window.user === 'object' && window.user) ? window.user : {}; }
   }
   function saveUser(u){
-    try{ localStorage.setItem(USER_KEY, JSON.stringify(u)); }catch(e){}
+    try{ window.DlinkyStore.setItem(USER_KEY, JSON.stringify(u)); }catch(e){}
     try{ if(typeof window.user === 'object' && window.user) Object.assign(window.user, u); }catch(e){}
   }
   function frames(){
@@ -10121,8 +10203,8 @@ document.addEventListener("click",(e)=>{
       .split('?')[0]
       .toLowerCase();
   }
-  function read(k,fb){ try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(fb));}catch(e){return fb;} }
-  function rawWrite(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  function read(k,fb){ try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(fb));}catch(e){return fb;} }
+  function rawWrite(k,v){ try{ window.DlinkyStore.setItem(k, JSON.stringify(v)); }catch(e){} }
   function urlOf(it){ return String((it && (it.url || it.frameUrl || it.image || it.src || it.value || it.frame)) || '').trim(); }
   function isImgUrl(v){ v=norm(v); return v.startsWith('data:image/') || /\.(png|apng|gif|webp|jpg|jpeg|svg)$/.test(v); }
   function isFrameItem(it){
@@ -10189,7 +10271,7 @@ document.addEventListener("click",(e)=>{
     if(changed) rawWrite(VAULT_KEY, vault);
   }
   function cleanAll(){
-    try{ localStorage.removeItem(LAST_KEY); }catch(e){}
+    try{ window.DlinkyStore.removeItem(LAST_KEY); }catch(e){}
     const registered = registeredFrames();
     // dlinkyFrames antigo não pode guardar moldura que já foi apagada no Admin.
     rawWrite(OLD_KEY, registered);
@@ -10202,8 +10284,8 @@ document.addEventListener("click",(e)=>{
   }
 
   // Impede qualquer código antigo de salvar de volta moldura não cadastrada.
-  if(!localStorage.setItem.__dlinkyStrictRegisteredFrames){
-    const original = localStorage.setItem.bind(localStorage);
+  if(!window.DlinkyStore.setItem.__dlinkyStrictRegisteredFrames){
+    const original = window.DlinkyStore.setItem.bind(Firebase);
     const patched = function(key, value){
       try{
         if(key === OLD_KEY){ value = JSON.stringify(registeredFrames()); }
@@ -10228,7 +10310,7 @@ document.addEventListener("click",(e)=>{
       return original(key, value);
     };
     patched.__dlinkyStrictRegisteredFrames = true;
-    localStorage.setItem = patched;
+    window.DlinkyStore.setItem = patched;
   }
 
   function wrap(name){
@@ -10260,9 +10342,9 @@ document.addEventListener("click",(e)=>{
   const clean=a=>({x:Number(a&&a.x)||0,y:Number(a&&a.y)||0,scale:Math.max(.2,Number(a&&a.scale)||1),rotate:Number(a&&a.rotate)||0});
   const transform=a=>{a=clean(a);return `translate(calc(-50% + ${a.x}px),calc(-50% + ${a.y}px)) scale(${a.scale}) rotate(${a.rotate}deg)`};
   const isFrame=it=>!!(it&&(it.type==='frame'||it.kind==='frame'||/moldura|frame/i.test(String(it.name||''))||/\.(gif|png|webp|apng|svg)(\?|#|$)/i.test(String(it.url||it.src||it.image||''))));
-  function registered(){try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')||[]}catch(e){return []}}
+  function registered(){try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')||[]}catch(e){return []}}
   function allowed(){return new Set(registered().map(f=>norm(f.url||f.image||f.src)).filter(Boolean))}
-  function save(){try{localStorage.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
+  function save(){try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}}
   function idFor(it){
     if(it.id)return String(it.id);
     const raw=(norm(it.url||it.image||it.src)||String(it.name||'moldura')).replace(/[^a-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'');
@@ -10374,8 +10456,8 @@ document.addEventListener("click",(e)=>{
   let saveTimer = null;
 
   function log(){ try{ console.log.apply(console, ['[Dlinky Global]'].concat([].slice.call(arguments))); }catch(e){} }
-  function readJSON(key, fallback){ try{ const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }catch(e){ return fallback; } }
-  function writeJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
+  function readJSON(key, fallback){ try{ const raw = window.DlinkyStore.getItem(key); return raw ? JSON.parse(raw) : fallback; }catch(e){ return fallback; } }
+  function writeJSON(key, value){ try{ window.DlinkyStore.setItem(key, JSON.stringify(value)); }catch(e){} }
   function arr(v){ return Array.isArray(v) ? v : []; }
   function cleanUrl(v){ return String(v || '').trim(); }
   function hash(v){ let h=0; String(v||'').split('').forEach(ch=>{ h=((h<<5)-h+ch.charCodeAt(0))|0; }); return Math.abs(h).toString(36); }
@@ -10520,10 +10602,10 @@ document.addEventListener("click",(e)=>{
   function patchLocalStorage(){
     if(window.__DLINKY_GLOBAL_FIREBASE_STORAGE_PATCH__) return;
     window.__DLINKY_GLOBAL_FIREBASE_STORAGE_PATCH__ = true;
-    const originalSetItem = localStorage.setItem.bind(localStorage);
-    const originalRemoveItem = localStorage.removeItem.bind(localStorage);
+    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
+    const originalRemoveItem = window.DlinkyStore.removeItem.bind(Firebase);
 
-    localStorage.setItem = function(key, value){
+    window.DlinkyStore.setItem = function(key, value){
       const result = originalSetItem(key, value);
       if(!syncingFromCloud && Object.values(KEYS).includes(key)){
         scheduleUpload('set-' + key);
@@ -10531,7 +10613,7 @@ document.addEventListener("click",(e)=>{
       return result;
     };
 
-    localStorage.removeItem = function(key){
+    window.DlinkyStore.removeItem = function(key){
       const result = originalRemoveItem(key);
       if(!syncingFromCloud && Object.values(KEYS).includes(key)){
         scheduleUpload('remove-' + key);
@@ -10591,13 +10673,13 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){ return r.querySelector(s); }
   function readUser(){
-    try{return JSON.parse(localStorage.getItem(USER_KEY)||'{}')}catch(e){return {}}
+    try{return JSON.parse(window.DlinkyStore.getItem(USER_KEY)||'{}')}catch(e){return {}}
   }
   function cleanSlugSafe(v){
     return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario';
   }
   function writeUser(u){
-    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    window.DlinkyStore.setItem(USER_KEY, JSON.stringify(u));
     try{
       if(typeof user !== 'undefined' && user){
         Object.keys(user).forEach(k=>delete user[k]);
@@ -10734,8 +10816,8 @@ document.addEventListener("click",(e)=>{
   const q = (s,r=document)=>r.querySelector(s);
   const qa = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
-  function readJSON(key, fallback){ try{ const raw=localStorage.getItem(key); return raw?JSON.parse(raw):fallback; }catch(e){ return fallback; } }
-  function writeJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
+  function readJSON(key, fallback){ try{ const raw=window.DlinkyStore.getItem(key); return raw?JSON.parse(raw):fallback; }catch(e){ return fallback; } }
+  function writeJSON(key, value){ try{ window.DlinkyStore.setItem(key, JSON.stringify(value)); }catch(e){} }
   function cleanSlug(v){ return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario'; }
   function localUser(){ return readJSON(USER_KEY, {}); }
   function syncUser(u){
@@ -10795,8 +10877,8 @@ document.addEventListener("click",(e)=>{
   }, true);
 
   // Se o Firebase tentar voltar para nome/link antigo do e-mail, força o que você salvou manualmente.
-  const oldSetItem=localStorage.setItem.bind(localStorage);
-  localStorage.setItem=function(key,value){
+  const oldSetItem=window.DlinkyStore.setItem.bind(Firebase);
+  window.DlinkyStore.setItem=function(key,value){
     const result=oldSetItem(key,value);
     if(key===USER_KEY){ setTimeout(()=>applyPreferred(false),30); }
     return result;
@@ -10956,8 +11038,8 @@ document.addEventListener("click",(e)=>{
 
   function q(s,r=document){ return r.querySelector(s); }
   function qa(s,r=document){ return Array.from(r.querySelectorAll(s)); }
-  function readJSON(k,f){ try{ return JSON.parse(localStorage.getItem(k) || JSON.stringify(f)); }catch(e){ return f; } }
-  function writeJSON(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+  function readJSON(k,f){ try{ return JSON.parse(window.DlinkyStore.getItem(k) || JSON.stringify(f)); }catch(e){ return f; } }
+  function writeJSON(k,v){ window.DlinkyStore.setItem(k, JSON.stringify(v)); }
   function aviso(t){ try{ if(typeof toast === "function") return toast(t); }catch(e){} alert(t); }
   function clean(v){ return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_-]/g,"").slice(0,30) || "usuario"; }
   function pageOff(){ qa(".page").forEach(p=>p.classList.remove("active")); }
@@ -11141,8 +11223,8 @@ document.addEventListener("click",(e)=>{
   const DRAFT_KEY = 'dlinkyCustomDraft_v1';
   const q = (s,r=document)=>r.querySelector(s);
 
-  function readJSON(k,f){ try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):f; }catch(e){ return f; } }
-  function writeJSON(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+  function readJSON(k,f){ try{ const raw=window.DlinkyStore.getItem(k); return raw?JSON.parse(raw):f; }catch(e){ return f; } }
+  function writeJSON(k,v){ try{ window.DlinkyStore.setItem(k,JSON.stringify(v)); }catch(e){} }
   function cleanSlug(v){ return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario'; }
   function readUser(){ return readJSON(USER_KEY,{}); }
   function syncUser(patch){
@@ -11294,8 +11376,8 @@ document.addEventListener("click",(e)=>{
   const DRAFT_KEY = 'dlinkyLiveDraft_Final_v3';
   const q = (s,r=document)=>r.querySelector(s);
 
-  function readJSON(k,f){ try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):f; }catch(e){ return f; } }
-  function writeJSON(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+  function readJSON(k,f){ try{ const raw=window.DlinkyStore.getItem(k); return raw?JSON.parse(raw):f; }catch(e){ return f; } }
+  function writeJSON(k,v){ try{ window.DlinkyStore.setItem(k,JSON.stringify(v)); }catch(e){} }
   function cleanSlug(v){ return String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario'; }
   function getUser(){ return readJSON(USER_KEY,{}); }
   function setGlobalUser(u){
@@ -11486,8 +11568,8 @@ document.addEventListener("click",(e)=>{
   const DRAFT_KEYS = ['dlinkyLiveDraft_Final_v3','dlinkyCustomDraft_v1','dlinkyPreferredAccount'];
   const q = (s,r=document)=>r.querySelector(s);
   const cleanSlug = v => String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario';
-  function readJSON(k,f){try{const raw=localStorage.getItem(k);return raw?JSON.parse(raw):f;}catch(e){return f;}}
-  function writeJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+  function readJSON(k,f){try{const raw=window.DlinkyStore.getItem(k);return raw?JSON.parse(raw):f;}catch(e){return f;}}
+  function writeJSON(k,v){try{window.DlinkyStore.setItem(k,JSON.stringify(v));}catch(e){}}
   function getUser(){return readJSON(USER_KEY,{});}
   function setUser(patch){
     const old=getUser();
@@ -11665,14 +11747,14 @@ document.addEventListener("click",(e)=>{
   const DURATIONS = ['3 dias','7 dias','15 dias','Permanente'];
 
   let rendering = false;
-  let lastMode = normMode(localStorage.getItem(MODE_KEY) || 'coins');
+  let lastMode = normMode(window.DlinkyStore.getItem(MODE_KEY) || 'coins');
   let restoreTimer = null;
 
   function q(s,r=document){return r.querySelector(s)}
   function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
   function esc(v){return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-  function readJSON(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch(e){return f}}
-  function writeJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function readJSON(k,f){try{return JSON.parse(window.DlinkyStore.getItem(k)||JSON.stringify(f))}catch(e){return f}}
+  function writeJSON(k,v){window.DlinkyStore.setItem(k,JSON.stringify(v))}
   function toastMsg(t){try{if(typeof window.toast==='function')return window.toast(t)}catch(e){}}
   function storeRoot(){return q('#tab-store')}
   function shopGrid(){const s=storeRoot();return s?q('#shopGrid',s):q('#shopGrid')}
@@ -11683,8 +11765,8 @@ document.addEventListener("click",(e)=>{
     if(m.includes('other')||m.includes('out')||m.includes('selo')||m.includes('insign')) return 'other';
     return 'coins';
   }
-  function setMode(m){lastMode=normMode(m);localStorage.setItem(MODE_KEY,lastMode);return lastMode}
-  function getMode(){return normMode(lastMode || localStorage.getItem(MODE_KEY) || 'coins')}
+  function setMode(m){lastMode=normMode(m);window.DlinkyStore.setItem(MODE_KEY,lastMode);return lastMode}
+  function getMode(){return normMode(lastMode || window.DlinkyStore.getItem(MODE_KEY) || 'coins')}
   function getUser(){
     const saved=readJSON(USER_KEY,{});
     try{if(window.user&&typeof window.user==='object')return Object.assign(window.user,saved)}catch(e){}
@@ -11866,7 +11948,7 @@ document.addEventListener("click",(e)=>{
   const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   function num(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
   function frames(){
-    try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch(e){return []}
+    try{return JSON.parse(window.DlinkyStore.getItem('dlinkyCustomFrames')||'[]')}catch(e){return []}
   }
   function avatar(){return (window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||''}
   function apply(){
@@ -11921,7 +12003,7 @@ document.addEventListener("click",(e)=>{
 
   function readUser(){
     try{
-      const saved = JSON.parse(localStorage.getItem('dlinkyUser') || '{}');
+      const saved = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}');
       if(typeof user === 'object' && user){ return Object.assign({}, saved, user); }
       return saved;
     }catch(e){
@@ -11944,8 +12026,8 @@ document.addEventListener("click",(e)=>{
       u.photo,
       u.photoURL,
       u.avatarUrl,
-      localStorage.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')),
-      localStorage.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')),
+      window.DlinkyStore.getItem('dlinky_avatar_clean_'+(u.email||u.slug||'local')),
+      window.DlinkyStore.getItem('dlinkyAvatarPreserve_'+(u.email||u.slug||'local')),
       fromElement('#dashAvatar'),
       fromElement('#sideAvatar'),
       fromElement('#profileAvatar'),
@@ -11969,8 +12051,8 @@ document.addEventListener("click",(e)=>{
     // Mantém salvo para próximos renders sem mexer nos outros dados.
     try{
       const u = readUser();
-      if(u && !u.avatar){ u.avatar = av; localStorage.setItem('dlinkyUser', JSON.stringify(u)); }
-      localStorage.setItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'), av);
+      if(u && !u.avatar){ u.avatar = av; window.DlinkyStore.setItem('dlinkyUser', JSON.stringify(u)); }
+      window.DlinkyStore.setItem('dlinky_avatar_clean_'+(u.email||u.slug||'local'), av);
     }catch(e){}
 
     const targets = qa('.frame-avatar-demo,.zyo-person-demo,.real-inv-avatar,.inv-avatar-preview', store);
@@ -12064,11 +12146,11 @@ document.addEventListener("click",(e)=>{
   function getTextNumber(s){const m=String(s||'').match(/\d+/);return m?Number(m[0]):0}
   function readUser(){
     try{ if(typeof user==='object' && user) return user; }catch(e){}
-    try{return JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}catch(e){return {}}
+    try{return JSON.parse(window.DlinkyStore.getItem('dlinkyUser')||'{}')}catch(e){return {}}
   }
   function saveUserSafe(u){
     try{ if(typeof user==='object' && user) Object.assign(user,u); }catch(e){}
-    localStorage.setItem('dlinkyUser', JSON.stringify(u));
+    window.DlinkyStore.setItem('dlinkyUser', JSON.stringify(u));
     try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
     try{ if(typeof renderInventory==='function') renderInventory(); }catch(e){}
     try{ if(typeof applyProfileFrame==='function') applyProfileFrame(); }catch(e){}
@@ -12145,12 +12227,12 @@ document.addEventListener("click",(e)=>{
 
 
 
-/* ===== FIX DEFINITIVO CONTAS SEPARADAS: perfil pessoal por email, loja global ===== */
+/* ===== FIX CONTAS SEPARADAS LIMPO — NÃO MEXE EM MOLDURAS/LOJA ===== */
 (function(){
-  if(window.__dlinkyAccountsCleanFinalV2) return;
-  window.__dlinkyAccountsCleanFinalV2 = true;
+  if(window.__dlinkyContasSeparadasSemMexerMoldura) return;
+  window.__dlinkyContasSeparadasSemMexerMoldura = true;
 
-  const q = (s,r=document)=>r.querySelector(s);
+  const $fix = (s,r=document)=>r.querySelector(s);
 
   function normEmail(v){
     return String(v || "").trim().toLowerCase();
@@ -12165,33 +12247,22 @@ document.addEventListener("click",(e)=>{
       .slice(0,30) || "usuario";
   }
 
-  function read(k,fb){
-    try{
-      const raw = localStorage.getItem(k);
-      if(!raw) return fb;
-      return JSON.parse(raw);
-    }catch(e){
-      return fb;
-    }
+  function readJSON(k,fb){
+    try{return JSON.parse(window.DlinkyStore.getItem(k) || JSON.stringify(fb));}
+    catch(e){return fb;}
   }
 
-  function write(k,v){
-    localStorage.setItem(k, JSON.stringify(v));
+  function writeJSON(k,v){
+    window.DlinkyStore.setItem(k, JSON.stringify(v));
     try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
   }
 
-  function key(email){
-    return "dlinkyAccountUser_" + normEmail(email);
-  }
-
-  function blankAccount(data){
-    const email = normEmail(data.email);
-    const slug = cleanSlugLocal(data.slug || (email ? email.split("@")[0] : "usuario"));
-
+  function makeBlankUser({name,slug,email}){
+    const finalSlug = cleanSlugLocal(slug || (email ? email.split("@")[0] : "usuario"));
     return {
-      name: data.name || slug,
-      slug,
-      email,
+      name: name || finalSlug,
+      slug: finalSlug,
+      email: normEmail(email),
 
       bio:"",
       avatar:"",
@@ -12199,11 +12270,8 @@ document.addEventListener("click",(e)=>{
       bg:"",
       video:"",
       frame:"",
-      frameUrl:"",
-      frameName:"",
       music:"",
       welcome:"Clique aqui",
-
       color:"#a855f7",
       particles:true,
       particleType:"snow",
@@ -12218,8 +12286,10 @@ document.addEventListener("click",(e)=>{
       purchases:[],
       embeds:[],
       tags:[],
+
       links:[],
       socials:[],
+      history:["Conta criada no Dlinky"],
 
       opacity:100,
       blur:0,
@@ -12229,291 +12299,133 @@ document.addEventListener("click",(e)=>{
       cardColor:"#06030b",
       textColor:"#ffffff",
       bioColor:"#eeeeee",
-      bgFx:"none",
-
-      history:["Conta criada no Dlinky"]
+      bgFx:"none"
     };
   }
 
-  function clearVisualCaches(email){
-    email = normEmail(email);
-    const suffixes = [
-      email,
-      (window.user && user.slug) || "",
-      "local"
-    ].filter(Boolean);
-
-    suffixes.forEach(s=>{
-      localStorage.removeItem("dlinky_avatar_clean_" + s);
-      localStorage.removeItem("dlinkyAvatarPreserve_" + s);
-    });
-  }
-
-  function setCurrentAccount(acc){
-    window.user = acc;
-    try{ user = acc; }catch(e){}
-
-    localStorage.setItem("dlinkyCurrentEmail", normEmail(acc.email));
-    write("dlinkyUser", acc);
-    write(key(acc.email), acc);
-
-    clearWrongVisualDOM();
-
-    setTimeout(()=>{
-      try{ renderDash(); }catch(e){}
-    },80);
-  }
-
-  function clearWrongVisualDOM(){
-    // Limpa visual que ficou preso no DOM da conta anterior.
-    ["#dashAvatar","#sideAvatar","#profileAvatar"].forEach(sel=>{
-      const el = q(sel);
-      if(!el) return;
-      el.style.backgroundImage = "none";
-      el.style.background = "";
-      if(el.tagName === "IMG"){
-        el.removeAttribute("src");
-      }
-    });
-
-    ["#cfgAvatar","#cfgBanner","#cfgBg","#cfgVideo","#cfgFrame"].forEach(sel=>{
-      const el = q(sel);
-      if(el && (!window.user || !user.avatar)){
-        // o renderDash depois preenche certo
-      }
-    });
+  function accountKey(email){
+    return "dlinkyUserAccount_" + normEmail(email);
   }
 
   function saveCurrent(){
     if(!window.user || !user.email) return;
-    write(key(user.email), user);
-    localStorage.setItem("dlinkyCurrentEmail", normEmail(user.email));
-    write("dlinkyUser", user);
+    writeJSON(accountKey(user.email), user);
+    window.DlinkyStore.setItem("dlinkyCurrentEmail", normEmail(user.email));
+    writeJSON("dlinkyUser", user);
   }
 
   function loadByEmail(email){
     email = normEmail(email);
     if(!email) return null;
 
-    let acc = read(key(email), null);
+    let saved = readJSON(accountKey(email), null);
 
-    // Se o usuário atual salvo é exatamente esse email, migra.
-    const currentGlobal = read("dlinkyUser", null);
-    if(!acc && currentGlobal && normEmail(currentGlobal.email) === email){
-      acc = currentGlobal;
-      write(key(email), acc);
+    if(!saved){
+      saved = makeBlankUser({email});
+      writeJSON(accountKey(email), saved);
     }
 
-    // Se nunca existiu, cria limpo.
-    if(!acc){
-      acc = blankAccount({email});
-      write(key(email), acc);
-    }
+    window.user = saved;
+    try{ user = saved; }catch(e){}
 
-    setCurrentAccount(acc);
-    return acc;
+    window.DlinkyStore.setItem("dlinkyCurrentEmail", email);
+    writeJSON("dlinkyUser", saved);
+
+    return saved;
   }
 
-  // Corrige setBg para não deixar imagem antiga grudada quando URL vazia.
-  window.setBg = function(el,url){
-    if(!el) return;
-    url = String(url || "").trim();
-
-    if(el.tagName === "IMG"){
-      if(url){
-        el.src = url;
-        el.style.display = "block";
-      }else{
-        el.removeAttribute("src");
-        el.style.display = "none";
-      }
-      return;
-    }
-
-    if(url){
-      el.style.backgroundImage = `url("${url}")`;
-    }else{
-      el.style.backgroundImage = "none";
-      el.style.background = "";
-    }
-  };
-  try{ setBg = window.setBg; }catch(e){}
-
-  // Salvar sempre salva dentro da conta do email atual.
+  // troca saveUser só para salvar na conta do email atual
   window.saveUser = function(){
     saveCurrent();
-    try{ renderDash(); }catch(e){}
-    try{ toast("Salvo com sucesso!"); }catch(e){}
+    try{renderDash();}catch(e){}
+    try{toast("Salvo com sucesso!");}catch(e){}
   };
   try{ saveUser = window.saveUser; }catch(e){}
 
-  window.addHistory = function(t){
-    if(!user.history) user.history = [];
-    user.history = [
-      `${new Date().toLocaleString("pt-BR")} — ${t}`,
-      ...user.history
-    ].slice(0,20);
-    saveCurrent();
-  };
-  try{ addHistory = window.addHistory; }catch(e){}
-
-  // Registro: cria conta LIMPA, sem puxar foto/nome/fundo da conta anterior.
-  const reg = q("#registerForm");
+  // registro: cria conta nova limpa, mantendo nome e slug digitados
+  const reg = $fix("#registerForm");
   if(reg){
     reg.onsubmit = function(e){
       e.preventDefault();
 
-      const p1 = q("#regPass")?.value || "";
-      const p2 = q("#regPass2")?.value || "";
+      const p1 = $fix("#regPass")?.value || "";
+      const p2 = $fix("#regPass2")?.value || "";
       if(p1 !== p2){
-        try{ toast("As senhas não conferem"); }catch(err){}
-        return false;
+        try{toast("As senhas não conferem");}catch(err){}
+        return;
       }
 
-      const email = normEmail(q("#regEmail")?.value || "");
+      const email = normEmail($fix("#regEmail")?.value || "");
       if(!email){
-        try{ toast("Digite seu e-mail."); }catch(err){}
-        return false;
+        try{toast("Digite seu e-mail.");}catch(err){}
+        return;
       }
 
-      clearVisualCaches(email);
+      const newUser = makeBlankUser({
+        name: $fix("#regName")?.value?.trim() || "",
+        slug: $fix("#regSlug")?.value?.trim() || "",
+        email
+      });
 
-      let acc = read(key(email), null);
+      window.user = newUser;
+      try{ user = newUser; }catch(err){}
 
-      // Se é novo email, cria totalmente limpo.
-      if(!acc){
-        acc = blankAccount({
-          name: q("#regName")?.value?.trim() || "",
-          slug: q("#regSlug")?.value?.trim() || "",
-          email
-        });
-      }
-
-      // Garante que conta recém criada não herda nada.
-      if(acc.email === email && !read(key(email), null)){
-        acc.avatar = "";
-        acc.banner = "";
-        acc.bg = "";
-        acc.video = "";
-        acc.frame = "";
-        acc.frameUrl = "";
-        acc.frameName = "";
-        acc.coins = 0;
-        acc.inventory = [];
-        acc.purchases = [];
-      }
-
-      setCurrentAccount(acc);
+      writeJSON(accountKey(email), newUser);
+      window.DlinkyStore.setItem("dlinkyCurrentEmail", email);
+      writeJSON("dlinkyUser", newUser);
 
       location.hash = "#/dashboard";
-      setTimeout(()=>{ try{ renderDash(); }catch(err){} },120);
-
-      return false;
+      setTimeout(()=>{try{renderDash();}catch(err){}},100);
     };
   }
 
-  // Login: cada email carrega sua própria conta.
-  const login = q("#loginForm");
+  // login: carrega a conta daquele email; se não existir, cria limpa
+  const login = $fix("#loginForm");
   if(login){
     login.onsubmit = function(e){
       e.preventDefault();
 
-      const email = normEmail(q("#loginEmail")?.value || "");
+      const email = normEmail($fix("#loginEmail")?.value || "");
       if(!email){
-        try{ toast("Digite seu e-mail."); }catch(err){}
-        return false;
+        try{toast("Digite seu e-mail.");}catch(err){}
+        return;
       }
 
       loadByEmail(email);
 
       location.hash = "#/dashboard";
-      setTimeout(()=>{ try{ renderDash(); }catch(err){} },120);
-
-      return false;
+      setTimeout(()=>{try{renderDash();}catch(err){}},100);
     };
   }
 
-  // Sair: sai da sessão, sem apagar loja/molduras globais.
+  // sair: só troca sessão, não apaga dados
   setTimeout(()=>{
-    const logout = q("#logoutBtn");
+    const logout = $fix("#logoutBtn");
     if(logout){
       logout.onclick = function(){
-        saveCurrent();
-        localStorage.removeItem("dlinkyCurrentEmail");
-        localStorage.removeItem("dlinkyUser");
+        window.DlinkyStore.removeItem("dlinkyCurrentEmail");
+        window.DlinkyStore.removeItem("dlinkyUser");
         try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
         location.hash = "#/";
       };
     }
   },300);
 
-  // Ao abrir, só carrega conta se tiver email atual.
-  const currentEmail = normEmail(localStorage.getItem("dlinkyCurrentEmail") || "");
+  // se já tem email atual salvo, carrega ele ao abrir
+  const currentEmail = normEmail(window.DlinkyStore.getItem("dlinkyCurrentEmail") || "");
   if(currentEmail){
-    const acc = read(key(currentEmail), null);
-    if(acc){
-      setCurrentAccount(acc);
+    const saved = readJSON(accountKey(currentEmail), null);
+    if(saved){
+      window.user = saved;
+      try{ user = saved; }catch(e){}
+      writeJSON("dlinkyUser", saved);
+      setTimeout(()=>{try{renderDash();}catch(e){}},100);
     }
   }
 
-  // Corrige bug do #/dashboard virar perfil por causa de slug antigo.
-  const originalRoute = window.route || (typeof route === "function" ? route : null);
-
-  window.route = function(){
-    const h = location.hash || "#/";
-
-    document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
-
-    if(h === "#/" || h === "#"){
-      q("#landing")?.classList.add("active");
-      return;
-    }
-
-    if(h === "#/register"){
-      q("#auth")?.classList.add("active");
-      if(q("#registerForm")) q("#registerForm").style.display = "block";
-      if(q("#loginForm")) q("#loginForm").style.display = "none";
-      return;
-    }
-
-    if(h === "#/login"){
-      q("#auth")?.classList.add("active");
-      if(q("#registerForm")) q("#registerForm").style.display = "none";
-      if(q("#loginForm")) q("#loginForm").style.display = "block";
-      return;
-    }
-
-    if(h === "#/dashboard"){
-      q("#dashboard")?.classList.add("active");
-      try{ renderDash(); }catch(e){}
-      return;
-    }
-
-    if(h === "#/profile" || h === "#/" + (user && user.slug)){
-      q("#profile")?.classList.add("active");
-      try{ renderProfile(); }catch(e){}
-      return;
-    }
-
-    // Link público de perfil não pode alterar user.slug da conta logada.
-    if(h.startsWith("#/") && !["#/assets","#/premium","#/community"].includes(h)){
-      q("#profile")?.classList.add("active");
-      try{ renderProfile(); }catch(e){}
-      return;
-    }
-
-    if(originalRoute){
-      try{ return originalRoute(); }catch(e){}
-    }
-  };
-
-  try{ route = window.route; }catch(e){}
-  window.addEventListener("hashchange", window.route);
-
-  window.dlinkyAccountDebug = function(){
-    const email = normEmail(localStorage.getItem("dlinkyCurrentEmail") || "");
-    console.log("email atual:", email);
-    console.log("conta:", read(key(email), null));
-    console.log("molduras globais:", read("dlinkyCustomFrames", []));
+  window.dlinkyContaAtualDebug = function(){
+    const email = normEmail(window.DlinkyStore.getItem("dlinkyCurrentEmail") || "");
+    console.log("Email atual:", email);
+    console.log("Dados:", readJSON(accountKey(email), null));
   };
 })();
