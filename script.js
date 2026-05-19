@@ -12753,18 +12753,19 @@ document.addEventListener("click",(e)=>{
 })();
 
 
-/* ===== CORREÇÃO FINAL 100%: Loja > Molduras sem sobrepor Recarga/Voucher ===== */
+
+
+/* ===== FIX FINAL: Molduras mostra só UMA caixa vazia e não mostra recarga/voucher ===== */
 (function(){
-  if(window.__dlinkyStoreFramesFinal100) return;
-  window.__dlinkyStoreFramesFinal100 = true;
+  if(window.__dlinkyFramesOnlyOneEmptyFinal) return;
+  window.__dlinkyFramesOnlyOneEmptyFinal = true;
 
-  const q=(s,r=document)=>r.querySelector(s);
-  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const q = (s,r=document)=>r.querySelector(s);
+  const qa = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
-  let currentStoreMode = "coins";
-  let lastForced = 0;
+  let storeModeLocked = null;
 
-  function escapeHtml(v){
+  function esc(v){
     return String(v ?? "").replace(/[&<>"']/g,m=>({
       "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
     }[m]));
@@ -12772,73 +12773,60 @@ document.addEventListener("click",(e)=>{
 
   function getFrames(){
     try{
-      const frames = JSON.parse(localStorage.getItem("dlinkyCustomFrames") || "[]");
-      return Array.isArray(frames) ? frames.filter(f => f && String(f.url || "").trim()) : [];
+      const arr = JSON.parse(localStorage.getItem("dlinkyCustomFrames") || "[]");
+      return Array.isArray(arr) ? arr.filter(f => f && String(f.url || "").trim()) : [];
     }catch(e){
       return [];
     }
   }
 
-  function setActive(mode){
+  function setStoreButtons(mode){
     qa("#tab-store [data-shop-tab]").forEach(btn=>{
       btn.classList.toggle("active", btn.dataset.shopTab === mode);
     });
   }
 
-  function hideRechargePanels(){
-    const store = q("#tab-store");
-    if(!store) return;
-    store.classList.add("dlinky-store-frames-mode");
-
-    // esconde Valor personalizado e Código voucher quando está em Molduras
-    qa("#tab-store > .grid2, #tab-store .grid2").forEach(el=>{
-      el.style.setProperty("display", "none", "important");
-      el.style.setProperty("visibility", "hidden", "important");
-      el.style.setProperty("height", "0px", "important");
-      el.style.setProperty("min-height", "0px", "important");
-      el.style.setProperty("overflow", "hidden", "important");
-      el.style.setProperty("margin", "0px", "important");
-      el.style.setProperty("padding", "0px", "important");
+  function hideRechargeArea(){
+    qa("#tab-store .grid2").forEach(el=>{
+      el.style.setProperty("display","none","important");
     });
   }
 
-  function showRechargePanels(){
-    const store = q("#tab-store");
-    if(!store) return;
-    store.classList.remove("dlinky-store-frames-mode");
-
-    qa("#tab-store > .grid2, #tab-store .grid2").forEach(el=>{
+  function showRechargeArea(){
+    qa("#tab-store .grid2").forEach(el=>{
       el.style.removeProperty("display");
-      el.style.removeProperty("visibility");
-      el.style.removeProperty("height");
-      el.style.removeProperty("min-height");
-      el.style.removeProperty("overflow");
-      el.style.removeProperty("margin");
-      el.style.removeProperty("padding");
     });
   }
 
-  function renderFramesOnly(){
-    const store = q("#tab-store");
+  function renderOnlyOneEmptyBox(){
     const grid = q("#shopGrid");
-    if(!store || !grid) return;
+    if(!grid) return;
 
-    currentStoreMode = "frames";
+    grid.classList.add("frames-shop-grid");
+    grid.innerHTML = `
+      <div class="panel empty-frames-help dlinky-single-empty-frame-box">
+        <h2>Nenhuma moldura cadastrada</h2>
+        <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
+      </div>
+    `;
+  }
+
+  function renderFramesMode(){
+    const grid = q("#shopGrid");
+    if(!grid) return;
+
+    storeModeLocked = "frames";
     window.shopMode = "frames";
     try{ shopMode = "frames"; }catch(e){}
 
-    setActive("frames");
-    hideRechargePanels();
+    setStoreButtons("frames");
+    hideRechargeArea();
 
     const frames = getFrames();
-    grid.classList.add("frames-shop-grid");
 
-    // Se não tem moldura, fica vazio mesmo. Sem card grande e sem recarga.
+    // Sem moldura: só UMA caixa, sem duplicar e sem bloco de recarga.
     if(!frames.length){
-      window.__dlinkyVisibleFrames = [];
-      grid.innerHTML = "";
-      grid.style.minHeight = "0px";
-      grid.style.marginBottom = "0px";
+      renderOnlyOneEmptyBox();
       return;
     }
 
@@ -12855,16 +12843,17 @@ document.addEventListener("click",(e)=>{
       f.id || f.url || ("frame_"+i)
     ]);
 
+    grid.classList.add("frames-shop-grid");
     grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
       const base = String(x[1]).match(/\d+/)?.[0] || 20;
       return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
         <div class="frame-shop-preview real-frame-preview">
           <div class="frame-avatar-demo zyo-person-demo" style="background-image:url('${String(avatar).replace(/'/g,"%27")}')!important"></div>
-          <img class="frame-img big" src="${escapeHtml(x[5])}" alt="${escapeHtml(x[0])}">
+          <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
         </div>
         <div class="frame-info clean-info">
-          <b>${escapeHtml(x[0])}</b>
-          <small>${escapeHtml(x[3])}</small>
+          <b>${esc(x[0])}</b>
+          <small>${esc(x[3])}</small>
         </div>
         <div class="frame-price">Preço: <b data-price-label="${i}">${base} Linkwuans</b></div>
         <select class="frame-duration" data-frame-duration="${i}">
@@ -12880,107 +12869,111 @@ document.addEventListener("click",(e)=>{
     }).join("");
   }
 
-  function isStoreActive(){
-    const store = q("#tab-store");
-    return store && store.classList.contains("active");
-  }
-
-  function enforceFramesMode(){
-    if(!isStoreActive()) return;
-    if(currentStoreMode !== "frames") return;
-
-    const active = q("#tab-store [data-shop-tab].active");
+  function cleanDuplicates(){
     const grid = q("#shopGrid");
+    if(!grid) return;
 
-    // se algum código antigo voltou pra Recarga, força Molduras de novo
-    if(!active || active.dataset.shopTab !== "frames"){
-      renderFramesOnly();
-      return;
+    const boxes = qa(".empty-frames-help", grid);
+    if(boxes.length > 1){
+      boxes.forEach((box,i)=>{
+        if(i > 0) box.remove();
+      });
     }
 
-    // se algum código antigo renderizou recarga/voucher junto, limpa
-    hideRechargePanels();
+    if(storeModeLocked === "frames"){
+      hideRechargeArea();
 
-    if(grid){
-      const text = (grid.textContent || "").toLowerCase();
-      if(text.includes("345 linkwuans") || text.includes("650 linkwuans") || text.includes("r$ 30")){
-        renderFramesOnly();
+      // Se algum código antigo enfiar outra caixa fora do grid, remove.
+      qa("#tab-store > .empty-frames-help").forEach(el=>{
+        if(!grid.contains(el)) el.remove();
+      });
+
+      // Se a caixa ficou full width ou duplicada, recria do jeito certo.
+      const frames = getFrames();
+      const cards = qa(".frame-shop-card", grid);
+      if(!frames.length && !cards.length){
+        const box = q(".empty-frames-help", grid);
+        if(!box || !box.classList.contains("dlinky-single-empty-frame-box")){
+          renderOnlyOneEmptyBox();
+        }
       }
-      grid.querySelectorAll(".empty-frames-help").forEach(el=>el.remove());
     }
   }
 
-  // Clique nas abas da loja
   document.addEventListener("click", function(e){
     const btn = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
     if(!btn) return;
 
     const mode = btn.dataset.shopTab;
 
-    currentStoreMode = mode || "coins";
-    window.shopMode = currentStoreMode;
-    try{ shopMode = currentStoreMode; }catch(err){}
+    storeModeLocked = mode;
+    window.shopMode = mode;
+    try{ shopMode = mode; }catch(err){}
 
     if(mode === "frames"){
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
 
-      renderFramesOnly();
-      [50,150,350,800,1500].forEach(ms=>setTimeout(renderFramesOnly, ms));
+      renderFramesMode();
+      [80,250,600,1200].forEach(ms=>setTimeout(()=>{
+        renderFramesMode();
+        cleanDuplicates();
+      },ms));
       return;
     }
 
-    showRechargePanels();
+    showRechargeArea();
   }, true);
 
-  // Quando abrir Loja pela sidebar
   const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__dlinkyStoreFramesFinal100){
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__framesOnlyOneEmptyFinal){
     const patched = function(id){
       const r = oldOpenTab.apply(this, arguments);
 
-      if(id === "store"){
-        if(currentStoreMode === "frames"){
-          [50,200,600].forEach(ms=>setTimeout(renderFramesOnly, ms));
-        }else{
-          setTimeout(showRechargePanels, 100);
-        }
+      if(id === "store" && storeModeLocked === "frames"){
+        [100,400,900].forEach(ms=>setTimeout(()=>{
+          renderFramesMode();
+          cleanDuplicates();
+        },ms));
       }
 
       return r;
     };
-    patched.__dlinkyStoreFramesFinal100 = true;
+
+    patched.__framesOnlyOneEmptyFinal = true;
     window.openTab = patched;
     try{ openTab = patched; }catch(e){}
   }
 
-  // CSS final para garantir que não aparece recarga/voucher em Molduras
   const style = document.createElement("style");
-  style.id = "dlinky-store-frames-final100-style";
+  style.id = "dlinky-frames-only-one-empty-final-css";
   style.textContent = `
-    #tab-store.dlinky-store-frames-mode .grid2 {
-      display: none !important;
-      visibility: hidden !important;
-      height: 0 !important;
-      min-height: 0 !important;
-      padding: 0 !important;
+    #tab-store .dlinky-single-empty-frame-box {
+      width: 320px !important;
+      max-width: 320px !important;
+      min-height: 170px !important;
+      padding: 32px !important;
       margin: 0 !important;
-      overflow: hidden !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: center !important;
+      box-sizing: border-box !important;
     }
 
-    #tab-store.dlinky-store-frames-mode #shopGrid:empty {
-      min-height: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
+    #tab-store .dlinky-single-empty-frame-box h2 {
+      font-size: 26px !important;
+      line-height: 1.1 !important;
+      margin: 0 0 20px 0 !important;
     }
 
-    #tab-store.dlinky-store-frames-mode .empty-frames-help {
-      display: none !important;
+    #tab-store .dlinky-single-empty-frame-box p {
+      margin: 0 !important;
+      font-size: 16px !important;
+      line-height: 1.25 !important;
     }
   `;
   document.head.appendChild(style);
 
-  // Guarda contra código antigo que roda depois e volta pra recarga
-  setInterval(enforceFramesMode, 200);
+  setInterval(cleanDuplicates, 300);
 })();
