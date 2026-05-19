@@ -12751,3 +12751,31 @@ document.addEventListener("click",(e)=>{
     if(q("#adminFramesList")) renderAdminFrames();
   }, 3000);
 })();
+
+
+/* ===== FIX DUPLICATE EMPTY FRAME BOX ===== */
+(function(){
+  if(window.__fixDuplicateEmptyFrameBox) return;
+  window.__fixDuplicateEmptyFrameBox = true;
+
+  function cleanDuplicateBoxes(){
+    const boxes = Array.from(document.querySelectorAll('.empty-frames-help, .panel.empty-frames-help'));
+
+    if(boxes.length <= 1) return;
+
+    boxes.forEach((el, i) => {
+      if(i > 0){
+        el.remove();
+      }
+    });
+
+    const grid = document.querySelector('#shopGrid');
+    if(grid && boxes[0]){
+      grid.innerHTML = '';
+      grid.appendChild(boxes[0]);
+    }
+  }
+
+  setInterval(cleanDuplicateBoxes, 500);
+  window.addEventListener('load', cleanDuplicateBoxes);
+})();
