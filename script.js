@@ -13225,3 +13225,71 @@ document.addEventListener("click",(e)=>{
     return getAccounts();
   };
 })();
+
+
+
+/* ===== FIX: contas novas sem imagens herdadas ===== */
+(function(){
+  if(window.__dlinkyImageResetFix) return;
+  window.__dlinkyImageResetFix = true;
+
+  function resetVisualFields(u){
+    if(!u) return u;
+
+    u.avatar = "";
+    u.banner = "";
+    u.bg = "";
+    u.video = "";
+    u.frame = "";
+    u.frameUrl = "";
+    u.frameName = "";
+    u.decoration = "none";
+
+    return u;
+  }
+
+  const oldMakeCleanUser = window.makeCleanUser;
+
+  // força nova conta nascer limpa
+  window.makeCleanUser = function(data){
+    let clean;
+
+    if(typeof oldMakeCleanUser === "function"){
+      clean = oldMakeCleanUser(data);
+    } else {
+      clean = {};
+    }
+
+    return resetVisualFields(clean);
+  };
+
+  // se abriu conta nova e veio imagem antiga, limpa automaticamente
+  setTimeout(() => {
+    try{
+      if(user && user.email){
+        if(
+          user.avatar?.includes("pinimg") ||
+          user.banner?.includes("pinimg") ||
+          user.bg?.includes("pinimg")
+        ){
+          resetVisualFields(user);
+
+          localStorage.setItem("dlinkyUser", JSON.stringify(user));
+
+          const email = localStorage.getItem("dlinkyCurrentEmail");
+          const accounts = JSON.parse(localStorage.getItem("dlinkyAccounts") || "{}");
+
+          if(email && accounts[email]){
+            accounts[email] = user;
+            localStorage.setItem("dlinkyAccounts", JSON.stringify(accounts));
+          }
+
+          if(typeof renderDash === "function"){
+            renderDash();
+          }
+        }
+      }
+    }catch(e){}
+  }, 500);
+
+})();
