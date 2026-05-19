@@ -12987,3 +12987,200 @@ document.addEventListener("click",(e)=>{
   if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
   run();
 })();
+
+/* ===== DLINKY — RESGATE DEFINITIVO DO ÍCONE DO PERFIL =====
+   Corrige SOMENTE a exibição do avatar/ícone no perfil.
+   Não altera loja, inventário, molduras, links, banner, fundo, exclusões ou ajustes.
+   Também não usa localStorage: lê do objeto atual e do Firebase/Firestore. */
+(function(){
+  if(window.__dlinkyAvatarPerfilResgateDefinitivo) return;
+  window.__dlinkyAvatarPerfilResgateDefinitivo = true;
+
+  var FALLBACK_AVATAR = 'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif';
+
+  function q(s,r){return (r||document).querySelector(s)}
+  function clean(v){
+    v = String(v || '').trim();
+    if(!v || v === 'none' || v === 'null' || v === 'undefined') return '';
+    var m = v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v = m[1];
+    return v.replace(/^['"]|['"]$/g,'').trim();
+  }
+  function isImage(v){
+    v = clean(v);
+    return !!v && /^(https?:\/\/|data:image\/|blob:)/i.test(v) && !/\.(mp4|webm|mp3|wav|ogg)(\?|#|$)/i.test(v);
+  }
+  function currentSlug(){
+    var hash = String(location.hash || '').replace(/^#\/?/,'').split('/')[0] || '';
+    var path = String(location.pathname || '').replace(/^\/+|\/+$/g,'').split('/')[0] || '';
+    var deny = {login:1,register:1,dashboard:1,assets:1,premium:1,community:1,admin:1,store:1,'index.html':1,'':1};
+    var s = path && !deny[path.toLowerCase()] ? path : hash;
+    try{ if((!s || deny[String(s).toLowerCase()]) && typeof user === 'object' && user) s = user.slug || ''; }catch(e){}
+    return String(s || '').toLowerCase().trim();
+  }
+  function allUserObjects(){
+    var arr=[];
+    try{ if(typeof user === 'object' && user) arr.push(user); }catch(e){}
+    try{ if(window.user && typeof window.user === 'object') arr.push(window.user); }catch(e){}
+    try{ if(window.DlinkyStore){ var u=JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {}; arr.push(u); } }catch(e){}
+    return arr;
+  }
+  function valueFromElement(sel){
+    var el=q(sel); if(!el) return '';
+    if(el.tagName === 'IMG') return clean(el.getAttribute('src') || el.src || '');
+    return clean(el.style.backgroundImage || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : ''));
+  }
+  function scoreKey(key){
+    key = String(key || '').toLowerCase();
+    if(/banner|background|bg|cover|capa|frame|moldura|music|audio|video|cursor/.test(key)) return -999;
+    if(/avatar|profileavatar|perfilavatar|pfp|profilepic|profilepicture/.test(key)) return 140;
+    if(/foto.*perfil|perfil.*foto/.test(key)) return 135;
+    if(/photo|foto|icon|icone|image|img|picture|pic/.test(key)) return 80;
+    return 5;
+  }
+  function bestFromData(data){
+    var best='', bestScore=-1000;
+    function walk(obj,path,depth){
+      if(!obj || depth > 4) return;
+      if(typeof obj === 'string'){
+        var sc = scoreKey(path);
+        if(sc > bestScore && isImage(obj)){ best = clean(obj); bestScore = sc; }
+        return;
+      }
+      if(Array.isArray(obj)){
+        obj.forEach(function(v,i){ walk(v, path + '.item' + i, depth+1); });
+        return;
+      }
+      if(typeof obj === 'object'){
+        Object.keys(obj).forEach(function(k){ walk(obj[k], path ? path + '.' + k : k, depth+1); });
+      }
+    }
+    walk(data,'',0);
+    return bestScore > -999 ? best : '';
+  }
+  function bestSync(){
+    var list=[];
+    allUserObjects().forEach(function(u){ list.push(bestFromData(u)); });
+    list.push(q('#cfgAvatar') && q('#cfgAvatar').value);
+    list.push(q('#uploadAvatar') && q('#uploadAvatar').value);
+    list.push(valueFromElement('#profileAvatar'));
+    list.push(valueFromElement('#dashAvatar'));
+    list.push(valueFromElement('#sideAvatar'));
+    list.push(valueFromElement('.dlinky-final-avatar'));
+    list.push(valueFromElement('.dlinky-v4-avatar'));
+    try{ list.push(firebase.auth().currentUser && firebase.auth().currentUser.photoURL); }catch(e){}
+    for(var i=0;i<list.length;i++){ if(isImage(list[i])) return clean(list[i]); }
+    return '';
+  }
+  function ensureCss(){
+    if(q('#dlinky-avatar-resgate-css')) return;
+    var st=document.createElement('style');
+    st.id='dlinky-avatar-resgate-css';
+    st.textContent = `
+      #dlinkyAvatarPerfilResgatado{
+        width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;
+        border-radius:999px!important;margin:-50px auto 14px auto!important;
+        display:flex!important;align-items:center!important;justify-content:center!important;
+        visibility:visible!important;opacity:1!important;position:relative!important;z-index:2147483000!important;
+        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        background-color:#1b1324!important;box-shadow:0 0 0 4px rgba(255,255,255,.12),0 0 28px rgba(168,85,247,.60)!important;
+        overflow:hidden!important;color:#fff!important;font:700 34px system-ui,Arial!important;text-transform:uppercase!important;
+      }
+      #profileAvatar{
+        display:block!important;visibility:visible!important;opacity:1!important;
+        width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;
+        border-radius:999px!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        z-index:2147482999!important;
+      }
+    `;
+    document.head.appendChild(st);
+  }
+  function initials(){
+    var name='';
+    try{ if(typeof user === 'object' && user) name = user.name || user.slug || ''; }catch(e){}
+    name = name || (q('#profileName') && q('#profileName').textContent) || 'U';
+    return String(name).trim().charAt(0) || 'U';
+  }
+  function paint(src){
+    ensureCss();
+    src = clean(src || bestSync() || FALLBACK_AVATAR);
+
+    var av=q('#profileAvatar');
+    if(av){
+      if(isImage(src)){
+        if(av.tagName === 'IMG') av.src = src;
+        else av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
+      }
+      av.style.setProperty('display','block','important');
+      av.style.setProperty('visibility','visible','important');
+      av.style.setProperty('opacity','1','important');
+      av.style.setProperty('width','96px','important');
+      av.style.setProperty('height','96px','important');
+      av.style.setProperty('min-width','96px','important');
+      av.style.setProperty('min-height','96px','important');
+      av.style.setProperty('border-radius','999px','important');
+    }
+
+    var name=q('#profileName');
+    if(!name || !name.parentNode) return false;
+    var box=q('#dlinkyAvatarPerfilResgatado');
+    if(!box){
+      box=document.createElement('div');
+      box.id='dlinkyAvatarPerfilResgatado';
+      name.parentNode.insertBefore(box,name);
+    }
+    if(isImage(src)){
+      box.textContent='';
+      box.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
+    }else{
+      box.textContent=initials();
+      box.style.removeProperty('background-image');
+    }
+    box.style.setProperty('display','flex','important');
+    box.style.setProperty('visibility','visible','important');
+    box.style.setProperty('opacity','1','important');
+    return true;
+  }
+  async function fetchFirebase(){
+    try{
+      if(!window.firebase || !firebase.firestore) return '';
+      var db=firebase.firestore();
+      var s=currentSlug();
+      var src='';
+      if(s){
+        try{ var p=await db.collection('profiles').doc(s).get(); if(p.exists) src=bestFromData(p.data()||{}); }catch(e){}
+        if(!isImage(src)){
+          try{ var qs=await db.collection('users').where('slug','==',s).limit(1).get(); if(!qs.empty) src=bestFromData(qs.docs[0].data()||{}); }catch(e){}
+        }
+        if(!isImage(src)){
+          try{ var qs2=await db.collection('users').where('username','==',s).limit(1).get(); if(!qs2.empty) src=bestFromData(qs2.docs[0].data()||{}); }catch(e){}
+        }
+      }
+      if(!isImage(src) && firebase.auth && firebase.auth().currentUser){
+        try{ var cu=firebase.auth().currentUser; var u=await db.collection('users').doc(cu.uid).get(); if(u.exists) src=bestFromData(u.data()||{}); if(!isImage(src)) src=cu.photoURL||''; }catch(e){}
+      }
+      if(isImage(src)){
+        try{ if(typeof user === 'object' && user) user.avatar=src; window.user=Object.assign(window.user||{}, {avatar:src}); }catch(e){}
+        paint(src);
+      }
+      return src;
+    }catch(e){ return ''; }
+  }
+  function run(){
+    paint(bestSync());
+    fetchFirebase().then(function(src){ paint(src || bestSync()); });
+    [60,180,420,900,1600,2800,4500,7000].forEach(function(t){ setTimeout(function(){ paint(bestSync()); }, t); });
+  }
+  var old=window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
+  if(typeof old === 'function' && !old.__dlinkyAvatarPerfilResgateDefinitivo){
+    var patched=function(){ var r=old.apply(this,arguments); run(); return r; };
+    patched.__dlinkyAvatarPerfilResgateDefinitivo=true;
+    window.renderProfile=patched;
+    try{ renderProfile=patched; }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded', run, {once:true});
+  window.addEventListener('load', run);
+  window.addEventListener('hashchange', run);
+  if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
+  run();
+})();
