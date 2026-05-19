@@ -12145,19 +12145,18 @@ document.addEventListener("click",(e)=>{
 
 
 
-/* ===== FIX FINAL CONTAS: cada email separado, loja/admin global, sem mudar molduras ===== */
+/* ===== FIX DEFINITIVO CONTAS SEPARADAS: perfil pessoal por email, loja global ===== */
 (function(){
-  if(window.__dlinkyAccountsFinalSafe) return;
-  window.__dlinkyAccountsFinalSafe = true;
+  if(window.__dlinkyAccountsCleanFinalV2) return;
+  window.__dlinkyAccountsCleanFinalV2 = true;
 
   const q = (s,r=document)=>r.querySelector(s);
-  const qa = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
   function normEmail(v){
     return String(v || "").trim().toLowerCase();
   }
 
-  function cleanSlug2(v){
+  function cleanSlugLocal(v){
     return (v || "usuario")
       .toLowerCase()
       .normalize("NFD")
@@ -12166,7 +12165,7 @@ document.addEventListener("click",(e)=>{
       .slice(0,30) || "usuario";
   }
 
-  function read(k, fb){
+  function read(k,fb){
     try{
       const raw = localStorage.getItem(k);
       if(!raw) return fb;
@@ -12176,22 +12175,19 @@ document.addEventListener("click",(e)=>{
     }
   }
 
-  function write(k, v){
+  function write(k,v){
     localStorage.setItem(k, JSON.stringify(v));
     try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
   }
 
-  function accKey(email){
-    return "dlinkyAccount_" + normEmail(email);
+  function key(email){
+    return "dlinkyAccountUser_" + normEmail(email);
   }
 
-  function saveGlobalUserCache(u){
-    write("dlinkyUser", u);
-  }
-
-  function makeBlankAccount(data){
+  function blankAccount(data){
     const email = normEmail(data.email);
-    const slug = cleanSlug2(data.slug || (email ? email.split("@")[0] : "usuario"));
+    const slug = cleanSlugLocal(data.slug || (email ? email.split("@")[0] : "usuario"));
+
     return {
       name: data.name || slug,
       slug,
@@ -12203,8 +12199,11 @@ document.addEventListener("click",(e)=>{
       bg:"",
       video:"",
       frame:"",
+      frameUrl:"",
+      frameName:"",
       music:"",
       welcome:"Clique aqui",
+
       color:"#a855f7",
       particles:true,
       particleType:"snow",
@@ -12236,71 +12235,113 @@ document.addEventListener("click",(e)=>{
     };
   }
 
-  function saveCurrentAccount(){
-    if(!window.user || !user.email) return;
-    const email = normEmail(user.email);
-    write(accKey(email), user);
-    localStorage.setItem("dlinkyCurrentEmail", email);
-    saveGlobalUserCache(user);
-  }
-
-  function migrateCurrentIfNeeded(){
-    const current = read("dlinkyUser", null);
-    if(current && current.email){
-      const email = normEmail(current.email);
-      if(!read(accKey(email), null)){
-        write(accKey(email), current);
-      }
-      localStorage.setItem("dlinkyCurrentEmail", email);
-      return current;
-    }
-    return null;
-  }
-
-  function loadAccount(email){
+  function clearVisualCaches(email){
     email = normEmail(email);
-    if(!email) return null;
+    const suffixes = [
+      email,
+      (window.user && user.slug) || "",
+      "local"
+    ].filter(Boolean);
 
-    let acc = read(accKey(email), null);
+    suffixes.forEach(s=>{
+      localStorage.removeItem("dlinky_avatar_clean_" + s);
+      localStorage.removeItem("dlinkyAvatarPreserve_" + s);
+    });
+  }
 
-    // Proteção pro seu perfil antigo: se o dlinkyUser atual for desse email, migra ele em vez de zerar.
-    const global = read("dlinkyUser", null);
-    if(!acc && global && normEmail(global.email) === email){
-      acc = global;
-      write(accKey(email), acc);
-    }
-
-    if(!acc){
-      acc = makeBlankAccount({email});
-      write(accKey(email), acc);
-    }
-
+  function setCurrentAccount(acc){
     window.user = acc;
     try{ user = acc; }catch(e){}
 
-    localStorage.setItem("dlinkyCurrentEmail", email);
-    saveGlobalUserCache(acc);
+    localStorage.setItem("dlinkyCurrentEmail", normEmail(acc.email));
+    write("dlinkyUser", acc);
+    write(key(acc.email), acc);
 
-    setTimeout(()=>{ try{ renderDash(); }catch(e){} }, 80);
+    clearWrongVisualDOM();
+
+    setTimeout(()=>{
+      try{ renderDash(); }catch(e){}
+    },80);
+  }
+
+  function clearWrongVisualDOM(){
+    // Limpa visual que ficou preso no DOM da conta anterior.
+    ["#dashAvatar","#sideAvatar","#profileAvatar"].forEach(sel=>{
+      const el = q(sel);
+      if(!el) return;
+      el.style.backgroundImage = "none";
+      el.style.background = "";
+      if(el.tagName === "IMG"){
+        el.removeAttribute("src");
+      }
+    });
+
+    ["#cfgAvatar","#cfgBanner","#cfgBg","#cfgVideo","#cfgFrame"].forEach(sel=>{
+      const el = q(sel);
+      if(el && (!window.user || !user.avatar)){
+        // o renderDash depois preenche certo
+      }
+    });
+  }
+
+  function saveCurrent(){
+    if(!window.user || !user.email) return;
+    write(key(user.email), user);
+    localStorage.setItem("dlinkyCurrentEmail", normEmail(user.email));
+    write("dlinkyUser", user);
+  }
+
+  function loadByEmail(email){
+    email = normEmail(email);
+    if(!email) return null;
+
+    let acc = read(key(email), null);
+
+    // Se o usuário atual salvo é exatamente esse email, migra.
+    const currentGlobal = read("dlinkyUser", null);
+    if(!acc && currentGlobal && normEmail(currentGlobal.email) === email){
+      acc = currentGlobal;
+      write(key(email), acc);
+    }
+
+    // Se nunca existiu, cria limpo.
+    if(!acc){
+      acc = blankAccount({email});
+      write(key(email), acc);
+    }
+
+    setCurrentAccount(acc);
     return acc;
   }
 
-  // Ao abrir o site, preserva a conta que já estava logada.
-  const migrated = migrateCurrentIfNeeded();
-  const currentEmail = normEmail(localStorage.getItem("dlinkyCurrentEmail") || (migrated && migrated.email) || "");
-  if(currentEmail){
-    const acc = read(accKey(currentEmail), null);
-    if(acc){
-      window.user = acc;
-      try{ user = acc; }catch(e){}
-      saveGlobalUserCache(acc);
-      setTimeout(()=>{ try{ renderDash(); }catch(e){} }, 100);
-    }
-  }
+  // Corrige setBg para não deixar imagem antiga grudada quando URL vazia.
+  window.setBg = function(el,url){
+    if(!el) return;
+    url = String(url || "").trim();
 
-  // Troca saveUser para salvar dentro da conta atual, não global misturado.
+    if(el.tagName === "IMG"){
+      if(url){
+        el.src = url;
+        el.style.display = "block";
+      }else{
+        el.removeAttribute("src");
+        el.style.display = "none";
+      }
+      return;
+    }
+
+    if(url){
+      el.style.backgroundImage = `url("${url}")`;
+    }else{
+      el.style.backgroundImage = "none";
+      el.style.background = "";
+    }
+  };
+  try{ setBg = window.setBg; }catch(e){}
+
+  // Salvar sempre salva dentro da conta do email atual.
   window.saveUser = function(){
-    saveCurrentAccount();
+    saveCurrent();
     try{ renderDash(); }catch(e){}
     try{ toast("Salvo com sucesso!"); }catch(e){}
   };
@@ -12312,11 +12353,11 @@ document.addEventListener("click",(e)=>{
       `${new Date().toLocaleString("pt-BR")} — ${t}`,
       ...user.history
     ].slice(0,20);
-    saveCurrentAccount();
+    saveCurrent();
   };
   try{ addHistory = window.addHistory; }catch(e){}
 
-  // Registro: conta nova vem limpa. Loja/admin/molduras continuam globais.
+  // Registro: cria conta LIMPA, sem puxar foto/nome/fundo da conta anterior.
   const reg = q("#registerForm");
   if(reg){
     reg.onsubmit = function(e){
@@ -12326,38 +12367,52 @@ document.addEventListener("click",(e)=>{
       const p2 = q("#regPass2")?.value || "";
       if(p1 !== p2){
         try{ toast("As senhas não conferem"); }catch(err){}
-        return;
+        return false;
       }
 
       const email = normEmail(q("#regEmail")?.value || "");
       if(!email){
         try{ toast("Digite seu e-mail."); }catch(err){}
-        return;
+        return false;
       }
 
-      let acc = read(accKey(email), null);
+      clearVisualCaches(email);
 
+      let acc = read(key(email), null);
+
+      // Se é novo email, cria totalmente limpo.
       if(!acc){
-        acc = makeBlankAccount({
+        acc = blankAccount({
           name: q("#regName")?.value?.trim() || "",
           slug: q("#regSlug")?.value?.trim() || "",
           email
         });
-        write(accKey(email), acc);
       }
 
-      window.user = acc;
-      try{ user = acc; }catch(err){}
+      // Garante que conta recém criada não herda nada.
+      if(acc.email === email && !read(key(email), null)){
+        acc.avatar = "";
+        acc.banner = "";
+        acc.bg = "";
+        acc.video = "";
+        acc.frame = "";
+        acc.frameUrl = "";
+        acc.frameName = "";
+        acc.coins = 0;
+        acc.inventory = [];
+        acc.purchases = [];
+      }
 
-      localStorage.setItem("dlinkyCurrentEmail", email);
-      saveGlobalUserCache(acc);
+      setCurrentAccount(acc);
 
       location.hash = "#/dashboard";
-      setTimeout(()=>{ try{ renderDash(); }catch(err){} }, 100);
+      setTimeout(()=>{ try{ renderDash(); }catch(err){} },120);
+
+      return false;
     };
   }
 
-  // Login: entra na conta daquele email. Se nunca existiu, cria limpa.
+  // Login: cada email carrega sua própria conta.
   const login = q("#loginForm");
   if(login){
     login.onsubmit = function(e){
@@ -12366,21 +12421,24 @@ document.addEventListener("click",(e)=>{
       const email = normEmail(q("#loginEmail")?.value || "");
       if(!email){
         try{ toast("Digite seu e-mail."); }catch(err){}
-        return;
+        return false;
       }
 
-      loadAccount(email);
+      loadByEmail(email);
 
       location.hash = "#/dashboard";
-      setTimeout(()=>{ try{ renderDash(); }catch(err){} }, 100);
+      setTimeout(()=>{ try{ renderDash(); }catch(err){} },120);
+
+      return false;
     };
   }
 
-  // Sair: só desloga da conta atual, não apaga loja/admin/molduras.
+  // Sair: sai da sessão, sem apagar loja/molduras globais.
   setTimeout(()=>{
     const logout = q("#logoutBtn");
     if(logout){
       logout.onclick = function(){
+        saveCurrent();
         localStorage.removeItem("dlinkyCurrentEmail");
         localStorage.removeItem("dlinkyUser");
         try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
@@ -12389,15 +12447,24 @@ document.addEventListener("click",(e)=>{
     }
   },300);
 
-  // Corrige bug: abrir perfil por link não pode trocar o slug da conta logada.
-  const oldRoute = window.route || (typeof route === "function" ? route : null);
+  // Ao abrir, só carrega conta se tiver email atual.
+  const currentEmail = normEmail(localStorage.getItem("dlinkyCurrentEmail") || "");
+  if(currentEmail){
+    const acc = read(key(currentEmail), null);
+    if(acc){
+      setCurrentAccount(acc);
+    }
+  }
+
+  // Corrige bug do #/dashboard virar perfil por causa de slug antigo.
+  const originalRoute = window.route || (typeof route === "function" ? route : null);
+
   window.route = function(){
-    const pathSlug = window.__dlinkyDirectProfileSlug || "";
-    const h = location.hash || (pathSlug ? "#/" + pathSlug : "#/");
+    const h = location.hash || "#/";
 
-    qa(".page").forEach(p=>p.classList.remove("active"));
+    document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
 
-    if((h === "#/" || h === "#") && !pathSlug){
+    if(h === "#/" || h === "#"){
       q("#landing")?.classList.add("active");
       return;
     }
@@ -12422,25 +12489,31 @@ document.addEventListener("click",(e)=>{
       return;
     }
 
-    if(h === "#/profile" || h === "#/" + (user && user.slug) || (pathSlug && h === "#/" + pathSlug)){
+    if(h === "#/profile" || h === "#/" + (user && user.slug)){
       q("#profile")?.classList.add("active");
-      // NÃO muda user.slug aqui.
       try{ renderProfile(); }catch(e){}
       return;
     }
 
-    if(oldRoute){
-      try{ return oldRoute(); }catch(e){}
+    // Link público de perfil não pode alterar user.slug da conta logada.
+    if(h.startsWith("#/") && !["#/assets","#/premium","#/community"].includes(h)){
+      q("#profile")?.classList.add("active");
+      try{ renderProfile(); }catch(e){}
+      return;
+    }
+
+    if(originalRoute){
+      try{ return originalRoute(); }catch(e){}
     }
   };
+
   try{ route = window.route; }catch(e){}
-  window.removeEventListener("hashchange", oldRoute);
   window.addEventListener("hashchange", window.route);
 
   window.dlinkyAccountDebug = function(){
     const email = normEmail(localStorage.getItem("dlinkyCurrentEmail") || "");
     console.log("email atual:", email);
-    console.log("conta atual:", read(accKey(email), null));
+    console.log("conta:", read(key(email), null));
     console.log("molduras globais:", read("dlinkyCustomFrames", []));
   };
 })();
