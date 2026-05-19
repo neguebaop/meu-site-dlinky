@@ -12829,3 +12829,178 @@ document.addEventListener("click",(e)=>{
   removeBox();
   setInterval(removeBox, 1000);
 })();
+/* ===== PATCH FINAL: Molduras vazia sem ir pra Recarga ===== */
+(function(){
+  if(window.__dlinkyFixMoldurasSemRecarga) return;
+  window.__dlinkyFixMoldurasSemRecarga = true;
+
+  let shopLockedMode = null;
+
+  function q(s,r=document){ return r.querySelector(s); }
+  function qa(s,r=document){ return Array.from(r.querySelectorAll(s)); }
+
+  function isStoreVisible(){
+    const tab = q("#tab-store");
+    return tab && tab.classList.contains("active");
+  }
+
+  function getFrames(){
+    try{
+      const frames = JSON.parse(localStorage.getItem("dlinkyCustomFrames") || "[]");
+      return Array.isArray(frames) ? frames.filter(f => f && f.url) : [];
+    }catch(e){
+      return [];
+    }
+  }
+
+  function setActiveButton(mode){
+    qa("#tab-store [data-shop-tab]").forEach(btn=>{
+      btn.classList.toggle("active", btn.dataset.shopTab === mode);
+    });
+  }
+
+  function renderMoldurasOnly(){
+    if(!isStoreVisible()) return;
+
+    const grid = q("#shopGrid");
+    if(!grid) return;
+
+    shopLockedMode = "frames";
+
+    try{ shopMode = "frames"; }catch(e){}
+    window.shopMode = "frames";
+    setActiveButton("frames");
+
+    const frames = getFrames();
+
+    grid.classList.add("frames-shop-grid");
+
+    if(!frames.length){
+      // Molduras vazia: fica vazio mesmo, sem caixa e sem recarga.
+      grid.innerHTML = "";
+      return;
+    }
+
+    const avatar = (typeof user === "object" && user && user.avatar) ? user.avatar : "";
+
+    window.__dlinkyVisibleFrames = frames.map((f,i)=>[
+      f.name || "Moldura personalizada",
+      f.price || "20 Linkwuans",
+      "custom-"+i,
+      f.desc || "Moldura enviada pelo admin",
+      "Disponível",
+      f.url || "",
+      f.prices || null,
+      f.id || f.url || ("frame_"+i)
+    ]);
+
+    grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
+      const base = String(x[1]).match(/\d+/)?.[0] || 20;
+      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
+        <div class="frame-shop-preview real-frame-preview">
+          <div class="frame-avatar-demo zyo-person-demo" style="background-image:url('${String(avatar).replace(/'/g,"%27")}')!important"></div>
+          <img class="frame-img big" src="${String(x[5]).replace(/"/g,"&quot;")}" alt="${String(x[0]).replace(/"/g,"&quot;")}">
+        </div>
+        <div class="frame-info clean-info">
+          <b>${String(x[0])}</b>
+          <small>${String(x[3])}</small>
+        </div>
+        <div class="frame-price">Preço: <b data-price-label="${i}">${base} Linkwuans</b></div>
+        <select class="frame-duration" data-frame-duration="${i}">
+          <option>3 dias</option>
+          <option>7 dias</option>
+          <option>15 dias</option>
+          <option>Permanente</option>
+        </select>
+        <div class="frame-actions">
+          <button class="btn primary small" data-confirm-frame="${i}">Comprar</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function clearVoucherPanelsWhenFrames(){
+    if(!isStoreVisible()) return;
+    const active = q("#tab-store [data-shop-tab].active");
+    if(!active || active.dataset.shopTab !== "frames") return;
+
+    // Esconde o bloco de recarga/voucher somente quando está em Molduras.
+    qa("#tab-store .grid2").forEach(el=>{
+      el.style.display = "none";
+    });
+  }
+
+  function showVoucherPanelsWhenNotFrames(){
+    if(!isStoreVisible()) return;
+    const active = q("#tab-store [data-shop-tab].active");
+    if(active && active.dataset.shopTab === "frames") return;
+
+    qa("#tab-store .grid2").forEach(el=>{
+      el.style.display = "";
+    });
+  }
+
+  document.addEventListener("click", function(e){
+    const btn = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
+    if(!btn) return;
+
+    const mode = btn.dataset.shopTab;
+
+    shopLockedMode = mode;
+    try{ shopMode = mode; }catch(err){}
+    window.shopMode = mode;
+
+    if(mode === "frames"){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      renderMoldurasOnly();
+      clearVoucherPanelsWhenFrames();
+
+      setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 80);
+      setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 300);
+      setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 800);
+      return;
+    }
+
+    showVoucherPanelsWhenNotFrames();
+  }, true);
+
+  // Se algum código antigo tentar voltar pra Recarga, força Molduras de volta.
+  setInterval(function(){
+    if(!isStoreVisible()) return;
+
+    const active = q("#tab-store [data-shop-tab].active");
+    const activeMode = active ? active.dataset.shopTab : "";
+
+    if(shopLockedMode === "frames"){
+      if(activeMode !== "frames"){
+        renderMoldurasOnly();
+      }
+
+      const grid = q("#shopGrid");
+      if(grid && !getFrames().length && grid.textContent.includes("345 Linkwuans")){
+        renderMoldurasOnly();
+      }
+
+      clearVoucherPanelsWhenFrames();
+    }else{
+      showVoucherPanelsWhenNotFrames();
+    }
+  }, 250);
+
+  const oldOpenTab = window.openTab;
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__dlinkyFixMoldurasSemRecarga){
+    const patched = function(id){
+      const r = oldOpenTab.apply(this, arguments);
+      if(id === "store" && shopLockedMode === "frames"){
+        setTimeout(()=>{ renderMoldurasOnly(); clearVoucherPanelsWhenFrames(); }, 100);
+      }
+      return r;
+    };
+    patched.__dlinkyFixMoldurasSemRecarga = true;
+    window.openTab = patched;
+    try{ openTab = patched; }catch(e){}
+  }
+})();
