@@ -12545,3 +12545,91 @@ document.addEventListener("click",(e)=>{
   setTimeout(apply,300);
   setTimeout(apply,1200);
 })();
+
+/* ===== FIX FINAL REAL — AVATAR VISÍVEL QUANDO NÃO TEM MOLDURA ATIVA =====
+   Corrige só o ícone do perfil. Não mexe em loja, inventário, compras,
+   exclusão, ajuste de moldura, banner ou links. */
+(function(){
+  if(window.__dlinkyAvatarVisibleNoFrameFinal) return;
+  window.__dlinkyAvatarVisibleNoFrameFinal = true;
+
+  function q(s,r=document){return r.querySelector(s)}
+  function qa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function clean(v){
+    v=String(v||'').trim();
+    if(!v||v==='none'||v==='null'||v==='undefined') return '';
+    const m=v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v=m[1];
+    return v.replace(/^["']|["']$/g,'').trim();
+  }
+  function currentUser(){
+    try{ if(typeof user==='object' && user) return user; }catch(e){}
+    return window.user||{};
+  }
+  function hasActiveFrame(){
+    const u=currentUser();
+    if(clean(u.frame)) return true;
+    const st=q('#dlinkyFinalProfileStage,#dlinkyV4ProfileStage');
+    const fr=st && q('img',st);
+    return !!clean(fr && fr.getAttribute('src'));
+  }
+  function bestAvatar(){
+    const u=currentUser();
+    let src=clean(u.avatar||u.photoURL||u.foto||u.icon||u.avatarUrl||'');
+    if(!src) src=clean(q('#cfgAvatar')?.value||q('#uploadAvatar')?.value||'');
+    if(!src) src=clean(q('#dashAvatar')?.style?.backgroundImage||q('#sideAvatar')?.style?.backgroundImage||'');
+    if(!src) src=clean(window.firebase?.auth?.()?.currentUser?.photoURL||'');
+    return src;
+  }
+  function forceAvatar(){
+    const deco=q('#avatarDecoration');
+    let av=q('#profileAvatar');
+    if(!deco) return;
+
+    if(!av){
+      av=document.createElement('span');
+      av.id='profileAvatar';
+      av.className='big-avatar';
+      deco.insertBefore(av,deco.firstChild);
+    }
+
+    const src=bestAvatar();
+    if(src){
+      av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
+      try{ currentUser().avatar=src; window.user=currentUser(); }catch(e){}
+    }
+
+    av.style.setProperty('display','block','important');
+    av.style.setProperty('visibility','visible','important');
+    av.style.setProperty('opacity','1','important');
+    av.style.setProperty('width','96px','important');
+    av.style.setProperty('height','96px','important');
+    av.style.setProperty('min-width','96px','important');
+    av.style.setProperty('min-height','96px','important');
+    av.style.setProperty('border-radius','50%','important');
+    av.style.setProperty('background-size','cover','important');
+    av.style.setProperty('background-position','center','important');
+    av.style.setProperty('background-repeat','no-repeat','important');
+    av.style.setProperty('background-color','rgba(255,255,255,.08)','important');
+    av.style.setProperty('position','relative','important');
+    av.style.setProperty('z-index','10','important');
+
+    if(!hasActiveFrame()){
+      qa('#dlinkyFinalProfileStage,#dlinkyV4ProfileStage',deco).forEach(el=>el.remove());
+      deco.classList.remove('dlinky-final-only','dlinky-v5-only-frame','dlinky-v6-profile-frame','dlinky-v4-lock');
+    }
+  }
+  function run(){
+    [0,80,200,500,1000,1800,2600,3400].forEach(t=>setTimeout(forceAvatar,t));
+  }
+
+  const old=window.renderProfile || (typeof renderProfile==='function'?renderProfile:null);
+  if(typeof old==='function'){
+    const patched=function(){const r=old.apply(this,arguments); run(); return r;};
+    window.renderProfile=patched;
+    try{renderProfile=patched;}catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',run,{once:true});
+  window.addEventListener('hashchange',run);
+  run();
+})();
