@@ -147,7 +147,7 @@ function simple(t,p){$('#simple').classList.add('active');$('#simpleTitle').text
 window.addEventListener('hashchange',route);route();
 document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g){location.hash='#/'+g.dataset.goto}const tab=e.target.closest('[data-tab]');if(tab){openTab(tab.dataset.tab)}const ac=e.target.closest('[data-action]');if(ac){if(ac.dataset.action==='openSide')$('.sidebar').classList.add('open');if(ac.dataset.action==='closeSide')$('.sidebar').classList.remove('open');if(ac.dataset.action==='toggleTheme')document.body.classList.toggle('light')}});
 $('#registerForm').onsubmit=e=>{e.preventDefault();if($('#regPass').value!==$('#regPass2').value)return toast('As senhas não conferem');user={...defaultUser,name:$('#regName').value.trim(),slug:cleanSlug($('#regSlug').value),email:$('#regEmail').value.trim()};addHistory('Conta registrada');saveUser();location.hash='#/dashboard'};
-$('#loginForm').onsubmit=e=>{e.preventDefault();toast('Login efetuado');location.hash='#/dashboard'};
+$('#loginForm').onsubmit=e=>{e.preventDefault();toast('Use e-mail e senha corretos para entrar.');};
 function cleanSlug(v){return(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario'}
 
 function setInputValue(id,value){
@@ -7010,11 +7010,10 @@ document.addEventListener("click",(e)=>{
         let acc = all[email];
 
         if(!acc){
-          // Login com e-mail novo entra em conta limpa, não no perfil de outra pessoa.
-          acc = cleanUser(email);
-          acc.password = pass;
-          all[email] = acc;
-          writeJSON(ACCOUNTS_KEY, all);
+          return toastMsg("Conta não encontrada. Crie a conta primeiro.");
+        }
+        if(acc.password && acc.password !== pass){
+          return toastMsg("Senha incorreta.");
         }
 
         setCurrentAccount(acc);
@@ -11133,9 +11132,7 @@ document.addEventListener("click",(e)=>{
         u = Object.assign(blankUser(email,email.split("@")[0],email.split("@")[0]), snap.exists ? snap.data() : {}, {uid:cred.user.uid,email});
       }
     }catch(err){
-      const all = readJSON(ACCOUNTS_KEY,{});
-      u = all[email] || null;
-      if(!u) return aviso("Conta não encontrada ou senha incorreta.");
+      return aviso("E-mail ou senha incorretos.");
     }
     saveCurrent(u);
     aviso("Login efetuado");
@@ -12391,10 +12388,8 @@ document.addEventListener("click",(e)=>{
         return;
       }
 
-      loadByEmail(email);
-
-      location.hash = "#/dashboard";
-      setTimeout(()=>{try{renderDash();}catch(err){}},100);
+      try{toast("Entre usando a senha cadastrada no Firebase.");}catch(err){}
+      return;
     };
   }
 
@@ -12644,4 +12639,93 @@ document.addEventListener("click",(e)=>{
   bindAuthHard();
   document.addEventListener('DOMContentLoaded', bindAuthHard);
   setTimeout(bindAuthHard,500);
+})();
+
+
+/* ===== DLINKY CORREÇÃO FINAL V3 — LOGIN FIREBASE SEM BYPASS + ÍCONE VISÍVEL ===== */
+(function(){
+  'use strict';
+  if(window.__DLINKY_LOGIN_ICONE_V3_OK__) return;
+  window.__DLINKY_LOGIN_ICONE_V3_OK__ = true;
+  const q=(s,r=document)=>r.querySelector(s);
+  const msg=t=>{try{toast(t)}catch(e){alert(t)}};
+  const cleanSlug=v=>String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30)||'usuario';
+  const ready=()=>!!(window.firebase&&firebase.apps&&firebase.apps.length&&firebase.auth&&firebase.firestore);
+  const baseUser=(email,name,slug)=>Object.assign({}, (typeof defaultUser==='object'?defaultUser:{}), {name:name||'Usuário', slug:cleanSlug(slug||name||'usuario'), email:String(email||'').toLowerCase().trim(), bio:'', avatar:'', banner:'', bg:'', video:'', frame:'', music:'', welcome:'Clique aqui', color:'#a855f7', particles:false, particleType:'none', verified:false, hideViews:false, template:'default', decoration:'none', views:0, links:[], socials:[], history:['Conta criada no Dlinky'], coins:0, inventory:[], purchases:[], embeds:[], tags:[]});
+  async function saveUserData(u){
+    const fb=firebase.auth().currentUser;
+    u.uid=fb.uid; u.email=(fb.email||u.email||'').toLowerCase().trim();
+    await firebase.firestore().collection('users').doc(fb.uid).set(Object.assign({},u,{updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
+    if(u.slug) await firebase.firestore().collection('profiles').doc(cleanSlug(u.slug)).set(Object.assign({},u,{slug:cleanSlug(u.slug),updatedAt:firebase.firestore.FieldValue.serverTimestamp()}),{merge:true});
+    try{DlinkyStore.setItem('dlinkyUser',JSON.stringify(u));DlinkyStore.setItem('dlinkyCurrentEmail',u.email)}catch(e){}
+    try{window.user=u; user=u}catch(e){window.user=u}
+  }
+  async function loginFirebase(e){
+    if(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();}
+    if(!ready()) return msg('Firebase não carregou. Verifique os scripts do Firebase no HTML.');
+    const email=String(q('#loginEmail')?.value||'').trim().toLowerCase();
+    const pass=q('#loginPass')?.value||'';
+    if(!email) return msg('Digite seu e-mail.');
+    if(!pass) return msg('Digite sua senha.');
+    try{
+      const cred=await firebase.auth().signInWithEmailAndPassword(email,pass);
+      const snap=await firebase.firestore().collection('users').doc(cred.user.uid).get();
+      let u=Object.assign(baseUser(email,email.split('@')[0],email.split('@')[0]), snap.exists?(snap.data()||{}):{}, {uid:cred.user.uid,email});
+      await saveUserData(u);
+      msg('Login efetuado');
+      location.hash='#/dashboard';
+      setTimeout(()=>{try{renderDash()}catch(_){ }},120);
+    }catch(err){
+      msg('E-mail ou senha incorretos.');
+    }
+  }
+  async function registerFirebase(e){
+    if(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();}
+    if(!ready()) return msg('Firebase não carregou. Verifique os scripts do Firebase no HTML.');
+    const name=String(q('#regName')?.value||'').trim()||'Usuário';
+    const slug=cleanSlug(q('#regSlug')?.value||name);
+    const email=String(q('#regEmail')?.value||'').trim().toLowerCase();
+    const p1=q('#regPass')?.value||'';
+    const p2=q('#regPass2')?.value||'';
+    if(!email) return msg('Digite seu e-mail.');
+    if(p1.length<6) return msg('A senha precisa ter pelo menos 6 caracteres.');
+    if(p1!==p2) return msg('As senhas não conferem.');
+    try{
+      const cred=await firebase.auth().createUserWithEmailAndPassword(email,p1);
+      const u=Object.assign(baseUser(email,name,slug),{uid:cred.user.uid});
+      await saveUserData(u);
+      msg('Conta criada com sucesso!');
+      location.hash='#/dashboard';
+      setTimeout(()=>{try{renderDash()}catch(_){ }},120);
+    }catch(err){
+      const code=String(err&&err.code||'');
+      if(code.includes('email-already-in-use')) return msg('Esse e-mail já tem conta. Faça login.');
+      if(code.includes('weak-password')) return msg('Senha fraca. Use pelo menos 6 caracteres.');
+      if(code.includes('operation-not-allowed')) return msg('Ative Email/Senha no Firebase Authentication.');
+      msg('Erro ao criar conta.');
+    }
+  }
+  function bind(){
+    const l=q('#loginForm');
+    if(l){l.onsubmit=loginFirebase; const b=l.querySelector('button[type="submit"],button:not([type])'); if(b&&!b.__v3){b.__v3=1;b.addEventListener('click',loginFirebase,true)}}
+    const r=q('#registerForm');
+    if(r){r.onsubmit=registerFirebase; const b=r.querySelector('button[type="submit"],button:not([type])'); if(b&&!b.__v3){b.__v3=1;b.addEventListener('click',registerFirebase,true)}}
+  }
+  function getAvatar(){
+    let u={}; try{u=JSON.parse(DlinkyStore.getItem('dlinkyUser')||'{}')}catch(e){}
+    try{u=Object.assign({},u,window.user||{},typeof user!=='undefined'?user:{})}catch(e){}
+    return String(u.avatar||u.photoURL||u.foto||u.icon||q('#cfgAvatar')?.value||q('#uploadAvatar')?.value||'').trim();
+  }
+  function forceIcon(){
+    const card=q('#profileCard'); if(!card) return;
+    let av=getAvatar(); if(!av) return;
+    let box=q('#dlinkyIconV3',card);
+    if(!box){box=document.createElement('div');box.id='dlinkyIconV3';card.appendChild(box)}
+    box.style.cssText='position:absolute;left:50%;top:112px;width:90px;height:90px;transform:translateX(-50%);border-radius:50%;background-size:cover;background-position:center;z-index:99999;display:block;border:3px solid #fff;box-shadow:0 0 25px rgba(168,85,247,.9);pointer-events:none;';
+    box.style.backgroundImage='url("'+av.replace(/"/g,'%22')+'")';
+    const pa=q('#profileAvatar'); if(pa){pa.style.display='block'; pa.style.opacity='1'; if(pa.tagName==='IMG') pa.src=av; else pa.style.backgroundImage='url("'+av.replace(/"/g,'%22')+'")'}
+  }
+  const old=window.renderProfile || (typeof renderProfile==='function'?renderProfile:null);
+  if(old&&!old.__v3Icon){const rp=function(){const r=old.apply(this,arguments);[0,100,400,1000].forEach(t=>setTimeout(forceIcon,t));return r};rp.__v3Icon=1;window.renderProfile=rp;try{renderProfile=rp}catch(e){}}
+  bind(); document.addEventListener('DOMContentLoaded',()=>{bind();setTimeout(forceIcon,300)}); window.addEventListener('hashchange',()=>setTimeout(forceIcon,300)); setTimeout(()=>{bind();forceIcon()},800);
 })();
