@@ -12424,13 +12424,17 @@ document.addEventListener("click",(e)=>{
 })();
 
 
-/* ===== FIREBASE FRAMES FIX: molduras do Admin 100% online ===== */
+
+
+
+/* ===== FIREBASE FRAMES FIX V5: moldura cadastrada fica fixa online ===== */
 (function(){
-  if(window.__dlinkyFirebaseFramesFixV1) return;
-  window.__dlinkyFirebaseFramesFixV1 = true;
+  if(window.__dlinkyFramesFixV5Persistente) return;
+  window.__dlinkyFramesFixV5Persistente = true;
 
   const PROJECT_ID = "dlinky-45df5";
   const API_KEY = "AIzaSyBQDC8YM_6tJKyF2irGmOiW8NYHeJkHdFI";
+
   const FRAMES_URL =
     "https://firestore.googleapis.com/v1/projects/" +
     PROJECT_ID +
@@ -12439,23 +12443,39 @@ document.addEventListener("click",(e)=>{
 
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 
-  function safeParse(v,fb){
-    try{return JSON.parse(v || JSON.stringify(fb));}catch(e){return fb;}
+  let memoryFrames = [];
+
+  function parse(v,fb){
+    try{return JSON.parse(v || JSON.stringify(fb));}
+    catch(e){return fb;}
+  }
+
+  function cleanFrames(arr){
+    const seen = new Set();
+    return (Array.isArray(arr) ? arr : []).filter(f=>{
+      if(!f || !f.url) return false;
+      const key = String(f.url).trim();
+      if(!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   function getLocalFrames(){
-    const arr = safeParse(localStorage.getItem("dlinkyCustomFrames"), []);
-    return Array.isArray(arr) ? arr.filter(f=>f && f.url) : [];
+    const a = parse(localStorage.getItem("dlinkyCustomFrames"), []);
+    return cleanFrames(a);
   }
 
   function setLocalFrames(frames){
-    frames = Array.isArray(frames) ? frames.filter(f=>f && f.url) : [];
+    frames = cleanFrames(frames);
+    memoryFrames = frames;
     localStorage.setItem("dlinkyCustomFrames", JSON.stringify(frames));
     try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
   }
 
-  function loadFramesOnlineSync(){
+  function readOnlineSync(){
     try{
       const xhr = new XMLHttpRequest();
       xhr.open("GET", FRAMES_URL, false);
@@ -12464,31 +12484,33 @@ document.addEventListener("click",(e)=>{
       if(xhr.status >= 200 && xhr.status < 300){
         const doc = JSON.parse(xhr.responseText || "{}");
         const str = doc?.fields?.frames?.stringValue || "[]";
-        const frames = safeParse(str, []);
-        if(Array.isArray(frames)){
-          setLocalFrames(frames);
-          return frames;
-        }
+        const frames = cleanFrames(parse(str, []));
+        setLocalFrames(frames);
+        return frames;
       }
 
       if(xhr.status === 404){
-        saveFramesOnlineSync(getLocalFrames());
+        const local = getLocalFrames();
+        writeOnlineSync(local);
+        return local;
       }
+
+      console.warn("Frames V5: erro lendo online", xhr.status, xhr.responseText);
     }catch(e){
-      console.warn("Dlinky frames: erro ao carregar molduras online", e);
+      console.warn("Frames V5: falha lendo online", e);
     }
 
-    return getLocalFrames();
+    return memoryFrames.length ? memoryFrames : getLocalFrames();
   }
 
-  function saveFramesOnlineSync(frames){
-    frames = Array.isArray(frames) ? frames.filter(f=>f && f.url) : [];
+  function writeOnlineSync(frames){
+    frames = cleanFrames(frames);
     setLocalFrames(frames);
 
     try{
       const xhr = new XMLHttpRequest();
       xhr.open("PATCH", FRAMES_URL, false);
-      xhr.setRequestHeader("Content-Type","application/json");
+      xhr.setRequestHeader("Content-Type", "application/json");
       xhr.send(JSON.stringify({
         fields:{
           frames:{stringValue:JSON.stringify(frames)},
@@ -12497,14 +12519,64 @@ document.addEventListener("click",(e)=>{
       }));
 
       if(!(xhr.status >= 200 && xhr.status < 300)){
-        console.warn("Dlinky frames: erro salvando online", xhr.status, xhr.responseText);
+        console.warn("Frames V5: erro salvando online", xhr.status, xhr.responseText);
+        return false;
       }
+
+      return true;
     }catch(e){
-      console.warn("Dlinky frames: falha salvando online", e);
+      console.warn("Frames V5: falha salvando online", e);
+      return false;
     }
   }
 
-  function renderFramesStore(){
+  function collectAdminFrameFromForm(){
+    const url = q("#adminFrameUrl")?.value?.trim() || "";
+    if(!url) return null;
+
+    const onlyNum = v => {
+      const m = String(v || "").match(/\d+/);
+      return m ? Number(m[0]) : null;
+    };
+
+    const base = q("#adminFramePrice")?.value || "20 Linkwuans";
+    const b = onlyNum(base) || 20;
+
+    return {
+      id:"frame_"+Date.now(),
+      name:q("#adminFrameName")?.value?.trim() || "Moldura personalizada",
+      desc:q("#adminFrameDesc")?.value?.trim() || "Moldura enviada pelo admin",
+      price:base,
+      url:url,
+      prices:{
+        "3 dias":onlyNum(q("#adminPrice3")?.value)||b,
+        "7 dias":onlyNum(q("#adminPrice7")?.value)||b*2,
+        "15 dias":onlyNum(q("#adminPrice15")?.value)||b*3,
+        "Permanente":onlyNum(q("#adminPricePerm")?.value)||b*2
+      },
+      createdAt:Date.now()
+    };
+  }
+
+  function renderAdminFrames(){
+    const box = q("#adminFramesList");
+    if(!box) return;
+
+    const frames = readOnlineSync();
+
+    box.innerHTML = frames.length ? frames.map((f,i)=>`
+      <div class="admin-item">
+        <img src="${esc(f.url)}" alt="" style="object-fit:contain">
+        <div>
+          <b>${esc(f.name || "Moldura")}</b><br>
+          <small>${esc(f.price || "20 Linkwuans")} • ${esc(f.desc || "")}</small>
+        </div>
+        <button class="delete" type="button" data-v5-del-frame="${i}">×</button>
+      </div>
+    `).join("") : "<p>Nenhuma moldura custom adicionada ainda.</p>";
+  }
+
+  function renderShopFrames(){
     const grid = q("#shopGrid");
     if(!grid) return;
 
@@ -12513,7 +12585,7 @@ document.addEventListener("click",(e)=>{
 
     if(mode !== "frames") return;
 
-    const frames = loadFramesOnlineSync();
+    const frames = readOnlineSync();
     grid.classList.add("frames-shop-grid");
 
     if(!frames.length){
@@ -12526,13 +12598,16 @@ document.addEventListener("click",(e)=>{
     }
 
     const av = (typeof user === "object" && user && user.avatar) ? user.avatar : "";
+
     window.__dlinkyVisibleFrames = frames.map((f,i)=>[
       f.name || "Moldura personalizada",
       f.price || "20 Linkwuans",
       "custom-"+i,
       f.desc || "Moldura enviada pelo admin",
       "Disponível",
-      f.url || ""
+      f.url || "",
+      f.prices || null,
+      f.id || f.url || ("frame_"+i)
     ]);
 
     grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
@@ -12540,11 +12615,11 @@ document.addEventListener("click",(e)=>{
       return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
         <div class="frame-shop-preview real-frame-preview">
           <div class="frame-avatar-demo zyo-person-demo" style="background-image:url('${String(av).replace(/'/g,"%27")}')!important"></div>
-          <img class="frame-img big" src="${String(x[5]).replace(/"/g,"&quot;")}" alt="${String(x[0]).replace(/"/g,"&quot;")}">
+          <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
         </div>
         <div class="frame-info clean-info">
-          <b>${x[0]}<span class="frame-url-chip">online</span></b>
-          <small>${x[3]}</small>
+          <b>${esc(x[0])}<span class="frame-url-chip">online</span></b>
+          <small>${esc(x[3])}</small>
         </div>
         <div class="frame-stock available"><span></span><b>Disponível</b></div>
         <div class="frame-price">Preço do item: <b data-price-label="${i}">${base} Linkwuans</b></div>
@@ -12563,119 +12638,116 @@ document.addEventListener("click",(e)=>{
     }).join("");
   }
 
-  function renderAdminFramesOnline(){
-    const box = q("#adminFramesList");
-    if(!box) return;
-
-    const frames = loadFramesOnlineSync();
-
-    box.innerHTML = frames.length ? frames.map((f,i)=>`
-      <div class="admin-item">
-        <img src="${String(f.url||"").replace(/"/g,"&quot;")}" alt="" style="object-fit:contain">
-        <div>
-          <b>${String(f.name||"Moldura")}</b><br>
-          <small>${String(f.price||"20 Linkwuans")} • ${String(f.desc||"")}</small>
-        </div>
-        <button class="delete" type="button" data-online-del-frame="${i}">×</button>
-      </div>
-    `).join("") : "<p>Nenhuma moldura custom adicionada ainda.</p>";
-  }
-
-  // Carrega molduras online assim que abrir.
-  loadFramesOnlineSync();
-
-  document.addEventListener("click", function(e){
-    // Admin adicionar moldura: salva no documento separado online.
-    if(e.target && e.target.id === "adminAddFrame"){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-
-      const url = q("#adminFrameUrl")?.value?.trim() || "";
-      if(!url){
-        try{toast("Cole a URL da moldura.");}catch(err){}
-        return;
-      }
-
-      const frames = loadFramesOnlineSync();
-
-      frames.unshift({
-        id:"frame_"+Date.now(),
-        name:q("#adminFrameName")?.value || "Moldura personalizada",
-        desc:q("#adminFrameDesc")?.value || "Moldura enviada pelo admin",
-        price:q("#adminFramePrice")?.value || "20 Linkwuans",
-        url:url,
-        createdAt:Date.now()
-      });
-
-      saveFramesOnlineSync(frames);
-      renderAdminFramesOnline();
-      renderFramesStore();
-
-      try{toast("Moldura salva online!");}catch(err){}
+  function addFramePersistently(){
+    const frame = collectAdminFrameFromForm();
+    if(!frame){
+      try{toast("Cole a URL da moldura.");}catch(e){}
       return;
     }
 
-    // Deletar moldura admin online.
-    const del = e.target.closest && e.target.closest("[data-online-del-frame]");
+    const current = readOnlineSync();
+    const filtered = current.filter(f => String(f.url).trim() !== String(frame.url).trim());
+    filtered.unshift(frame);
+
+    const ok = writeOnlineSync(filtered);
+
+    // Confirma lendo do Firebase logo depois. Se não ler, mantém memória/local.
+    const check = readOnlineSync();
+    if(!check.some(f => String(f.url).trim() === String(frame.url).trim())){
+      filtered.unshift(frame);
+      setLocalFrames(filtered);
+      writeOnlineSync(filtered);
+    }
+
+    renderAdminFrames();
+    renderShopFrames();
+
+    try{toast(ok ? "Moldura salva online e fixa!" : "Moldura salva localmente, tente publicar as regras do Firebase.");}catch(e){}
+  }
+
+  // Carrega no começo.
+  memoryFrames = readOnlineSync();
+
+  document.addEventListener("click", function(e){
+    const add = e.target.closest && e.target.closest("#adminAddFrame");
+    if(add){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      addFramePersistently();
+      return;
+    }
+
+    const del = e.target.closest && e.target.closest("[data-v5-del-frame]");
     if(del){
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
 
-      const frames = loadFramesOnlineSync();
-      frames.splice(Number(del.dataset.onlineDelFrame),1);
-      saveFramesOnlineSync(frames);
-      renderAdminFramesOnline();
-      renderFramesStore();
+      const frames = readOnlineSync();
+      frames.splice(Number(del.dataset.v5DelFrame),1);
+      writeOnlineSync(frames);
 
-      try{toast("Moldura removida online.");}catch(err){}
+      renderAdminFrames();
+      renderShopFrames();
+
+      try{toast("Moldura removida online.");}catch(e){}
       return;
     }
 
-    // Clicar aba molduras: recarrega do Firebase.
     const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
     if(tab && tab.dataset.shopTab === "frames"){
-      setTimeout(renderFramesStore, 50);
-      setTimeout(renderFramesStore, 300);
+      setTimeout(renderShopFrames, 50);
+      setTimeout(renderShopFrames, 300);
+      setTimeout(renderShopFrames, 1000);
     }
   }, true);
 
   const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__framesFixOnline){
+  if(typeof oldOpenTab === "function" && !oldOpenTab.__framesFixV5Persistente){
     const patched = function(id){
       const result = oldOpenTab.apply(this, arguments);
-      if(id === "admin") setTimeout(renderAdminFramesOnline, 100);
-      if(id === "store") setTimeout(renderFramesStore, 100);
+      if(id === "admin"){
+        setTimeout(renderAdminFrames, 50);
+        setTimeout(renderAdminFrames, 400);
+      }
+      if(id === "store"){
+        setTimeout(renderShopFrames, 50);
+        setTimeout(renderShopFrames, 400);
+      }
       return result;
     };
-    patched.__framesFixOnline = true;
+    patched.__framesFixV5Persistente = true;
     window.openTab = patched;
     try{openTab = patched;}catch(e){}
   }
 
   const oldRenderShop = window.renderShop;
-  if(typeof oldRenderShop === "function" && !oldRenderShop.__framesFixOnline){
+  if(typeof oldRenderShop === "function" && !oldRenderShop.__framesFixV5Persistente){
     const patchedRenderShop = function(){
       const result = oldRenderShop.apply(this, arguments);
-      renderFramesStore();
+      renderShopFrames();
       return result;
     };
-    patchedRenderShop.__framesFixOnline = true;
+    patchedRenderShop.__framesFixV5Persistente = true;
     window.renderShop = patchedRenderShop;
     try{renderShop = patchedRenderShop;}catch(e){}
   }
 
-  window.dlinkyFramesSaveOnlineNow = function(){
-    saveFramesOnlineSync(getLocalFrames());
-    console.log("Molduras salvas online.");
+  window.dlinkyFramesV5Debug = function(){
+    const online = readOnlineSync();
+    console.log("Molduras online:", online);
+    console.log("Molduras local:", getLocalFrames());
+    return online;
   };
 
-  window.dlinkyFramesReloadOnlineNow = function(){
-    const frames = loadFramesOnlineSync();
-    renderAdminFramesOnline();
-    renderFramesStore();
-    console.log("Molduras online:", frames);
-    return frames;
+  window.dlinkyFramesV5SaveNow = function(){
+    return writeOnlineSync(getLocalFrames());
   };
+
+  setInterval(function(){
+    const active = q("#tab-store [data-shop-tab].active");
+    if(active && active.dataset.shopTab === "frames") renderShopFrames();
+    if(q("#adminFramesList")) renderAdminFrames();
+  }, 3000);
 })();
