@@ -12729,3 +12729,126 @@ document.addEventListener("click",(e)=>{
   if(old&&!old.__v3Icon){const rp=function(){const r=old.apply(this,arguments);[0,100,400,1000].forEach(t=>setTimeout(forceIcon,t));return r};rp.__v3Icon=1;window.renderProfile=rp;try{renderProfile=rp}catch(e){}}
   bind(); document.addEventListener('DOMContentLoaded',()=>{bind();setTimeout(forceIcon,300)}); window.addEventListener('hashchange',()=>setTimeout(forceIcon,300)); setTimeout(()=>{bind();forceIcon()},800);
 })();
+
+/* =========================================================
+   DLINKY HOTFIX V4 — ÍCONE/AVATAR VISÍVEL NO VER PERFIL
+   Mantém o Firebase/login que já funcionou. Este bloco só força
+   o avatar a aparecer no perfil público, mesmo se patches antigos
+   esconderem #profileAvatar.
+   ========================================================= */
+(function(){
+  'use strict';
+  if(window.__DLINKY_ICON_VISIBLE_V4__) return;
+  window.__DLINKY_ICON_VISIBLE_V4__ = true;
+
+  const $ = (s,r=document)=>r.querySelector(s);
+  const clean = v => String(v || '').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/["']/g,'');
+  const isUrl = v => {
+    v = clean(v);
+    return !!v && v !== 'none' && v !== 'null' && v !== 'undefined' && !v.startsWith('blob:null');
+  };
+  const fallbackAvatar = 'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif';
+
+  function readUser(){
+    try{
+      const a = JSON.parse((window.DlinkyStore && DlinkyStore.getItem('dlinkyUser')) || '{}') || {};
+      let b = {};
+      try{ if(typeof user !== 'undefined' && user) b = user; }catch(e){}
+      try{ if(window.user) b = Object.assign({}, b, window.user); }catch(e){}
+      return Object.assign({}, a, b);
+    }catch(e){ return {}; }
+  }
+
+  function avatarFromAnything(){
+    const u = readUser();
+    const fields = ['avatar','avatarUrl','photoURL','photoUrl','foto','icon','iconUrl','profileAvatar','profileImage','image','pfp','picture'];
+    for(const k of fields){ if(isUrl(u[k])) return clean(u[k]); }
+    const inputs = ['#cfgAvatar','#uploadAvatar','#avatarUrl','#profileAvatarUrl'];
+    for(const sel of inputs){ const el=$(sel); if(el && isUrl(el.value)) return clean(el.value); }
+    const els = ['#dashAvatar','#sideAvatar','#frameBuyAvatar','#adjustAvatar','#profileAvatar'];
+    for(const sel of els){
+      const el=$(sel); if(!el) continue;
+      if(el.tagName === 'IMG' && isUrl(el.getAttribute('src'))) return clean(el.getAttribute('src'));
+      const bg = (el.style && el.style.backgroundImage) || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : '') || '';
+      const m = bg.match(/url\(["']?(.*?)["']?\)/);
+      if(m && isUrl(m[1])) return clean(m[1]);
+    }
+    return fallbackAvatar;
+  }
+
+  function installCss(){
+    let st = $('#dlinkyIconVisibleV4Css');
+    if(st) return;
+    st = document.createElement('style');
+    st.id = 'dlinkyIconVisibleV4Css';
+    st.textContent = `
+      #profileCard,.profile-wrap,.profile-card,.public-card,.card-profile{position:relative!important;overflow:visible!important;}
+      #dlinkyProfileAvatarV4{
+        position:absolute!important;left:50%!important;top:144px!important;
+        width:96px!important;height:96px!important;border-radius:50%!important;
+        transform:translate(-50%,-50%)!important;z-index:2147483000!important;
+        display:block!important;visibility:visible!important;opacity:1!important;
+        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        border:3px solid rgba(255,255,255,.95)!important;
+        box-shadow:0 0 0 5px rgba(13,8,20,.75),0 0 34px rgba(168,85,247,.85)!important;
+        pointer-events:none!important;overflow:hidden!important;
+      }
+      #dlinkyProfileAvatarV4 img{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:50%!important;display:block!important;visibility:visible!important;opacity:1!important;}
+      #avatarDecoration #profileAvatar{display:block!important;visibility:visible!important;opacity:1!important;}
+    `;
+    document.head.appendChild(st);
+  }
+
+  function findCard(){
+    return $('#profileCard') || $('.profile-wrap') || $('.profile-card') || $('.public-card') || $('.card-profile') || $('#profile') || document.body;
+  }
+
+  function forceIcon(){
+    installCss();
+    const card = findCard();
+    if(!card) return;
+    let box = $('#dlinkyProfileAvatarV4');
+    if(!box){
+      box = document.createElement('div');
+      box.id = 'dlinkyProfileAvatarV4';
+      box.innerHTML = '<img alt="avatar do perfil">';
+      card.appendChild(box);
+    }else if(box.parentElement !== card){
+      card.appendChild(box);
+    }
+    const av = avatarFromAnything();
+    const img = box.querySelector('img');
+    if(img && img.getAttribute('src') !== av) img.setAttribute('src', av);
+    box.style.setProperty('background-image', `url("${av.replace(/"/g,'%22')}")`, 'important');
+    box.style.setProperty('display','block','important');
+    box.style.setProperty('visibility','visible','important');
+    box.style.setProperty('opacity','1','important');
+
+    try{
+      if(typeof user !== 'undefined' && user && (!user.avatar || !isUrl(user.avatar))) user.avatar = av;
+      if(window.user && (!window.user.avatar || !isUrl(window.user.avatar))) window.user.avatar = av;
+      const old = $('#profileAvatar');
+      if(old){
+        if(old.tagName === 'IMG') old.setAttribute('src', av);
+        old.style.setProperty('background-image', `url("${av.replace(/"/g,'%22')}")`, 'important');
+        old.style.setProperty('display','block','important');
+        old.style.setProperty('visibility','visible','important');
+        old.style.setProperty('opacity','1','important');
+      }
+    }catch(e){}
+  }
+
+  const oldRender = window.renderProfile || (typeof renderProfile !== 'undefined' ? renderProfile : null);
+  if(typeof oldRender === 'function'){
+    const patched = function(){
+      const r = oldRender.apply(this, arguments);
+      [0,50,150,400,900,1600].forEach(t=>setTimeout(forceIcon,t));
+      return r;
+    };
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',()=>[0,200,700,1500].forEach(t=>setTimeout(forceIcon,t)));
+  window.addEventListener('hashchange',()=>[50,300,800].forEach(t=>setTimeout(forceIcon,t)));
+  setTimeout(forceIcon,300);
+})();
