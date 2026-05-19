@@ -54,9 +54,8 @@ const presetUrls={
   banner2:'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
   avatar1:'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif'
 };
-const defaultUser={name:'linkroubadao',slug:'linkroubadao',email:'',bio:'o mundo esta perdido. Eu serei a salvaçao',avatar:'',banner:'',bg:'',video:'',frame:'',music:'',welcome:'Clique aqui',color:'#a855f7',particles:true,particleType:'snow',verified:true,hideViews:false,template:'default',decoration:'purple-ring',views:0,links:[{name:'Instagram',url:'https://instagram.com/'},{name:'TikTok',url:'https://tiktok.com/'},{name:'Discord',url:'https://discord.com/'},{name:'YouTube',url:'https://youtube.com/'}],socials:[{name:'Instagram',url:'https://instagram.com/',on:true},{name:'Spotify',url:'https://spotify.com/',on:true},{name:'TikTok',url:'https://tiktok.com/',on:true},{name:'Discord',url:'https://discord.com/',on:false},{name:'YouTube',url:'https://youtube.com/',on:false}],history:['Conta criada no Dlinky','Tema roxo aplicado','Sistema de decorações ativado']};
+const defaultUser={name:'linkroubadao',slug:'linkroubadao',email:'',bio:'o mundo esta perdido. Eu serei a salvaçao',avatar:presetUrls.avatar1,banner:presetUrls.banner1,bg:presetUrls.bg1,video:'',frame:'',music:'',welcome:'Clique aqui',color:'#a855f7',particles:true,particleType:'snow',verified:true,hideViews:false,template:'default',decoration:'purple-ring',views:0,links:[{name:'Instagram',url:'https://instagram.com/'},{name:'TikTok',url:'https://tiktok.com/'},{name:'Discord',url:'https://discord.com/'},{name:'YouTube',url:'https://youtube.com/'}],socials:[{name:'Instagram',url:'https://instagram.com/',on:true},{name:'Spotify',url:'https://spotify.com/',on:true},{name:'TikTok',url:'https://tiktok.com/',on:true},{name:'Discord',url:'https://discord.com/',on:false},{name:'YouTube',url:'https://youtube.com/',on:false}],history:['Conta criada no Dlinky','Tema roxo aplicado','Sistema de decorações ativado']};
 let user=loadUser();let assetMode='backgrounds';
-
 function loadUser(){try{return {...defaultUser,...JSON.parse(localStorage.getItem('dlinkyUser')||'{}')}}catch{return {...defaultUser}}}
 function saveUser(){localStorage.setItem('dlinkyUser',JSON.stringify(user));renderDash();toast('Salvo com sucesso!')}
 function addHistory(t){user.history=[`${new Date().toLocaleString('pt-BR')} — ${t}`,...(user.history||[])].slice(0,20);localStorage.setItem('dlinkyUser',JSON.stringify(user))}
@@ -102,7 +101,7 @@ $('#saveImages').onclick=()=>{
   user.video=novoVideo;
   if(novaFrame) user.frame=novaFrame;
 
-  
+  if(user.avatar) localStorage.setItem('dlinkyAvatarPreserve_'+(user.email||user.slug||'local'),user.avatar);
 
   addHistory('Imagens/fundos alterados');
   saveUser();
@@ -124,8 +123,8 @@ if(sessionStorage.getItem(__entryKey)==='1'){
 }else{
   $('#entryOverlay').classList.remove('hidden');
 }
-$('#profileName').textContent=user.name;$('#profileSlug2').textContent='@'+user.slug;$('#profileBio').textContent=user.bio||'';$('#verifiedBadge').style.display=user.verified?'inline':'none';$('#profileViews').style.display=user.hideViews?'none':'inline-block';$('#profileViews').textContent=`👁 ${user.views||0} views`;const __avatarClean=user.avatar||'';
-if(__avatarClean){user.avatar=__avatarClean;}
+$('#profileName').textContent=user.name;$('#profileSlug2').textContent='@'+user.slug;$('#profileBio').textContent=user.bio||'';$('#verifiedBadge').style.display=user.verified?'inline':'none';$('#profileViews').style.display=user.hideViews?'none':'inline-block';$('#profileViews').textContent=`👁 ${user.views||0} views`;const __avatarClean=user.avatar||localStorage.getItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'))||'';
+if(__avatarClean){user.avatar=__avatarClean;localStorage.setItem('dlinky_avatar_clean_'+(user.email||user.slug||'local'),__avatarClean);}
 setBg($('#profileAvatar'),__avatarClean);setBg($('#profileBanner'),user.banner);setBg($('#profileBg'),user.bg);const vid=$('#profileVideo');vid.classList.remove('show');vid.removeAttribute('src');if(user.video){vid.src=user.video;vid.load();vid.classList.add('show');vid.play().catch(()=>{})}$('#profileFrame').src=user.frame||'';$('#profileFrame').style.display=user.frame?'block':'none';const deco=$('#avatarDecoration');deco.className='avatar-decoration '+(user.decoration||'none');$('#profileLinks').innerHTML=(user.links||[]).map(l=>`<a target="_blank" href="${safeUrl(l.url)}">${escapeHtml(l.name)}</a>`).join('');$('#profileSocials').innerHTML=(user.socials||[]).filter(s=>s.on).map(s=>`<a class="social-icon brand-${String(s.name||'link').toLowerCase().replace(/[^a-z0-9]/g,'')}" target="_blank" title="${s.name}" href="${safeUrl(s.url)}"><i class="${icons[s.name]||'fa-solid fa-link'}"></i></a>`).join('');const audio=$('#profileAudio'); if(audio){ const ms=user.music||''; if(audio.getAttribute('src')!==ms){ audio.src=ms; audio.load(); } } createProfileParticles(user.particleType||'snow')}
 $('#entryOverlay').onclick=()=>{
   const __entryKey='dlinky_entry_ok_'+(user.slug||user.email||'local');
@@ -9173,7 +9172,7 @@ document.addEventListener("click",(e)=>{
   function normalizeFrame(raw,i){const url=String(raw?.url||raw?.frameUrl||'').trim();const price=num(raw?.price??raw?.basePrice??raw?.prices?.['3 dias']??20)||20;const prices=Object.assign({},raw?.prices||{});['3 dias','7 dias','15 dias','Permanente'].forEach(k=>{prices[k]=num(prices[k])||0});if(!prices['3 dias'])prices['3 dias']=price;if(!prices['7 dias'])prices['7 dias']=Math.round(price*1.5);if(!prices['15 dias'])prices['15 dias']=Math.round(price*2);if(!prices['Permanente'])prices['Permanente']=Math.round(price*3);return {id:String(raw?.id||slug(url||raw?.name||i)),name:String(raw?.name||raw?.title||'Moldura'),desc:String(raw?.desc||raw?.description||''),url,price,prices};}
   function allFrames(){const src=[...read(FRAMES_KEY,[]),...read(OLD_FRAMES_KEY,[]),...(userData().customFrames||[])];const map=new Map();src.forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const arr=[...map.values()];write(FRAMES_KEY,arr);write(OLD_FRAMES_KEY,arr);const u=userData();u.customFrames=arr;write(USER_KEY,u);return arr;}
   function saveFrames(arr){const map=new Map();(Array.isArray(arr)?arr:[]).forEach((f,i)=>{const n=normalizeFrame(f,i);if(n.url&&!isFake(n.url))map.set(norm(n.url),n)});const clean=[...map.values()];write(FRAMES_KEY,clean);write(OLD_FRAMES_KEY,clean);const u=userData();u.customFrames=clean;saveUser(u);return clean;}
-  function framePrice(f,d='3 dias'){const p=Number(f?.prices?.[d]);if(Number.isFinite(p)&&p>0)return p;return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
+  function framePrice(f,d='3 dias'){return num(f?.price)||Number(f?.prices?.['3 dias']||0)||20;}
   function frameUrl(it){return String(it?.url||it?.frameUrl||'').trim();}
   function isFrameItem(it){return !!(it&&frameUrl(it)&&/frame|moldur/i.test(String(it.type||it.kind||it.name||'frame')));}
   function itemId(it){return String(it?.id||slug(frameUrl(it)||it?.name));}
@@ -11700,7 +11699,7 @@ document.addEventListener("click",(e)=>{
   function durationMap(){return readJSON(DUR_KEY,{})}
   function saveDuration(id,dur){const map=durationMap();map[id]=DURATIONS.includes(dur)?dur:'3 dias';writeJSON(DUR_KEY,map)}
   function getDuration(id){const map=durationMap();return DURATIONS.includes(map[id])?map[id]:'3 dias'}
-  function priceFor(frame,dur){const p=Number(frame?.prices?.[dur]);if(Number.isFinite(p)&&p>0)return p;return priceNumber(frame?.price);}
+  function priceFor(frame,dur){ return priceNumber(frame.price); }
   function getAvatar(){
     return String((window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||'').trim();
   }
@@ -11859,6 +11858,45 @@ document.addEventListener("click",(e)=>{
 
   window.addEventListener('hashchange',()=>setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},80));
   setTimeout(()=>{if(storeRoot()?.classList.contains('active'))renderStore(getMode())},120);
+})();
+
+
+/* ===== FIX FINAL SOMENTE LOJA: preço não aumenta + avatar real no preview ===== */
+(function(){
+  const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  function num(v){const m=String(v||'40').match(/\d+/);return m?Number(m[0]):40}
+  function frames(){
+    try{return JSON.parse(localStorage.getItem('dlinkyCustomFrames')||'[]')}catch(e){return []}
+  }
+  function avatar(){return (window.__dlinkyGetBestAvatar&&window.__dlinkyGetBestAvatar())||''}
+  function apply(){
+    const store=q('#tab-store'); if(!store||!store.classList.contains('active'))return;
+    const av=avatar();
+    if(av){
+      qa('.frame-avatar-demo,.real-inv-avatar,.zyo-person-demo',store).forEach(el=>{
+        el.style.backgroundImage='url("'+av.replace(/"/g,'%22')+'")';
+        el.style.backgroundSize='cover';
+        el.style.backgroundPosition='center';
+        el.style.backgroundColor='transparent';
+      });
+    }
+    const arr=frames();
+    qa('[data-price-label],[data-v3-price]',store).forEach((el,i)=>{
+      const card=el.closest('[data-frame-card]');
+      const idx=Number(card?.dataset?.frameCard ?? i);
+      const f=arr[idx];
+      const p=num(f?.price||f?.prices?.['3 dias']||el.textContent||40);
+      el.textContent=p+' Linkwuans';
+    });
+  }
+  document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#tab-store [data-frame-duration],#tab-store [data-v3-duration]'))setTimeout(apply,0)},true);
+  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]'))setTimeout(apply,80)},true);
+  const oldRS=window.renderShop;
+  if(typeof oldRS==='function'&&!oldRS.__dlinkyPriceAvatarFix){
+    const patched=function(){const r=oldRS.apply(this,arguments);setTimeout(apply,0);setTimeout(apply,80);return r};
+    patched.__dlinkyPriceAvatarFix=true; window.renderShop=patched; try{renderShop=patched}catch(e){}
+  }
+  setTimeout(apply,200);
 })();
 
 
@@ -12106,890 +12144,19 @@ document.addEventListener("click",(e)=>{
 })();
 
 
-/* ===== FIX SEGURO FINAL: loja sem travar + preço da moldura sem loop =====
-   Mexe SOMENTE na Loja.
-   Remove a necessidade de MutationObserver pesado e atualiza preço só quando o usuário troca a duração ou abre o modal.
-*/
+
+/* ===== FIX CONTAS SEPARADAS LIMPO — NÃO MEXE EM MOLDURAS/LOJA ===== */
 (function(){
-  if(window.__dlinkyLojaLevePrecoFixFinal) return;
-  window.__dlinkyLojaLevePrecoFixFinal = true;
+  if(window.__dlinkyContasSeparadasSemMexerMoldura) return;
+  window.__dlinkyContasSeparadasSemMexerMoldura = true;
 
-  const $ = (s,r=document)=>r.querySelector(s);
-  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+  const $fix = (s,r=document)=>r.querySelector(s);
 
-  function readJSON(k,fb){
-    try{ const raw=localStorage.getItem(k); return raw?JSON.parse(raw):fb; }catch(e){ return fb; }
-  }
-  function onlyNum(v){
-    const m=String(v??'').match(/\d+/); return m?Number(m[0]):0;
-  }
-  function clean(v){ return String(v??'').trim().toLowerCase(); }
-  function allFrames(){
-    const keys=['dlinkyCustomFrames','dlinkyFrames','dlinkyShopFrames','dlinkyGlobalFrames','dlinkyCleanFrames'];
-    const out=[];
-    keys.forEach(k=>{ const arr=readJSON(k,[]); if(Array.isArray(arr)) out.push(...arr); });
-    const seen=new Set();
-    return out.filter(f=>{
-      const key=clean(f?.url||f?.frameUrl||f?.id||f?.name);
-      if(!key || seen.has(key)) return false;
-      seen.add(key); return true;
-    });
-  }
-  function frameByCard(card,idx){
-    const frames=allFrames();
-    const img=card?.querySelector('img.frame-img,img.real-inv-frame,.frame-img,.real-inv-frame');
-    const src=clean(img?.getAttribute('src')||img?.src||'');
-    if(src){
-      const bySrc=frames.find(f=>clean(f?.url||f?.frameUrl)===src);
-      if(bySrc) return bySrc;
-    }
-    const title=clean(card?.querySelector('.frame-info b,.asset-body b,b')?.textContent||'');
-    if(title){
-      const byName=frames.find(f=>title.includes(clean(f?.name)) || clean(f?.name).includes(title));
-      if(byName) return byName;
-    }
-    return frames[idx] || null;
-  }
-  function priceFor(frame,duration,fallback){
-    if(frame){
-      const maps=[frame.prices,frame.precos,frame.priceMap];
-      for(const map of maps){
-        if(map && map[duration]!=null){
-          const n=Number(map[duration]);
-          if(Number.isFinite(n) && n>0) return n;
-        }
-      }
-      const direct=onlyNum(frame.price||frame.preco||frame.valor);
-      if(direct>0) return direct;
-    }
-    return onlyNum(fallback) || 0;
-  }
-  function updateCard(card){
-    if(!card) return;
-    const sel=card.querySelector('select[data-frame-duration],select[data-v3-duration],select.frame-duration');
-    if(!sel) return;
-    const idx=Number(sel.dataset.frameDuration||sel.dataset.v3Duration||card.dataset.frameCard||0);
-    const label=card.querySelector('[data-price-label],[data-v3-price],.frame-price b');
-    if(!label) return;
-    const frame=frameByCard(card,idx);
-    const price=priceFor(frame,sel.value,label.textContent);
-    if(price>0){
-      const txt=price+' Linkwuans';
-      if(label.textContent.trim()!==txt) label.textContent=txt;
-    }
-  }
-  function updateVisibleCards(){
-    const store=$('#tab-store');
-    if(!store || !store.classList.contains('active')) return;
-    $$('#tab-store .frame-shop-card,#tab-store [data-frame-card]').forEach(updateCard);
-  }
-  function updateModal(){
-    const modal=$('#frameBuyModal.show');
-    if(!modal) return;
-    const name=clean($('#frameBuyName')?.textContent||'');
-    const dur=($('#frameBuyDuration')?.textContent||modal.dataset.duration||'3 dias').trim();
-    const img=clean($('#frameBuyImg')?.getAttribute('src')||'');
-    const frames=allFrames();
-    const frame=frames.find(f=>clean(f?.url||f?.frameUrl)===img) || frames.find(f=>name && clean(f?.name)===name);
-    const label=$('#frameBuyPrice');
-    if(!label) return;
-    const price=priceFor(frame,dur,label.textContent||modal.dataset.price);
-    if(price>0){
-      const txt=price+' Linkwuans';
-      if(label.textContent.trim()!==txt) label.textContent=txt;
-      modal.dataset.price=String(price);
-    }
+  function normEmail(v){
+    return String(v || "").trim().toLowerCase();
   }
 
-  document.addEventListener('change',function(e){
-    const sel=e.target && e.target.closest && e.target.closest('#tab-store select[data-frame-duration],#tab-store select[data-v3-duration],#tab-store select.frame-duration');
-    if(!sel) return;
-    updateCard(sel.closest('.frame-shop-card,[data-frame-card],.asset-card'));
-  },true);
-
-  document.addEventListener('click',function(e){
-    if(e.target && e.target.closest && e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]')){
-      const btn=e.target.closest('#tab-store [data-confirm-frame],#tab-store [data-v3-buy-frame]');
-      updateCard(btn.closest('.frame-shop-card,[data-frame-card],.asset-card'));
-      setTimeout(updateModal,30);
-      setTimeout(updateModal,120);
-    }
-    if(e.target && e.target.closest && e.target.closest('#tab-store .shop-tabs button,#tab-store [data-shop-tab]')){
-      setTimeout(updateVisibleCards,80);
-    }
-  },true);
-
-  // Atualiza só algumas vezes quando entra na loja. Não fica em loop observando o HTML.
-  window.addEventListener('hashchange',()=>setTimeout(updateVisibleCards,120));
-  setTimeout(updateVisibleCards,300);
-})();
-
-
-
-/* ===== FIX CIRÚRGICO: ABA "OUTROS" DA LOJA NÃO VOLTAR PRO ANTERIOR ===== */
-(function(){
-  if(window.__dlinkyFixOutrosLojaCirurgico) return;
-  window.__dlinkyFixOutrosLojaCirurgico = true;
-
-  const q=(s,r=document)=>r.querySelector(s);
-  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-
-  function normalizeMode(v){
-    v = String(v || '').toLowerCase().trim();
-
-    if(v === 'recarga' || v === 'recharge' || v === 'coin' || v === 'coins') return 'coins';
-    if(v === 'moldura' || v === 'molduras' || v === 'frame' || v === 'frames') return 'frames';
-    if(v === 'efeito' || v === 'efeitos' || v === 'effect' || v === 'effects') return 'effects';
-    if(v === 'outro' || v === 'outros' || v === 'others' || v === 'other') return 'other';
-
-    return v || 'coins';
-  }
-
-  function fixButtonsDataset(){
-    qa('#tab-store [data-shop-tab], #tab-store .shop-tabs button').forEach(btn=>{
-      const old = btn.dataset.shopTab || btn.textContent || '';
-      const fixed = normalizeMode(old);
-      btn.dataset.shopTab = fixed;
-    });
-  }
-
-  function fixShopDataAliases(){
-    try{
-      if(typeof shopData === 'undefined' || !shopData) return;
-
-      // Garante que qualquer nome usado pelo botão aponte para o lugar certo
-      if(shopData.other && !shopData.outros) shopData.outros = shopData.other;
-      if(shopData.other && !shopData.others) shopData.others = shopData.other;
-
-      if(shopData.effects && !shopData.efeitos) shopData.efeitos = shopData.effects;
-      if(shopData.frames && !shopData.molduras) shopData.molduras = shopData.frames;
-      if(shopData.coins && !shopData.recarga) shopData.recarga = shopData.coins;
-    }catch(e){}
-  }
-
-  function keepActiveCorrect(){
-    fixButtonsDataset();
-    const active = q('#tab-store [data-shop-tab].active');
-    if(!active) return;
-
-    const mode = normalizeMode(active.dataset.shopTab || active.textContent);
-    active.dataset.shopTab = mode;
-
-    try{ shopMode = mode; }catch(e){}
-    window.shopMode = mode;
-
-    qa('#tab-store [data-shop-tab]').forEach(btn=>{
-      btn.classList.toggle('active', normalizeMode(btn.dataset.shopTab || btn.textContent) === mode);
-    });
-  }
-
-  fixShopDataAliases();
-  fixButtonsDataset();
-
-  // Aqui NÃO bloqueia clique. Só corrige o valor antes dos códigos antigos lerem.
-  document.addEventListener('pointerdown', function(e){
-    const btn = e.target.closest && e.target.closest('#tab-store [data-shop-tab], #tab-store .shop-tabs button');
-    if(!btn) return;
-
-    fixShopDataAliases();
-    const mode = normalizeMode(btn.dataset.shopTab || btn.textContent);
-    btn.dataset.shopTab = mode;
-    try{ shopMode = mode; }catch(err){}
-    window.shopMode = mode;
-  }, true);
-
-  document.addEventListener('click', function(e){
-    const btn = e.target.closest && e.target.closest('#tab-store [data-shop-tab], #tab-store .shop-tabs button');
-    if(!btn) return;
-
-    fixShopDataAliases();
-    const mode = normalizeMode(btn.dataset.shopTab || btn.textContent);
-    btn.dataset.shopTab = mode;
-    try{ shopMode = mode; }catch(err){}
-    window.shopMode = mode;
-
-    // deixa os listeners antigos rodarem, depois só confere se ficou certo
-    setTimeout(keepActiveCorrect, 30);
-    setTimeout(keepActiveCorrect, 200);
-  }, true);
-
-  const oldRenderShop = window.renderShop;
-  if(typeof oldRenderShop === 'function' && !oldRenderShop.__fixOutrosLojaCirurgico){
-    const patched = function(){
-      fixShopDataAliases();
-      fixButtonsDataset();
-
-      try{
-        if(typeof shopMode !== 'undefined') shopMode = normalizeMode(shopMode);
-        window.shopMode = normalizeMode(window.shopMode || shopMode);
-      }catch(e){}
-
-      return oldRenderShop.apply(this, arguments);
-    };
-    patched.__fixOutrosLojaCirurgico = true;
-    window.renderShop = patched;
-    try{ renderShop = patched; }catch(e){}
-  }
-
-  setTimeout(()=>{fixShopDataAliases(); fixButtonsDataset(); keepActiveCorrect();},300);
-})();
-// ===== PATCH ÚNICO: APAGAR MOLDURA FANTASMA DO INVENTÁRIO/LOJA =====
-(function(){
-  const FAKE_NAMES = ["moldura irritado","espinhos"];
-
-  function read(k,f){
-    try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}
-    catch(e){return f}
-  }
-
-  function write(k,v){
-    localStorage.setItem(k, JSON.stringify(v));
-  }
-
-  function isFake(obj){
-    const txt = String([
-      obj?.name,
-      obj?.title,
-      obj?.desc,
-      obj?.description
-    ].filter(Boolean).join(" ")).toLowerCase();
-
-    return FAKE_NAMES.some(x => txt.includes(x));
-  }
-
-  // limpa admin
-  const frames = read("dlinkyCustomFrames", []).filter(x => !isFake(x));
-  write("dlinkyCustomFrames", frames);
-
-  // limpa usuário/inventário
-  const u = read("dlinkyUser", {});
-  if(u && typeof u === "object"){
-    u.inventory = Array.isArray(u.inventory)
-      ? u.inventory.filter(x => !isFake(x))
-      : [];
-
-    if(isFake({
-      name:u.frameName,
-      desc:u.frameDesc
-    })){
-      u.frame = "";
-      u.frameUrl = "";
-      u.frameName = "";
-      u.frameDesc = "";
-      u.decoration = "none";
-    }
-
-    write("dlinkyUser", u);
-  }
-
-  // limpa caches antigos
-  [
-    "dlinkyFrames",
-    "dlinkyFrameVault",
-    "dlinkyLastGoodFrameUrl"
-  ].forEach(k => localStorage.removeItem(k));
-
-  console.log("Moldura fantasma removida.");
-})();
-/* ===== AJUSTE SOMENTE NA LOJA: diminuir preview da moldura ===== */
-(function(){
-  if(window.__dlinkyLojaMolduraMenorPreview) return;
-  window.__dlinkyLojaMolduraMenorPreview = true;
-
-  const css = document.createElement("style");
-  css.id = "dlinky-loja-moldura-menor-preview";
-  css.textContent = `
-    /* Só na loja, só no card de molduras */
-    #tab-store .frame-shop-preview .frame-img.big,
-    #shopGrid .frame-shop-preview .frame-img.big,
-    #shopGrid .real-frame-preview .frame-img.big {
-      width: 150px !important;
-      height: 150px !important;
-      object-fit: contain !important;
-      left: 50% !important;
-      top: 50% !important;
-      transform: translate(-50%, -50%) !important;
-      position: absolute !important;
-      max-width: 150px !important;
-      max-height: 150px !important;
-    }
-
-    #tab-store .frame-shop-preview,
-    #shopGrid .real-frame-preview {
-      position: relative !important;
-      overflow: hidden !important;
-    }
-  `;
-  document.head.appendChild(css);
-})();
-
-
-
-
-
-/* ===== FIREBASE FRAMES FIX V5: moldura cadastrada fica fixa online ===== */
-(function(){
-  if(window.__dlinkyFramesFixV5Persistente) return;
-  window.__dlinkyFramesFixV5Persistente = true;
-
-  const PROJECT_ID = "dlinky-45df5";
-  const API_KEY = "AIzaSyBQDC8YM_6tJKyF2irGmOiW8NYHeJkHdFI";
-
-  const FRAMES_URL =
-    "https://firestore.googleapis.com/v1/projects/" +
-    PROJECT_ID +
-    "/databases/(default)/documents/dlinky/frames?key=" +
-    API_KEY;
-
-  const q=(s,r=document)=>r.querySelector(s);
-  const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-  const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-
-  let memoryFrames = [];
-
-  function parse(v,fb){
-    try{return JSON.parse(v || JSON.stringify(fb));}
-    catch(e){return fb;}
-  }
-
-  function cleanFrames(arr){
-    const seen = new Set();
-    return (Array.isArray(arr) ? arr : []).filter(f=>{
-      if(!f || !f.url) return false;
-      const key = String(f.url).trim();
-      if(!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-
-  function getLocalFrames(){
-    const a = parse(localStorage.getItem("dlinkyCustomFrames"), []);
-    return cleanFrames(a);
-  }
-
-  function setLocalFrames(frames){
-    frames = cleanFrames(frames);
-    memoryFrames = frames;
-    localStorage.setItem("dlinkyCustomFrames", JSON.stringify(frames));
-    try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
-  }
-
-  function readOnlineSync(){
-    try{
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", FRAMES_URL, false);
-      xhr.send(null);
-
-      if(xhr.status >= 200 && xhr.status < 300){
-        const doc = JSON.parse(xhr.responseText || "{}");
-        const str = doc?.fields?.frames?.stringValue || "[]";
-        const frames = cleanFrames(parse(str, []));
-        setLocalFrames(frames);
-        return frames;
-      }
-
-      if(xhr.status === 404){
-        const local = getLocalFrames();
-        writeOnlineSync(local);
-        return local;
-      }
-
-      console.warn("Frames V5: erro lendo online", xhr.status, xhr.responseText);
-    }catch(e){
-      console.warn("Frames V5: falha lendo online", e);
-    }
-
-    return memoryFrames.length ? memoryFrames : getLocalFrames();
-  }
-
-  function writeOnlineSync(frames){
-    frames = cleanFrames(frames);
-    setLocalFrames(frames);
-
-    try{
-      const xhr = new XMLHttpRequest();
-      xhr.open("PATCH", FRAMES_URL, false);
-      xhr.setRequestHeader("Content-Type", "application/json");
-      xhr.send(JSON.stringify({
-        fields:{
-          frames:{stringValue:JSON.stringify(frames)},
-          updatedAt:{timestampValue:new Date().toISOString()}
-        }
-      }));
-
-      if(!(xhr.status >= 200 && xhr.status < 300)){
-        console.warn("Frames V5: erro salvando online", xhr.status, xhr.responseText);
-        return false;
-      }
-
-      return true;
-    }catch(e){
-      console.warn("Frames V5: falha salvando online", e);
-      return false;
-    }
-  }
-
-  function collectAdminFrameFromForm(){
-    const url = q("#adminFrameUrl")?.value?.trim() || "";
-    if(!url) return null;
-
-    const onlyNum = v => {
-      const m = String(v || "").match(/\d+/);
-      return m ? Number(m[0]) : null;
-    };
-
-    const base = q("#adminFramePrice")?.value || "20 Linkwuans";
-    const b = onlyNum(base) || 20;
-
-    return {
-      id:"frame_"+Date.now(),
-      name:q("#adminFrameName")?.value?.trim() || "Moldura personalizada",
-      desc:q("#adminFrameDesc")?.value?.trim() || "Moldura enviada pelo admin",
-      price:base,
-      url:url,
-      prices:{
-        "3 dias":onlyNum(q("#adminPrice3")?.value)||b,
-        "7 dias":onlyNum(q("#adminPrice7")?.value)||b*2,
-        "15 dias":onlyNum(q("#adminPrice15")?.value)||b*3,
-        "Permanente":onlyNum(q("#adminPricePerm")?.value)||b*2
-      },
-      createdAt:Date.now()
-    };
-  }
-
-  function renderAdminFrames(){
-    const box = q("#adminFramesList");
-    if(!box) return;
-
-    const frames = readOnlineSync();
-
-    box.innerHTML = frames.length ? frames.map((f,i)=>`
-      <div class="admin-item">
-        <img src="${esc(f.url)}" alt="" style="object-fit:contain">
-        <div>
-          <b>${esc(f.name || "Moldura")}</b><br>
-          <small>${esc(f.price || "20 Linkwuans")} • ${esc(f.desc || "")}</small>
-        </div>
-        <button class="delete" type="button" data-v5-del-frame="${i}">×</button>
-      </div>
-    `).join("") : "<p>Nenhuma moldura custom adicionada ainda.</p>";
-  }
-
-  function renderShopFrames(){
-    const grid = q("#shopGrid");
-    if(!grid) return;
-
-    const active = q("#tab-store [data-shop-tab].active");
-    const mode = active?.dataset?.shopTab || window.shopMode || (typeof shopMode !== "undefined" ? shopMode : "");
-
-    if(mode !== "frames") return;
-
-    const frames = readOnlineSync();
-    grid.classList.add("frames-shop-grid");
-
-    if(!frames.length){
-      window.__dlinkyVisibleFrames = [];
-      grid.innerHTML = `<div class="panel empty-frames-help">
-        <h2>Nenhuma moldura cadastrada</h2>
-        <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
-      </div>`;
-      return;
-    }
-
-    const av = (typeof user === "object" && user && user.avatar) ? user.avatar : "";
-
-    window.__dlinkyVisibleFrames = frames.map((f,i)=>[
-      f.name || "Moldura personalizada",
-      f.price || "20 Linkwuans",
-      "custom-"+i,
-      f.desc || "Moldura enviada pelo admin",
-      "Disponível",
-      f.url || "",
-      f.prices || null,
-      f.id || f.url || ("frame_"+i)
-    ]);
-
-    grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
-      const base = String(x[1]).match(/\d+/)?.[0] || 20;
-      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
-        <div class="frame-shop-preview real-frame-preview">
-          <div class="frame-avatar-demo zyo-person-demo" style="background-image:url('${String(av).replace(/'/g,"%27")}')!important"></div>
-          <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
-        </div>
-        <div class="frame-info clean-info">
-          <b>${esc(x[0])}<span class="frame-url-chip">online</span></b>
-          <small>${esc(x[3])}</small>
-        </div>
-        <div class="frame-stock available"><span></span><b>Disponível</b></div>
-        <div class="frame-price">Preço do item: <b data-price-label="${i}">${base} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}">
-          <option>3 dias</option>
-          <option>7 dias</option>
-          <option>15 dias</option>
-          <option>Permanente</option>
-        </select>
-        <small class="frame-note">ⓘ Valor muda conforme a duração escolhida.</small>
-        <div class="frame-actions">
-          <button class="btn primary small" data-confirm-frame="${i}">▣ Comprar</button>
-          <button class="btn dark small" type="button" data-gift-frame="${i}">🎁 Presentear</button>
-        </div>
-      </div>`;
-    }).join("");
-  }
-
-  function addFramePersistently(){
-    const frame = collectAdminFrameFromForm();
-    if(!frame){
-      try{toast("Cole a URL da moldura.");}catch(e){}
-      return;
-    }
-
-    const current = readOnlineSync();
-    const filtered = current.filter(f => String(f.url).trim() !== String(frame.url).trim());
-    filtered.unshift(frame);
-
-    const ok = writeOnlineSync(filtered);
-
-    // Confirma lendo do Firebase logo depois. Se não ler, mantém memória/local.
-    const check = readOnlineSync();
-    if(!check.some(f => String(f.url).trim() === String(frame.url).trim())){
-      filtered.unshift(frame);
-      setLocalFrames(filtered);
-      writeOnlineSync(filtered);
-    }
-
-    renderAdminFrames();
-    renderShopFrames();
-
-    try{toast(ok ? "Moldura salva online e fixa!" : "Moldura salva localmente, tente publicar as regras do Firebase.");}catch(e){}
-  }
-
-  // Carrega no começo.
-  memoryFrames = readOnlineSync();
-
-  document.addEventListener("click", function(e){
-    const add = e.target.closest && e.target.closest("#adminAddFrame");
-    if(add){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      addFramePersistently();
-      return;
-    }
-
-    const del = e.target.closest && e.target.closest("[data-v5-del-frame]");
-    if(del){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-
-      const frames = readOnlineSync();
-      frames.splice(Number(del.dataset.v5DelFrame),1);
-      writeOnlineSync(frames);
-
-      renderAdminFrames();
-      renderShopFrames();
-
-      try{toast("Moldura removida online.");}catch(e){}
-      return;
-    }
-
-    const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
-    if(tab && tab.dataset.shopTab === "frames"){
-      setTimeout(renderShopFrames, 50);
-      setTimeout(renderShopFrames, 300);
-      setTimeout(renderShopFrames, 1000);
-    }
-  }, true);
-
-  const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__framesFixV5Persistente){
-    const patched = function(id){
-      const result = oldOpenTab.apply(this, arguments);
-      if(id === "admin"){
-        setTimeout(renderAdminFrames, 50);
-        setTimeout(renderAdminFrames, 400);
-      }
-      if(id === "store"){
-        setTimeout(renderShopFrames, 50);
-        setTimeout(renderShopFrames, 400);
-      }
-      return result;
-    };
-    patched.__framesFixV5Persistente = true;
-    window.openTab = patched;
-    try{openTab = patched;}catch(e){}
-  }
-
-  const oldRenderShop = window.renderShop;
-  if(typeof oldRenderShop === "function" && !oldRenderShop.__framesFixV5Persistente){
-    const patchedRenderShop = function(){
-      const result = oldRenderShop.apply(this, arguments);
-      renderShopFrames();
-      return result;
-    };
-    patchedRenderShop.__framesFixV5Persistente = true;
-    window.renderShop = patchedRenderShop;
-    try{renderShop = patchedRenderShop;}catch(e){}
-  }
-
-  window.dlinkyFramesV5Debug = function(){
-    const online = readOnlineSync();
-    console.log("Molduras online:", online);
-    console.log("Molduras local:", getLocalFrames());
-    return online;
-  };
-
-  window.dlinkyFramesV5SaveNow = function(){
-    return writeOnlineSync(getLocalFrames());
-  };
-
-  setInterval(function(){
-    const active = q("#tab-store [data-shop-tab].active");
-    if(active && active.dataset.shopTab === "frames") renderShopFrames();
-    if(q("#adminFramesList")) renderAdminFrames();
-  }, 3000);
-})();
-
-
-
-
-
-
-/* ===== FIX FINAL: Molduras mostra só UMA caixa vazia e não mostra recarga/voucher ===== */
-(function(){
-  if(window.__dlinkyFramesOnlyOneEmptyFinal) return;
-  window.__dlinkyFramesOnlyOneEmptyFinal = true;
-
-  const q = (s,r=document)=>r.querySelector(s);
-  const qa = (s,r=document)=>Array.from(r.querySelectorAll(s));
-
-  let storeModeLocked = null;
-
-  function esc(v){
-    return String(v ?? "").replace(/[&<>"']/g,m=>({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-    }[m]));
-  }
-
-  function getFrames(){
-    try{
-      const arr = JSON.parse(localStorage.getItem("dlinkyCustomFrames") || "[]");
-      return Array.isArray(arr) ? arr.filter(f => f && String(f.url || "").trim()) : [];
-    }catch(e){
-      return [];
-    }
-  }
-
-  function setStoreButtons(mode){
-    qa("#tab-store [data-shop-tab]").forEach(btn=>{
-      btn.classList.toggle("active", btn.dataset.shopTab === mode);
-    });
-  }
-
-  function hideRechargeArea(){
-    qa("#tab-store .grid2").forEach(el=>{
-      el.style.setProperty("display","none","important");
-    });
-  }
-
-  function showRechargeArea(){
-    qa("#tab-store .grid2").forEach(el=>{
-      el.style.removeProperty("display");
-    });
-  }
-
-  function renderOnlyOneEmptyBox(){
-    const grid = q("#shopGrid");
-    if(!grid) return;
-
-    grid.classList.add("frames-shop-grid");
-    grid.innerHTML = `
-      <div class="panel empty-frames-help dlinky-single-empty-frame-box">
-        <h2>Nenhuma moldura cadastrada</h2>
-        <p>Cadastre uma moldura real no Admin para aparecer aqui.</p>
-      </div>
-    `;
-  }
-
-  function renderFramesMode(){
-    const grid = q("#shopGrid");
-    if(!grid) return;
-
-    storeModeLocked = "frames";
-    window.shopMode = "frames";
-    try{ shopMode = "frames"; }catch(e){}
-
-    setStoreButtons("frames");
-    hideRechargeArea();
-
-    const frames = getFrames();
-
-    // Sem moldura: só UMA caixa, sem duplicar e sem bloco de recarga.
-    if(!frames.length){
-      renderOnlyOneEmptyBox();
-      return;
-    }
-
-    const avatar = (typeof user === "object" && user && user.avatar) ? user.avatar : "";
-
-    window.__dlinkyVisibleFrames = frames.map((f,i)=>[
-      f.name || "Moldura personalizada",
-      f.price || "20 Linkwuans",
-      "custom-"+i,
-      f.desc || "Moldura enviada pelo admin",
-      "Disponível",
-      f.url || "",
-      f.prices || null,
-      f.id || f.url || ("frame_"+i)
-    ]);
-
-    grid.classList.add("frames-shop-grid");
-    grid.innerHTML = window.__dlinkyVisibleFrames.map((x,i)=>{
-      const base = String(x[1]).match(/\d+/)?.[0] || 20;
-      return `<div class="frame-shop-card premium-frame custom-only-frame" data-frame-card="${i}" data-base-price="${base}">
-        <div class="frame-shop-preview real-frame-preview">
-          <div class="frame-avatar-demo zyo-person-demo" style="background-image:url('${String(avatar).replace(/'/g,"%27")}')!important"></div>
-          <img class="frame-img big" src="${esc(x[5])}" alt="${esc(x[0])}">
-        </div>
-        <div class="frame-info clean-info">
-          <b>${esc(x[0])}</b>
-          <small>${esc(x[3])}</small>
-        </div>
-        <div class="frame-price">Preço: <b data-price-label="${i}">${base} Linkwuans</b></div>
-        <select class="frame-duration" data-frame-duration="${i}">
-          <option>3 dias</option>
-          <option>7 dias</option>
-          <option>15 dias</option>
-          <option>Permanente</option>
-        </select>
-        <div class="frame-actions">
-          <button class="btn primary small" type="button" data-confirm-frame="${i}">Comprar</button>
-        </div>
-      </div>`;
-    }).join("");
-  }
-
-  function cleanDuplicates(){
-    const grid = q("#shopGrid");
-    if(!grid) return;
-
-    const boxes = qa(".empty-frames-help", grid);
-    if(boxes.length > 1){
-      boxes.forEach((box,i)=>{
-        if(i > 0) box.remove();
-      });
-    }
-
-    if(storeModeLocked === "frames"){
-      hideRechargeArea();
-
-      // Se algum código antigo enfiar outra caixa fora do grid, remove.
-      qa("#tab-store > .empty-frames-help").forEach(el=>{
-        if(!grid.contains(el)) el.remove();
-      });
-
-      // Se a caixa ficou full width ou duplicada, recria do jeito certo.
-      const frames = getFrames();
-      const cards = qa(".frame-shop-card", grid);
-      if(!frames.length && !cards.length){
-        const box = q(".empty-frames-help", grid);
-        if(!box || !box.classList.contains("dlinky-single-empty-frame-box")){
-          renderOnlyOneEmptyBox();
-        }
-      }
-    }
-  }
-
-  document.addEventListener("click", function(e){
-    const btn = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
-    if(!btn) return;
-
-    const mode = btn.dataset.shopTab;
-
-    storeModeLocked = mode;
-    window.shopMode = mode;
-    try{ shopMode = mode; }catch(err){}
-
-    if(mode === "frames"){
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-
-      renderFramesMode();
-      [80,250,600,1200].forEach(ms=>setTimeout(()=>{
-        renderFramesMode();
-        cleanDuplicates();
-      },ms));
-      return;
-    }
-
-    showRechargeArea();
-  }, true);
-
-  const oldOpenTab = window.openTab;
-  if(typeof oldOpenTab === "function" && !oldOpenTab.__framesOnlyOneEmptyFinal){
-    const patched = function(id){
-      const r = oldOpenTab.apply(this, arguments);
-
-      if(id === "store" && storeModeLocked === "frames"){
-        [100,400,900].forEach(ms=>setTimeout(()=>{
-          renderFramesMode();
-          cleanDuplicates();
-        },ms));
-      }
-
-      return r;
-    };
-
-    patched.__framesOnlyOneEmptyFinal = true;
-    window.openTab = patched;
-    try{ openTab = patched; }catch(e){}
-  }
-
-  const style = document.createElement("style");
-  style.id = "dlinky-frames-only-one-empty-final-css";
-  style.textContent = `
-    #tab-store .dlinky-single-empty-frame-box {
-      width: 320px !important;
-      max-width: 320px !important;
-      min-height: 170px !important;
-      padding: 32px !important;
-      margin: 0 !important;
-      display: flex !important;
-      flex-direction: column !important;
-      justify-content: center !important;
-      box-sizing: border-box !important;
-    }
-
-    #tab-store .dlinky-single-empty-frame-box h2 {
-      font-size: 26px !important;
-      line-height: 1.1 !important;
-      margin: 0 0 20px 0 !important;
-    }
-
-    #tab-store .dlinky-single-empty-frame-box p {
-      margin: 0 !important;
-      font-size: 16px !important;
-      line-height: 1.25 !important;
-    }
-  `;
-  document.head.appendChild(style);
-
-  setInterval(cleanDuplicates, 300);
-})();
-
-
-
-/* ===== FIX CONTAS SEPARADAS: cada email começa limpo e salva separado ===== */
-(function(){
-  if(window.__dlinkySeparateAccountsFix) return;
-  window.__dlinkySeparateAccountsFix = true;
-
-  const q = (s,r=document)=>r.querySelector(s);
-
-  function cleanSlugFix(v){
+  function cleanSlugLocal(v){
     return (v || "usuario")
       .toLowerCase()
       .normalize("NFD")
@@ -12998,298 +12165,185 @@ document.addEventListener("click",(e)=>{
       .slice(0,30) || "usuario";
   }
 
-  function readJSON(k, fallback){
-    try{
-      const raw = localStorage.getItem(k);
-      if(!raw) return fallback;
-      return JSON.parse(raw);
-    }catch(e){
-      return fallback;
-    }
+  function readJSON(k,fb){
+    try{return JSON.parse(localStorage.getItem(k) || JSON.stringify(fb));}
+    catch(e){return fb;}
   }
 
-  function writeJSON(k, value){
-    localStorage.setItem(k, JSON.stringify(value));
+  function writeJSON(k,v){
+    localStorage.setItem(k, JSON.stringify(v));
     try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
   }
 
-  function keyFromEmail(email){
-    return String(email || "")
-      .trim()
-      .toLowerCase();
-  }
-
-  function makeCleanUser(data){
-    const email = keyFromEmail(data.email);
-    const slug = cleanSlugFix(data.slug || (email ? email.split("@")[0] : "usuario"));
-
+  function makeBlankUser({name,slug,email}){
+    const finalSlug = cleanSlugLocal(slug || (email ? email.split("@")[0] : "usuario"));
     return {
-      name: data.name || slug,
-      slug: slug,
-      email: email,
-      bio: "",
-      avatar: "",
-      banner: "",
-      bg: "",
-      video: "",
-      frame: "",
-      frameUrl: "",
-      frameName: "",
-      music: "",
-      welcome: "Clique aqui",
-      color: "#a855f7",
-      particles: true,
-      particleType: "snow",
-      verified: false,
-      hideViews: false,
-      template: "default",
-      decoration: "none",
-      views: 0,
-      coins: 0,
-      inventory: [],
-      purchases: [],
-      embeds: [],
-      tags: [],
-      links: [],
-      socials: [],
-      history: ["Conta criada no Dlinky"],
-      opacity: 100,
-      blur: 0,
-      layout: "card",
-      center: "no",
-      cursor: "",
-      cardColor: "#06030b",
-      textColor: "#ffffff",
-      bioColor: "#eeeeee",
-      bgFx: "none"
+      name: name || finalSlug,
+      slug: finalSlug,
+      email: normEmail(email),
+
+      bio:"",
+      avatar:"",
+      banner:"",
+      bg:"",
+      video:"",
+      frame:"",
+      music:"",
+      welcome:"Clique aqui",
+      color:"#a855f7",
+      particles:true,
+      particleType:"snow",
+      verified:false,
+      hideViews:false,
+      template:"default",
+      decoration:"none",
+      views:0,
+
+      coins:0,
+      inventory:[],
+      purchases:[],
+      embeds:[],
+      tags:[],
+
+      links:[],
+      socials:[],
+      history:["Conta criada no Dlinky"],
+
+      opacity:100,
+      blur:0,
+      layout:"card",
+      center:"no",
+      cursor:"",
+      cardColor:"#06030b",
+      textColor:"#ffffff",
+      bioColor:"#eeeeee",
+      bgFx:"none"
     };
   }
 
-  function getAccounts(){
-    return readJSON("dlinkyAccounts", {});
+  function accountKey(email){
+    return "dlinkyUserAccount_" + normEmail(email);
   }
 
-  function saveAccounts(accounts){
-    writeJSON("dlinkyAccounts", accounts || {});
-  }
-
-  function setCurrentEmail(email){
-    localStorage.setItem("dlinkyCurrentEmail", keyFromEmail(email));
-    try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
-  }
-
-  function getCurrentEmail(){
-    return keyFromEmail(localStorage.getItem("dlinkyCurrentEmail") || "");
-  }
-
-  function saveCurrentUser(){
-    const email = keyFromEmail((typeof user === "object" && user && user.email) || getCurrentEmail());
-    if(!email) return;
-
-    const accounts = getAccounts();
-    accounts[email] = user;
-    saveAccounts(accounts);
-    setCurrentEmail(email);
-
-    // mantém dlinkyUser só como cache da conta atual, não como conta global
+  function saveCurrent(){
+    if(!window.user || !user.email) return;
+    writeJSON(accountKey(user.email), user);
+    localStorage.setItem("dlinkyCurrentEmail", normEmail(user.email));
     writeJSON("dlinkyUser", user);
   }
 
-  function loadAccountByEmail(email){
-    email = keyFromEmail(email);
-    const accounts = getAccounts();
+  function loadByEmail(email){
+    email = normEmail(email);
+    if(!email) return null;
 
-    if(accounts[email]){
-      user = accounts[email];
-    }else{
-      user = makeCleanUser({email});
-      accounts[email] = user;
-      saveAccounts(accounts);
+    let saved = readJSON(accountKey(email), null);
+
+    if(!saved){
+      saved = makeBlankUser({email});
+      writeJSON(accountKey(email), saved);
     }
 
-    setCurrentEmail(email);
-    writeJSON("dlinkyUser", user);
+    window.user = saved;
+    try{ user = saved; }catch(e){}
 
-    try{
-      if(typeof renderDash === "function") renderDash();
-    }catch(e){}
+    localStorage.setItem("dlinkyCurrentEmail", email);
+    writeJSON("dlinkyUser", saved);
+
+    return saved;
   }
 
-  // Quando o site abrir, carrega a conta atual se existir.
-  const current = getCurrentEmail();
-  if(current){
-    const accounts = getAccounts();
-    if(accounts[current]){
-      user = accounts[current];
-      writeJSON("dlinkyUser", user);
-      setTimeout(()=>{ try{renderDash();}catch(e){} }, 100);
-    }
-  }
-
-  // Sobrescreve saveUser para salvar por email.
+  // troca saveUser só para salvar na conta do email atual
   window.saveUser = function(){
-    saveCurrentUser();
-    try{ renderDash(); }catch(e){}
-    try{ toast("Salvo com sucesso!"); }catch(e){}
+    saveCurrent();
+    try{renderDash();}catch(e){}
+    try{toast("Salvo com sucesso!");}catch(e){}
   };
   try{ saveUser = window.saveUser; }catch(e){}
 
-  // Sobrescreve addHistory para não salvar no usuário global errado.
-  window.addHistory = function(t){
-    if(!user.history) user.history = [];
-    user.history = [
-      `${new Date().toLocaleString("pt-BR")} — ${t}`,
-      ...user.history
-    ].slice(0,20);
-    saveCurrentUser();
-  };
-  try{ addHistory = window.addHistory; }catch(e){}
-
-  // Registro: sempre cria conta nova limpa.
-  const regForm = q("#registerForm");
-  if(regForm){
-    regForm.onsubmit = function(e){
+  // registro: cria conta nova limpa, mantendo nome e slug digitados
+  const reg = $fix("#registerForm");
+  if(reg){
+    reg.onsubmit = function(e){
       e.preventDefault();
 
-      const pass = q("#regPass")?.value || "";
-      const pass2 = q("#regPass2")?.value || "";
-      if(pass !== pass2){
+      const p1 = $fix("#regPass")?.value || "";
+      const p2 = $fix("#regPass2")?.value || "";
+      if(p1 !== p2){
         try{toast("As senhas não conferem");}catch(err){}
         return;
       }
 
-      const email = keyFromEmail(q("#regEmail")?.value || "");
-      if(!email){
-        try{toast("Digite um e-mail.");}catch(err){}
-        return;
-      }
-
-      const accounts = getAccounts();
-
-      // se já existir, entra nela; se não existir, cria zerada
-      if(accounts[email]){
-        user = accounts[email];
-      }else{
-        user = makeCleanUser({
-          name: q("#regName")?.value?.trim() || "",
-          slug: q("#regSlug")?.value?.trim() || "",
-          email
-        });
-        accounts[email] = user;
-        saveAccounts(accounts);
-      }
-
-      setCurrentEmail(email);
-      writeJSON("dlinkyUser", user);
-
-      try{toast("Conta criada/aberta.");}catch(err){}
-      location.hash = "#/dashboard";
-      setTimeout(()=>{ try{renderDash();}catch(err){} }, 100);
-    };
-  }
-
-  // Login: carrega a conta daquele email. Se nunca existiu, cria limpa.
-  const loginForm = q("#loginForm");
-  if(loginForm){
-    loginForm.onsubmit = function(e){
-      e.preventDefault();
-
-      const email = keyFromEmail(q("#loginEmail")?.value || "");
+      const email = normEmail($fix("#regEmail")?.value || "");
       if(!email){
         try{toast("Digite seu e-mail.");}catch(err){}
         return;
       }
 
-      loadAccountByEmail(email);
+      const newUser = makeBlankUser({
+        name: $fix("#regName")?.value?.trim() || "",
+        slug: $fix("#regSlug")?.value?.trim() || "",
+        email
+      });
 
-      try{toast("Login efetuado.");}catch(err){}
+      window.user = newUser;
+      try{ user = newUser; }catch(err){}
+
+      writeJSON(accountKey(email), newUser);
+      localStorage.setItem("dlinkyCurrentEmail", email);
+      writeJSON("dlinkyUser", newUser);
+
       location.hash = "#/dashboard";
-      setTimeout(()=>{ try{renderDash();}catch(err){} }, 100);
+      setTimeout(()=>{try{renderDash();}catch(err){}},100);
     };
   }
 
-  // Botão sair: não apaga a conta, só sai da conta atual.
-  const logout = q("#logoutBtn");
-  if(logout){
-    logout.onclick = function(){
-      localStorage.removeItem("dlinkyCurrentEmail");
-      localStorage.removeItem("dlinkyUser");
-      try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
-      location.hash = "#/";
-    };
-  }
+  // login: carrega a conta daquele email; se não existir, cria limpa
+  const login = $fix("#loginForm");
+  if(login){
+    login.onsubmit = function(e){
+      e.preventDefault();
 
-  window.dlinkyDebugAccounts = function(){
-    console.log("Conta atual:", getCurrentEmail());
-    console.log("Contas:", getAccounts());
-    return getAccounts();
-  };
-})();
-
-
-
-/* ===== FIX: contas novas sem imagens herdadas ===== */
-(function(){
-  if(window.__dlinkyImageResetFix) return;
-  window.__dlinkyImageResetFix = true;
-
-  function resetVisualFields(u){
-    if(!u) return u;
-
-    u.avatar = "";
-    u.banner = "";
-    u.bg = "";
-    u.video = "";
-    u.frame = "";
-    u.frameUrl = "";
-    u.frameName = "";
-    u.decoration = "none";
-
-    return u;
-  }
-
-  const oldMakeCleanUser = window.makeCleanUser;
-
-  // força nova conta nascer limpa
-  window.makeCleanUser = function(data){
-    let clean;
-
-    if(typeof oldMakeCleanUser === "function"){
-      clean = oldMakeCleanUser(data);
-    } else {
-      clean = {};
-    }
-
-    return resetVisualFields(clean);
-  };
-
-  // se abriu conta nova e veio imagem antiga, limpa automaticamente
-  setTimeout(() => {
-    try{
-      if(user && user.email){
-        if(
-          user.avatar?.includes("pinimg") ||
-          user.banner?.includes("pinimg") ||
-          user.bg?.includes("pinimg")
-        ){
-          resetVisualFields(user);
-
-          localStorage.setItem("dlinkyUser", JSON.stringify(user));
-
-          const email = localStorage.getItem("dlinkyCurrentEmail");
-          const accounts = JSON.parse(localStorage.getItem("dlinkyAccounts") || "{}");
-
-          if(email && accounts[email]){
-            accounts[email] = user;
-            localStorage.setItem("dlinkyAccounts", JSON.stringify(accounts));
-          }
-
-          if(typeof renderDash === "function"){
-            renderDash();
-          }
-        }
+      const email = normEmail($fix("#loginEmail")?.value || "");
+      if(!email){
+        try{toast("Digite seu e-mail.");}catch(err){}
+        return;
       }
-    }catch(e){}
-  }, 500);
 
+      loadByEmail(email);
+
+      location.hash = "#/dashboard";
+      setTimeout(()=>{try{renderDash();}catch(err){}},100);
+    };
+  }
+
+  // sair: só troca sessão, não apaga dados
+  setTimeout(()=>{
+    const logout = $fix("#logoutBtn");
+    if(logout){
+      logout.onclick = function(){
+        localStorage.removeItem("dlinkyCurrentEmail");
+        localStorage.removeItem("dlinkyUser");
+        try{ if(window.dlinkyCloudSaveNow) window.dlinkyCloudSaveNow(); }catch(e){}
+        location.hash = "#/";
+      };
+    }
+  },300);
+
+  // se já tem email atual salvo, carrega ele ao abrir
+  const currentEmail = normEmail(localStorage.getItem("dlinkyCurrentEmail") || "");
+  if(currentEmail){
+    const saved = readJSON(accountKey(currentEmail), null);
+    if(saved){
+      window.user = saved;
+      try{ user = saved; }catch(e){}
+      writeJSON("dlinkyUser", saved);
+      setTimeout(()=>{try{renderDash();}catch(e){}},100);
+    }
+  }
+
+  window.dlinkyContaAtualDebug = function(){
+    const email = normEmail(localStorage.getItem("dlinkyCurrentEmail") || "");
+    console.log("Email atual:", email);
+    console.log("Dados:", readJSON(accountKey(email), null));
+  };
 })();
