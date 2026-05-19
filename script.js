@@ -12755,6 +12755,8 @@ document.addEventListener("click",(e)=>{
 
 
 
+
+
 /* ===== FIX FINAL: Molduras mostra só UMA caixa vazia e não mostra recarga/voucher ===== */
 (function(){
   if(window.__dlinkyFramesOnlyOneEmptyFinal) return;
