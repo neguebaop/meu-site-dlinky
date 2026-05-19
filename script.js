@@ -12633,3 +12633,188 @@ document.addEventListener("click",(e)=>{
   window.addEventListener('hashchange',run);
   run();
 })();
+
+/* ===== FIX DEFINITIVO E ISOLADO — AVATAR/ÍCONE DO PERFIL =====
+   Usa somente o código antigo do avatar como base: pega user.avatar e pinta o ícone.
+   Não mexe em loja, inventário, molduras, excluir, ajuste, links, banner ou fundos. */
+(function(){
+  if(window.__dlinkyRescueProfileIconOnlyV2) return;
+  window.__dlinkyRescueProfileIconOnlyV2 = true;
+
+  function q(s,r){return (r||document).querySelector(s)}
+  function clean(v){
+    v = String(v || '').trim();
+    if(!v || v === 'none' || v === 'null' || v === 'undefined') return '';
+    var m = v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v = m[1];
+    return v.replace(/^['"]|['"]$/g,'').trim();
+  }
+  function good(v){
+    v = clean(v);
+    return !!v && /^(https?:|data:image|blob:)/i.test(v);
+  }
+  function currentSlug(){
+    var path = String(location.pathname || '').replace(/^\/+|\/+$/g,'').split('/')[0] || '';
+    var hash = String(location.hash || '').replace(/^#\/?/,'').split('/')[0] || '';
+    var blocked = {login:1,register:1,dashboard:1,assets:1,premium:1,community:1,admin:1,store:1,'index.html':1};
+    var s = (path && !blocked[path.toLowerCase()]) ? path : hash;
+    try{ if(!s && typeof user === 'object' && user) s = user.slug || ''; }catch(e){}
+    return String(s || '').toLowerCase().trim();
+  }
+  function currentUserObj(){
+    var out = {};
+    try{ if(window.user && typeof window.user === 'object') Object.assign(out, window.user); }catch(e){}
+    try{ if(typeof user === 'object' && user) Object.assign(out, user); }catch(e){}
+    try{
+      if(window.DlinkyStore && window.DlinkyStore.getItem){
+        var saved = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {};
+        Object.assign(out, saved, out);
+      }
+    }catch(e){}
+    return out;
+  }
+  function fromEl(sel){
+    var el = q(sel); if(!el) return '';
+    if(el.tagName === 'IMG') return clean(el.getAttribute('src') || el.src || '');
+    return clean(el.style.backgroundImage || (window.getComputedStyle ? getComputedStyle(el).backgroundImage : ''));
+  }
+  function bestAvatarSync(){
+    var u = currentUserObj();
+    var list = [
+      u.avatar, u.avatarUrl, u.photoURL, u.photo, u.foto, u.icon,
+      q('#cfgAvatar') && q('#cfgAvatar').value,
+      q('#uploadAvatar') && q('#uploadAvatar').value,
+      fromEl('#profileAvatar'), fromEl('#dashAvatar'), fromEl('#sideAvatar'),
+      fromEl('#dlinkyStableAvatarImg'), fromEl('.dlinky-final-avatar')
+    ];
+    for(var i=0;i<list.length;i++){ if(good(list[i])) return clean(list[i]); }
+    return '';
+  }
+  function saveAvatar(src){
+    src = clean(src); if(!src) return;
+    try{ if(typeof user === 'object' && user) user.avatar = src; }catch(e){}
+    try{ window.user = Object.assign(window.user || {}, {avatar:src}); }catch(e){}
+    try{
+      if(window.DlinkyStore && window.DlinkyStore.getItem && window.DlinkyStore.setItem){
+        var u = JSON.parse(window.DlinkyStore.getItem('dlinkyUser') || '{}') || {};
+        u.avatar = src;
+        window.DlinkyStore.setItem('dlinkyUser', JSON.stringify(u));
+      }
+    }catch(e){}
+  }
+  function ensureCss(){
+    if(q('#dlinky-rescue-avatar-css')) return;
+    var st = document.createElement('style');
+    st.id = 'dlinky-rescue-avatar-css';
+    st.textContent = `
+      #dlinkyAvatarRescue{
+        width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;
+        margin:-54px auto 14px auto!important;border-radius:50%!important;
+        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        position:relative!important;z-index:999!important;display:block!important;visibility:visible!important;opacity:1!important;
+        box-shadow:0 0 0 4px rgba(255,255,255,.10),0 0 28px rgba(168,85,247,.45)!important;
+        background-color:#19121f!important;overflow:hidden!important;pointer-events:none!important;
+      }
+      #avatarDecoration #profileAvatar{
+        display:block!important;visibility:visible!important;opacity:1!important;
+        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+      }
+    `;
+    document.head.appendChild(st);
+  }
+  function originalAvatarVisible(){
+    var final = q('#dlinkyFinalProfileStage .dlinky-final-avatar, #dlinkyStableAvatarStage #dlinkyStableAvatarImg');
+    if(!final) return false;
+    var cs = getComputedStyle(final);
+    var rect = final.getBoundingClientRect();
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0 && rect.width > 20 && rect.height > 20;
+  }
+  function paint(src){
+    src = clean(src || bestAvatarSync());
+    if(!good(src)) return false;
+    saveAvatar(src);
+    ensureCss();
+
+    var av = q('#profileAvatar');
+    if(av){
+      if(av.tagName === 'IMG') av.src = src;
+      else av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
+      av.style.setProperty('display','block','important');
+      av.style.setProperty('visibility','visible','important');
+      av.style.setProperty('opacity','1','important');
+      av.style.setProperty('width','96px','important');
+      av.style.setProperty('height','96px','important');
+      av.style.setProperty('border-radius','50%','important');
+    }
+
+    var name = q('#profileName');
+    var card = q('#profileCard') || (name && name.closest('.profile-card')) || (name && name.parentElement);
+    if(!card || !name) return true;
+
+    var rescue = q('#dlinkyAvatarRescue');
+    if(!rescue){
+      rescue = document.createElement('div');
+      rescue.id = 'dlinkyAvatarRescue';
+      name.parentNode.insertBefore(rescue, name);
+    }
+    rescue.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
+    rescue.style.setProperty('display', originalAvatarVisible() ? 'none' : 'block', 'important');
+    return true;
+  }
+  async function fetchFromFirebase(){
+    try{
+      if(!window.firebase || !firebase.firestore) return '';
+      var db = firebase.firestore();
+      var slug = currentSlug();
+      var src = '';
+
+      if(slug){
+        try{
+          var p = await db.collection('profiles').doc(slug).get();
+          if(p.exists){
+            var pd = p.data() || {};
+            src = clean(pd.avatar || pd.avatarUrl || pd.photoURL || pd.photo || pd.foto || pd.icon || '');
+          }
+        }catch(e){}
+        if(!good(src)){
+          try{
+            var qs = await db.collection('users').where('slug','==',slug).limit(1).get();
+            if(!qs.empty){
+              var ud = qs.docs[0].data() || {};
+              src = clean(ud.avatar || ud.avatarUrl || ud.photoURL || ud.photo || ud.foto || ud.icon || '');
+            }
+          }catch(e){}
+        }
+      }
+
+      if(!good(src) && firebase.auth && firebase.auth().currentUser){
+        try{
+          var u = firebase.auth().currentUser;
+          var snap = await db.collection('users').doc(u.uid).get();
+          var data = snap.exists ? (snap.data() || {}) : {};
+          src = clean(data.avatar || data.avatarUrl || data.photoURL || data.photo || data.foto || data.icon || u.photoURL || '');
+        }catch(e){}
+      }
+      if(good(src)) paint(src);
+      return src;
+    }catch(e){ return ''; }
+  }
+  function run(){
+    var ok = paint(bestAvatarSync());
+    fetchFromFirebase().then(function(src){ if(!ok && src) paint(src); });
+    [80,200,500,900,1500,2500,4000].forEach(function(t){setTimeout(function(){ paint(bestAvatarSync()); }, t);});
+  }
+
+  var oldRender = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
+  if(typeof oldRender === 'function' && !oldRender.__dlinkyRescueProfileIconOnlyV2){
+    var patched = function(){ var r = oldRender.apply(this, arguments); run(); return r; };
+    patched.__dlinkyRescueProfileIconOnlyV2 = true;
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded', run, {once:true});
+  window.addEventListener('load', run);
+  window.addEventListener('hashchange', run);
+  if(window.firebase && firebase.auth){ try{ firebase.auth().onAuthStateChanged(run); }catch(e){} }
+  run();
+})();
