@@ -12429,3 +12429,119 @@ document.addEventListener("click",(e)=>{
     console.log("Dados:", readJSON(accountKey(email), null));
   };
 })();
+
+/* ===== FIX CIRÚRGICO — ÍCONE/AVATAR DO PERFIL VOLTAR A APARECER =====
+   Só mexe no #profileAvatar. Não altera loja, inventário, molduras, exclusão,
+   ajuste, links, banner ou dados salvos. Busca o avatar no user atual e no Firebase. */
+(function(){
+  if(window.__dlinkyFixProfileAvatarOnlyFirebase) return;
+  window.__dlinkyFixProfileAvatarOnlyFirebase = true;
+
+  function q(s,r=document){ return r.querySelector(s); }
+  function clean(v){
+    v = String(v || '').trim();
+    if(!v || v === 'none' || v === 'null' || v === 'undefined') return '';
+    const m = v.match(/url\(["']?(.+?)["']?\)/i);
+    if(m) v = m[1];
+    return v.replace(/^['"]|['"]$/g,'').trim();
+  }
+  function readStoreUser(){
+    try{ return JSON.parse((window.DlinkyStore && window.DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }
+    catch(e){ return {}; }
+  }
+  function getGlobalUser(){
+    try{ if(typeof user === 'object' && user) return user; }catch(e){}
+    return window.user || {};
+  }
+  function bestAvatarSync(){
+    const u = Object.assign({}, readStoreUser(), getGlobalUser());
+    const fromInput = clean(q('#cfgAvatar')?.value || q('#uploadAvatar')?.value || '');
+    const fromImg = clean(q('#profileAvatar')?.getAttribute?.('src') || q('#profileAvatar')?.style?.backgroundImage || '');
+    const fbPhoto = clean(window.firebase?.auth?.()?.currentUser?.photoURL || '');
+    return clean(u.avatar || u.photoURL || u.foto || u.icon || u.avatarUrl || fromInput || fromImg || fbPhoto);
+  }
+  function saveAvatarInCurrentUser(src){
+    if(!src) return;
+    try{
+      const u = Object.assign({}, readStoreUser(), getGlobalUser());
+      u.avatar = src;
+      if(typeof user === 'object' && user) user.avatar = src;
+      window.user = Object.assign(window.user || {}, {avatar:src});
+      if(window.DlinkyStore) window.DlinkyStore.setItem('dlinkyUser', JSON.stringify(u));
+    }catch(e){}
+  }
+  function paintAvatar(src){
+    src = clean(src || bestAvatarSync());
+    const av = q('#profileAvatar');
+    if(!av || !src) return false;
+
+    if(av.tagName === 'IMG'){
+      av.src = src;
+      av.removeAttribute('hidden');
+    }else{
+      av.style.setProperty('background-image', 'url("'+src.replace(/"/g,'%22')+'")', 'important');
+      av.style.setProperty('background-size', 'cover', 'important');
+      av.style.setProperty('background-position', 'center', 'important');
+      av.style.setProperty('background-repeat', 'no-repeat', 'important');
+    }
+
+    av.style.setProperty('display','block','important');
+    av.style.setProperty('visibility','visible','important');
+    av.style.setProperty('opacity','1','important');
+    av.style.setProperty('width','96px','important');
+    av.style.setProperty('height','96px','important');
+    av.style.setProperty('min-width','96px','important');
+    av.style.setProperty('min-height','96px','important');
+    av.style.setProperty('border-radius','50%','important');
+    av.style.setProperty('background-color','rgba(255,255,255,.08)','important');
+    av.style.setProperty('z-index','3','important');
+    saveAvatarInCurrentUser(src);
+    return true;
+  }
+  async function fetchFirebaseAvatar(){
+    try{
+      if(!window.firebase || !firebase.auth || !firebase.firestore) return '';
+      const fbUser = firebase.auth().currentUser;
+      if(!fbUser) return '';
+      const db = firebase.firestore();
+      const snap = await db.collection('users').doc(fbUser.uid).get();
+      let data = snap.exists ? (snap.data() || {}) : {};
+      let src = clean(data.avatar || data.photoURL || data.foto || data.icon || data.avatarUrl || fbUser.photoURL || '');
+      if(!src && data.slug){
+        const ps = await db.collection('profiles').doc(String(data.slug).toLowerCase()).get();
+        if(ps.exists){
+          const p = ps.data() || {};
+          src = clean(p.avatar || p.photoURL || p.foto || p.icon || p.avatarUrl || '');
+        }
+      }
+      if(src){ saveAvatarInCurrentUser(src); paintAvatar(src); }
+      return src;
+    }catch(e){ return ''; }
+  }
+  function apply(){
+    paintAvatar(bestAvatarSync());
+    fetchFirebaseAvatar();
+  }
+
+  const oldRenderProfile = window.renderProfile || (typeof renderProfile === 'function' ? renderProfile : null);
+  if(typeof oldRenderProfile === 'function' && !oldRenderProfile.__avatarOnlyPatched){
+    const patched = function(){
+      const r = oldRenderProfile.apply(this, arguments);
+      setTimeout(apply, 0);
+      setTimeout(apply, 150);
+      setTimeout(apply, 700);
+      return r;
+    };
+    patched.__avatarOnlyPatched = true;
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+
+  if(window.firebase && firebase.auth){
+    try{ firebase.auth().onAuthStateChanged(()=>setTimeout(apply,300)); }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(apply,300),{once:true});
+  window.addEventListener('hashchange',()=>setTimeout(apply,250));
+  setTimeout(apply,300);
+  setTimeout(apply,1200);
+})();
