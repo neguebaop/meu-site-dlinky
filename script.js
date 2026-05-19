@@ -12779,3 +12779,53 @@ document.addEventListener("click",(e)=>{
   setInterval(cleanDuplicateBoxes, 500);
   window.addEventListener('load', cleanDuplicateBoxes);
 })();
+/* ===== PATCH: remover caixa "Nenhuma moldura cadastrada" da loja ===== */
+(function(){
+  if(window.__dlinkyRemoveEmptyFrameBox) return;
+  window.__dlinkyRemoveEmptyFrameBox = true;
+
+  const style = document.createElement("style");
+  style.textContent = `
+    #tab-store .empty-frames-help,
+    #shopGrid .empty-frames-help {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      border: 0 !important;
+      overflow: hidden !important;
+    }
+  `;
+  document.head.appendChild(style);
+
+  function removeBox(){
+    document.querySelectorAll("#tab-store .empty-frames-help, #shopGrid .empty-frames-help").forEach(el => el.remove());
+
+    const grid = document.querySelector("#shopGrid");
+    const active = document.querySelector("#tab-store [data-shop-tab].active");
+
+    if(grid && active && active.dataset.shopTab === "frames"){
+      const hasFrame = grid.querySelector(".frame-shop-card");
+      if(!hasFrame){
+        grid.innerHTML = "";
+      }
+    }
+  }
+
+  document.addEventListener("click", function(e){
+    const tab = e.target.closest && e.target.closest("#tab-store [data-shop-tab]");
+    if(tab && tab.dataset.shopTab === "frames"){
+      setTimeout(removeBox, 50);
+      setTimeout(removeBox, 300);
+      setTimeout(removeBox, 800);
+    }
+  }, true);
+
+  const obs = new MutationObserver(removeBox);
+  obs.observe(document.body, {childList:true, subtree:true});
+
+  removeBox();
+  setInterval(removeBox, 1000);
+})();
