@@ -4535,3 +4535,27 @@ body:not(.profile-open) #particlesCanvas{opacity:.15}
 #profileParticleLayer .fx{position:fixed!important;top:-30px;z-index:1!important;pointer-events:none!important;will-change:transform,opacity;text-shadow:0 0 12px currentColor;animation:realFall linear infinite}.fx.snow{color:#fff;filter:drop-shadow(0 0 8px #fff)}.fx.bolt{color:#ffd23f;filter:drop-shadow(0 0 10px #ffeb75);animation-name:realBolt!important}.fx.star{color:#b9d6ff;filter:drop-shadow(0 0 9px #7ab7ff)}.fx.heart{color:#ff5c9d}.fx.fire{color:#ff8b32;filter:drop-shadow(0 0 10px #ff4a00)}.fx.leaf{filter:drop-shadow(0 0 8px #74ff90)}.fx.matrix{color:#39ff88;font-family:monospace}.fx.rain{color:#9ed7ff;opacity:.75}.fx.cat{filter:drop-shadow(0 0 8px #ff9a3d)}.fx.bubble{border:2px solid rgba(140,190,255,.7);border-radius:50%;color:transparent;box-shadow:0 0 18px rgba(140,190,255,.7)}@keyframes realFall{0%{transform:translate3d(0,-15vh,0) rotate(0deg);opacity:0}10%{opacity:1}100%{transform:translate3d(45px,115vh,0) rotate(360deg);opacity:.2}}@keyframes realBolt{0%,100%{transform:translateY(-15vh) scale(1);opacity:.2}10%{opacity:1}50%{transform:translateY(55vh) translateX(20px) scale(1.25);opacity:1}100%{transform:translateY(115vh) translateX(-20px);opacity:0}}
 #frameAdjustModal .adjust-preview{background:radial-gradient(circle at 50% 50%,rgba(168,85,247,.38),rgba(0,0,0,.92) 72%)!important;border:1px dashed rgba(255,255,255,.2)!important}#frameAdjustModal .adjust-avatar{display:block!important;background-color:#222!important}.frame-shop-preview,.inv-preview{background:radial-gradient(circle,rgba(168,85,247,.24),#06060b 70%)!important}.frame-shop-preview .frame-avatar-demo{display:block!important;border:2px solid #2f7dff!important}.inv-item-card .btn[data-remove-inv]{font-size:12px!important;background:#44454d!important;color:#fff!important}.inv-item-card .btn[data-remove-inv]:hover{background:#565963!important}
 @media(max-width:800px){.feature-grid{grid-template-columns:1fr}.zyo-home-features h2{font-size:32px}}
+
+
+/* ===== DLINKY PATCH FINAL: landing limpo + PIX + destaques reais ===== */
+html,body{background:#181d24!important;}
+body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 22% 12%,rgba(90,72,140,.22),transparent 34%),radial-gradient(circle at 78% 78%,rgba(112,35,82,.22),transparent 38%),#181d24;z-index:-2;pointer-events:none;}
+.ambient{display:none!important;opacity:0!important;}
+#landing{background:#1b222b!important;overflow:hidden;}
+#landing .hero{background:transparent!important;max-width:1200px;margin:0 auto;}
+.zyo-marquee{overflow:hidden;max-width:1020px;margin:42px auto 0;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.zyo-marquee-track{display:flex;gap:26px;width:max-content;animation:dlinkyMarquee 28s linear infinite;align-items:center;}
+.zyo-marquee:hover .zyo-marquee-track{animation-play-state:paused;}
+.featured-pill{display:inline-flex!important;align-items:center!important;gap:9px;background:#20252d!important;border:1px solid #2e3540!important;border-radius:999px!important;padding:7px 14px!important;box-shadow:0 10px 24px #0004;min-width:auto!important;}
+.featured-avatar-mini{width:30px;height:30px;border-radius:50%;display:inline-block;background:#d7d9dd center/cover no-repeat;border:1px solid #ffffff33;box-shadow:0 0 0 2px #0003;}
+.featured-pill b{font-weight:900;color:#eef2f8;}
+.featured-pill small{color:#89919d;margin-left:0!important;}
+@keyframes dlinkyMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.dlinky-pix-modal{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:none;place-items:center;padding:18px;}
+.dlinky-pix-modal.show{display:grid;}
+.dlinky-pix-box{width:min(520px,94vw);background:#242529;border:1px solid #3c3d44;border-radius:14px;padding:26px;box-shadow:0 30px 90px #000b;position:relative;color:#fff;}
+.dlinky-pix-close{position:absolute;right:16px;top:14px;border:0;background:#3d3e45;color:#fff;border-radius:10px;width:38px;height:38px;font-size:24px;font-weight:900;cursor:pointer;}
+.dlinky-pix-sub{color:#bfc4cf}.dlinky-pix-info{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.dlinky-pix-info div{background:#3b3c43;border:1px solid #4b4c55;border-radius:10px;padding:12px}.dlinky-pix-info span{display:block;color:#bfc4cf;font-size:12px}.dlinky-pix-qr{height:160px;border:1px dashed #555966;border-radius:12px;display:grid;place-items:center;background:#191a1f;margin:14px 0}.dlinky-pix-qr-fake{width:112px;height:112px;border-radius:10px;background:repeating-linear-gradient(45deg,#fff 0 6px,#111 6px 12px);display:grid;place-items:center;color:#2563eb;font-weight:900;text-shadow:0 1px #fff}.dlinky-pix-label{margin:12px 0 6px;display:block}.dlinky-pix-copy-row{display:flex;gap:8px}.dlinky-pix-copy-row input{flex:1}.dlinky-pix-copy-row button,.dlinky-pix-confirm{background:#2563eb;color:#fff;border:0;border-radius:10px;padding:12px 16px;font-weight:900;cursor:pointer}.dlinky-pix-confirm{width:100%;margin-top:16px}
+.zyo-pack{transition:.18s transform,.18s box-shadow}.zyo-pack:hover,.zyo-item-card:hover{transform:translateY(-5px);box-shadow:0 18px 40px #0008!important;}
+.ct-tag-choice{font-family:"Apple Color Emoji","Segoe UI Emoji",Inter,system-ui,sans-serif;}
+.profile-frame{transform-origin:center center;}
