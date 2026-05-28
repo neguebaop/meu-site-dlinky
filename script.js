@@ -469,29 +469,75 @@ function framePreviewHtml(frame, extraClass=''){
     <small class="bad-url-note">Link da imagem inválido. Use link direto .png/.gif/.webp.</small>
   </div>`;
 }
+function zyonPriceFor(days, base){
+  days = Number(days || 3);
+  base = Number(base || 20);
+  if(days === 7) return Math.round(base * 1.8);
+  if(days === 15) return Math.round(base * 3.2);
+  if(days === 30) return Math.round(base * 5.2);
+  if(days === 0) return Math.round(base * 8);
+  return base;
+}
+function durationSelectHtml(id){
+  return `<select class="shop-duration" data-duration-for="${escapeAttr(id)}"><option value="3">3 dias</option><option value="7">7 dias</option><option value="15">15 dias</option><option value="30">30 dias</option><option value="0">Permanente</option></select>`;
+}
+function shopFrameCard(f, idx){
+  const id = f.id || ('frame_'+idx);
+  const price = Number(f.price || 20);
+  return `<div class="zyo-item-card frame-shop-card">
+    <div class="zyo-item-top">
+      ${framePreviewHtml({url:f.url || '', avatar:getBestAvatar()}, 'zyo-frame-preview')}
+      <div><h3>${escapeHtml(f.name || 'Moldura')}</h3><p>${escapeHtml(f.desc || 'Destaque-se com estilo')}</p></div>
+    </div>
+    <div class="zyo-price">🪙 Preço do item: <b>${price} Zylons</b></div>
+    ${durationSelectHtml(id)}
+    <small class="zyo-note">ⓘ Valor muda conforme a duração escolhida.</small>
+    <div class="zyo-card-actions"><button class="btn primary small" type="button" data-buy-frame="${escapeAttr(id)}">🔒 Comprar</button><button class="btn dark small" type="button" data-gift-frame="${escapeAttr(id)}">🎁 Presentear</button></div>
+  </div>`;
+}
 function renderShop(){
   $('#walletCoins') && ($('#walletCoins').textContent = Number(user.coins || 0));
   $('#invCountMini') && ($('#invCountMini').textContent = (user.inventory || []).length);
   const grid = $('#shopGrid'); if(!grid) return;
   $$('.shop-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.shopTab === shopMode));
-  grid.innerHTML = '';
+  const mapTitle = {coins:'Recarga', frames:'Molduras', effects:'Efeitos', other:'Outros'};
   if(shopMode === 'coins'){
-    grid.innerHTML = [10,25,50,100].map(v=>`<div class="asset-card shop-card"><div class="asset-preview coin-preview">✦</div><div class="asset-body"><b>${v} Linkwuans</b><small>Recarga manual/teste</small><button class="btn primary small" type="button" data-add-coins="${v}">Adicionar</button></div></div>`).join('');
+    const packs = [
+      {z:345, r:'30,00', bonus:'+15% bônus'},
+      {z:650, r:'50,00', bonus:'+30% bônus'},
+      {z:1450, r:'100,00', bonus:'+45% bônus'},
+      {z:3300, r:'200,00', bonus:'+65% bônus', hot:true}
+    ];
+    grid.className = 'zyo-shop-content';
+    grid.innerHTML = `<div class="zyo-shop-panel"><div class="zyo-panel-head"><span>⚙</span><div><b>Pacotes Promocionais</b><small>Escolha um dos pacotes abaixo com bônus exclusivos de Zylons para recargas rápidas.</small></div></div><div class="zyo-pack-grid">${packs.map(p=>`<div class="zyo-pack ${p.hot?'hot':''}">${p.hot?'<em>★ Mais vantajoso</em>':''}<h3>${p.z} Zylons</h3><p>R$ ${p.r}</p><small>${p.bonus}</small><button class="btn primary full" type="button" data-add-coins="${p.z}">☮ Recarregar</button></div>`).join('')}</div></div>
+    <div class="zyo-two"><div class="zyo-shop-panel"><div class="zyo-panel-head"><span>▣</span><div><b>Valor personalizado</b><small>Escolha se quer digitar em reais ou em Zylons</small></div></div><div class="zyo-input-row"><input id="customCoins" placeholder="▣ Digite o valor em R$ (mín. R$ 5.00)"><button class="btn primary" id="customCoinsBtn" type="button">▣</button><button class="btn dark" type="button">☮</button><button class="btn primary" type="button" id="customCoinsBtn2">⟳ Recarregar</button></div><small>Digite o valor desejado para a recarga.</small></div>
+    <div class="zyo-shop-panel"><div class="zyo-panel-head"><span>🎟</span><div><b>Código de voucher</b><small>Resgate Zylons com um código promocional válido</small></div></div><div class="zyo-input-row"><input id="voucherCode" placeholder="🎟 Digite seu código"><button class="btn primary" id="voucherBtn" type="button">▣ Aplicar</button></div><small>Cada voucher pode ser usado apenas uma vez.</small></div></div>`;
     return;
   }
+  grid.className = 'zyo-shop-grid';
   if(shopMode === 'frames'){
-    if(!customFrames.length){ grid.innerHTML = '<p>Nenhuma moldura cadastrada ainda.</p>'; return; }
-    grid.innerHTML = customFrames.map(f=>`<div class="asset-card frame-shop-card">
-      ${framePreviewHtml(f)}
-      <div class="asset-body"><b>${escapeHtml(f.name || 'Moldura')}</b><small>${escapeHtml(f.desc || '')}</small><small>Preço: ${moneyPrice(f.price)} Linkwuans</small><button class="btn primary small" type="button" data-buy-frame="${escapeAttr(f.id)}">Comprar/Usar</button></div>
-    </div>`).join('');
+    const defaults = [
+      {id:'free-butterfly', name:'Moldura Borboleta', desc:'Vermelha e fofa', price:250, url:''},
+      {id:'fox', name:'Moldura Raposa', desc:'Fofa e linda', price:20, url:''},
+      {id:'mystic', name:'Moldura Espelho Mestiço', desc:'Reflexível e lindo', price:20, url:''},
+      {id:'flower', name:'Moldura Florada', desc:'Flores e rosas', price:20, url:''},
+      {id:'marine', name:'Moldura Linear Marinho', desc:'Linhas da vida', price:20, url:''},
+      {id:'autumn', name:'Moldura Outono', desc:'Dourada e vibrante', price:20, url:''},
+      {id:'spider', name:'Moldura Aranha', desc:'Sombria e misteriosa', price:20, url:''},
+      {id:'stars', name:'Moldura Constelações', desc:'Estrelas brilhantes', price:40, url:''},
+      {id:'yinyang', name:'Moldura Yin-Yang', desc:'Flores sombria', price:20, url:''},
+      {id:'hearts', name:'Moldura Hearts', desc:'Sútil e amorosa', price:20, url:''}
+    ];
+    const all = customFrames.length ? customFrames : defaults;
+    grid.innerHTML = `<div class="zyo-shop-title"><h2>Molduras</h2><p>Destaque-se com molduras exclusivas no seu perfil.</p></div>` + all.map(shopFrameCard).join('');
     return;
   }
   if(shopMode === 'effects'){
-    grid.innerHTML = (assets.decorations || []).map((a,i)=>{ const price = Number(a[3] ?? 10); return `<div class="asset-card"><div class="asset-preview"><span style="display:grid;place-items:center;height:100%;font-size:36px">✦</span></div><div class="asset-body"><b>${escapeHtml(a[0])}</b><small>Preço: ${price} Linkwuans</small><button class="btn primary small" type="button" data-buy-effect="${i}">Comprar/Usar</button></div></div>`; }).join('');
+    const effects = (assets.decorations || []).map((a,i)=>({name:a[0], value:a[1], price:Number(a[3]||20), idx:i}));
+    grid.innerHTML = `<div class="zyo-shop-title"><h2>Efeitos</h2><p>Compre efeitos visuais para o perfil.</p></div>` + effects.map(e=>`<div class="zyo-item-card"><div class="zyo-item-top"><div class="zyo-effect-preview">✦</div><div><h3>${escapeHtml(e.name)}</h3><p>Efeito visual premium</p></div></div><div class="zyo-price">🪙 Preço do item: <b>${e.price} Zylons</b></div>${durationSelectHtml('effect_'+e.idx)}<small class="zyo-note">ⓘ Valor muda conforme a duração escolhida.</small><div class="zyo-card-actions"><button class="btn primary small" type="button" data-buy-effect="${e.idx}">🔒 Comprar</button><button class="btn dark small" type="button">🎁 Presentear</button></div></div>`).join('');
     return;
   }
-  grid.innerHTML = '<div class="panel"><h3>Outros</h3><p>Em breve você pode cadastrar mais itens aqui.</p></div>';
+  grid.innerHTML = `<div class="zyo-shop-title"><h2>Outros</h2><p>Itens extras ficarão disponíveis aqui.</p></div><div class="zyo-item-card"><div class="zyo-item-top"><div class="zyo-effect-preview">+</div><div><h3>Em breve</h3><p>Novos itens para personalização.</p></div></div></div>`;
 }
 function renderInventory(){
   $('#invCoins') && ($('#invCoins').textContent = Number(user.coins || 0));
