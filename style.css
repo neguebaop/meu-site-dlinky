@@ -4427,86 +4427,26 @@ body:has(#profile.active) #particlesCanvas{display:none!important;}
 #frameAdjustModal.dlinky-clean-adjust .adjust-actions{display:flex!important;justify-content:flex-end!important;gap:10px!important;margin-top:20px!important;position:relative!important;z-index:5!important;}
 #frameAdjustModal.dlinky-clean-adjust .adjust-close{position:absolute!important;right:16px!important;top:16px!important;width:36px!important;height:36px!important;border:0!important;border-radius:10px!important;background:rgba(255,255,255,.08)!important;color:#fff!important;font-size:22px!important;cursor:pointer!important;}
 @media(max-width:600px){#frameAdjustModal.dlinky-clean-adjust .adjust-grid{grid-template-columns:1fr!important}#frameAdjustModal.dlinky-clean-adjust .adjust-card{padding:20px!important}}
+/* DLINKY V8 LIMPO — Avatar original fixado no círculo, sem palco fake */
+#avatarDecoration.dlinky-original-avatar-ok{
+  position:relative!important;display:block!important;width:150px!important;height:150px!important;margin:-72px auto 12px!important;overflow:visible!important;isolation:isolate!important;z-index:20!important;
+}
+#avatarDecoration.dlinky-original-avatar-ok > *:not(#profileAvatar):not(#profileFrame):not(.decor-css){
+  display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;
+}
+#avatarDecoration.dlinky-original-avatar-ok #profileAvatar{
+  position:absolute!important;left:50%!important;top:50%!important;width:96px!important;height:96px!important;max-width:none!important;max-height:none!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;object-fit:cover!important;object-position:center!important;display:block!important;visibility:visible!important;opacity:1!important;z-index:2!important;background-size:cover!important;background-position:center!important;background-color:#111!important;box-shadow:0 0 0 3px #2f7bff,0 0 22px rgba(168,85,247,.42)!important;
+}
+#avatarDecoration.dlinky-original-avatar-ok #profileFrame{
+  position:absolute!important;left:50%!important;top:50%!important;width:150px!important;height:150px!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;display:block!important;visibility:visible!important;opacity:1!important;z-index:5!important;pointer-events:none!important;transform-origin:center center!important;
+}
+#avatarDecoration.dlinky-original-avatar-ok #profileFrame:not([src]),
+#avatarDecoration.dlinky-original-avatar-ok #profileFrame[src=""]{display:none!important;}
+#avatarDecoration.dlinky-original-avatar-ok #profileAvatar:not([src]),
+#avatarDecoration.dlinky-original-avatar-ok #profileAvatar[src=""]{display:none!important;}
 
-/* =========================================================
-   DLINKY FIX FINAL — ÍCONE/AVATAR DO PERFIL VISÍVEL
-   Corrige o erro onde CSS antigo escondia #profileAvatar.
-   ========================================================= */
-#profileCard.profile-wrap,
-#profileCard,
-.profile-wrap{
-  overflow:visible!important;
-}
-#avatarDecoration,
-#avatarDecoration.dlinky-avatar-lite-on,
-#avatarDecoration.dlinky-avatar-final-lock,
-#avatarDecoration.dlinky-hard-avatar-v8,
-#avatarDecoration.dlinky-clean-avatar-v7,
-#avatarDecoration.dlinky-final-avatar-stage,
-#avatarDecoration.dlinky-no-flicker-lock{
-  display:block!important;
-  visibility:visible!important;
-  opacity:1!important;
-  position:relative!important;
-  width:112px!important;
-  height:112px!important;
-  min-width:112px!important;
-  min-height:112px!important;
-  max-width:112px!important;
-  max-height:112px!important;
-  margin:-56px auto 12px!important;
-  overflow:visible!important;
-  transform:none!important;
-  z-index:2147480!important;
-  isolation:isolate!important;
-}
-#avatarDecoration > #profileAvatar,
-#avatarDecoration.dlinky-avatar-lite-on > #profileAvatar,
-#avatarDecoration.dlinky-avatar-final-lock > #profileAvatar,
-#avatarDecoration.dlinky-hard-avatar-v8 > #profileAvatar,
-#avatarDecoration.dlinky-clean-avatar-v7 > #profileAvatar,
-#avatarDecoration.dlinky-final-avatar-stage > #profileAvatar,
-#avatarDecoration.dlinky-no-flicker-lock > #profileAvatar,
-#profileAvatar.avatar.big-avatar,
-#profileAvatar{
-  display:block!important;
-  visibility:visible!important;
-  opacity:1!important;
-  position:absolute!important;
-  left:50%!important;
-  top:50%!important;
-  width:96px!important;
-  height:96px!important;
-  min-width:96px!important;
-  min-height:96px!important;
-  max-width:96px!important;
-  max-height:96px!important;
-  transform:translate(-50%,-50%)!important;
-  border-radius:50%!important;
-  object-fit:cover!important;
-  object-position:center!important;
-  background-size:cover!important;
-  background-position:center!important;
-  background-repeat:no-repeat!important;
-  z-index:2147482!important;
-  border:3px solid rgba(255,255,255,.96)!important;
-  box-shadow:0 0 0 4px rgba(10,5,18,.70),0 0 30px rgba(168,85,247,.85)!important;
-  pointer-events:none!important;
-  background-color:#151020!important;
-  animation:none!important;
-  transition:none!important;
-}
-#avatarDecoration > #profileFrame,
-#profileFrame{
-  position:absolute!important;
-  left:50%!important;
-  top:50%!important;
-  z-index:2147483!important;
-  pointer-events:none!important;
-}
-#avatarDecoration > .decor-css{z-index:2147484!important;pointer-events:none!important;}
-#dlinkyProfileAvatarV4,
-#dlinkyIconV3,
-#dlinkyProfileIconOnly2026{
-  display:none!important;
-}
+/* DLINKY FINAL AVATAR FIREBASE FIX */
+#avatarDecoration{position:relative!important;overflow:visible!important;isolation:isolate!important;z-index:10!important;}
+#avatarDecoration #profileAvatar{position:absolute!important;left:50%!important;top:50%!important;width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;max-width:96px!important;max-height:96px!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;object-fit:cover!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;display:block!important;visibility:visible!important;opacity:1!important;z-index:2!important;}
+#avatarDecoration #profileFrame{position:absolute!important;left:50%!important;top:50%!important;width:150px!important;height:150px!important;min-width:150px!important;min-height:150px!important;max-width:150px!important;max-height:150px!important;transform:translate(-50%,-50%)!important;object-fit:contain!important;background:none!important;visibility:visible!important;opacity:1!important;z-index:5!important;pointer-events:none!important;}
+#dlinkyStableAvatarStage,#dlinkyFrameVaultStage,#dlinkyFinalProfileStage,#dlinkyV4ProfileStage{display:none!important;visibility:hidden!important;pointer-events:none!important;}
