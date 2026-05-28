@@ -28,6 +28,9 @@
     const id = uid();
     try{
       if(key==='dlinkyUser' && id){
+        if(!window.__dlinkyAllowUserSave){
+          return;
+        }
         let data={};
         try{data=JSON.parse(value||'{}')||{};}catch(e){}
         data.uid=id;
@@ -4425,6 +4428,7 @@ document.addEventListener("click",(e)=>{
     }
 
     writeLocalUser(data);
+    window.__dlinkyAllowUserSave = true;
 
     try{
       if(typeof renderDash === "function") renderDash();
@@ -4439,7 +4443,7 @@ document.addEventListener("click",(e)=>{
     if(window.__dlinkyLocalStorageMirrorV2) return;
     window.__dlinkyLocalStorageMirrorV2 = true;
 
-    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
+    const originalSetItem = window.DlinkyStore.setItem.bind(window.DlinkyStore);
 
     window.DlinkyStore.setItem = function(key, value){
       const result = originalSetItem(key, value);
@@ -4476,6 +4480,7 @@ document.addEventListener("click",(e)=>{
       const cred = await firebase.auth().createUserWithEmailAndPassword(email, pass);
 
       const data = blankUser(cred.user, {name, slug, email});
+      window.__dlinkyAllowUserSave = true;
 
       writeLocalUser(data);
 
@@ -8104,7 +8109,7 @@ document.addEventListener("click",(e)=>{
   // Salva no Firebase depois de alterações, sem atrapalhar login/dashboard.
   if(!window.DlinkyStore.__dlinkyLinktreeFlowFix){
     window.DlinkyStore.__dlinkyLinktreeFlowFix = true;
-    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
+    const originalSetItem = window.DlinkyStore.setItem.bind(window.DlinkyStore);
     window.DlinkyStore.setItem = function(key,value){
       const r = originalSetItem(key,value);
       if(key === USER_KEY){
@@ -9961,7 +9966,7 @@ document.addEventListener("click",(e)=>{
 
   // Protege contra qualquer patch antigo que tente salvar essas duas molduras de volta.
   if(!window.DlinkyStore.setItem.__dlinkyRemoveFakeFramesPatched){
-    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
+    const originalSetItem = window.DlinkyStore.setItem.bind(window.DlinkyStore);
     const patched = function(key, value){
       try{
         if(key === USER_KEY){ value = JSON.stringify(cleanUserObject(JSON.parse(value || '{}'))); }
@@ -10601,7 +10606,7 @@ document.addEventListener("click",(e)=>{
   function patchLocalStorage(){
     if(window.__DLINKY_GLOBAL_FIREBASE_STORAGE_PATCH__) return;
     window.__DLINKY_GLOBAL_FIREBASE_STORAGE_PATCH__ = true;
-    const originalSetItem = window.DlinkyStore.setItem.bind(Firebase);
+    const originalSetItem = window.DlinkyStore.setItem.bind(window.DlinkyStore);
     const originalRemoveItem = window.DlinkyStore.removeItem.bind(Firebase);
 
     window.DlinkyStore.setItem = function(key, value){
@@ -13001,4 +13006,157 @@ document.addEventListener("click",(e)=>{
   window.addEventListener('hashchange',()=>setTimeout(()=>applyMediaToInputsAndProfile(currentGlobalUser()),150));
   setTimeout(start,300);
   const wait=setInterval(()=>{ if(fbReady()){ clearInterval(wait); bindSave(); firebase.auth().onAuthStateChanged(()=>{ setTimeout(loadFirebaseUser,100); setTimeout(loadFirebaseUser,800); }); } },200);
+})();
+
+
+/* ===== DLINKY CORREÇÃO FINAL — SOMENTE FIREBASE/FIRESTORE, SEM LOCALSTORAGE ===== */
+(function(){
+  if(window.__dlinkyFinalFirestoreOnlyFix) return;
+  window.__dlinkyFinalFirestoreOnlyFix = true;
+
+  const IMPORTANT = ["avatar","banner","bg","video","frame","decoration","music","links","socials","particles","particleType","color","welcome","bio","name","slug","tags","embeds","inventory","purchases","hideViews","verified","views","coins","linkwuans"];
+
+  function cleanSlug(v){
+    return (v || "usuario").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_-]/g,"").slice(0,30) || "usuario";
+  }
+
+  function getUserObj(){
+    try{ if(typeof user !== "undefined" && user) return user; }catch(e){}
+    return window.user || {};
+  }
+
+  function setUserObj(data){
+    const u = getUserObj();
+    Object.keys(u).forEach(k=>delete u[k]);
+    Object.assign(u, data || {});
+    window.user = u;
+  }
+
+  function toPlain(data){
+    const out = {};
+    const src = Object.assign({}, data || {});
+    IMPORTANT.forEach(k => {
+      if(src[k] !== undefined) out[k] = src[k];
+    });
+    out.uid = src.uid || (firebase.auth().currentUser && firebase.auth().currentUser.uid) || "";
+    out.email = ((firebase.auth().currentUser && firebase.auth().currentUser.email) || src.email || "").toLowerCase().trim();
+    out.slug = cleanSlug(out.slug || src.name || (out.email ? out.email.split("@")[0] : "usuario"));
+    out.name = out.name || (out.email ? out.email.split("@")[0] : "Usuário");
+    out.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+    return out;
+  }
+
+  async function saveUserToFirestore(){
+    if(!window.firebase || !firebase.apps || !firebase.apps.length || !firebase.auth().currentUser) return;
+    const uid = firebase.auth().currentUser.uid;
+    const data = toPlain(getUserObj());
+
+    window.__dlinkyAllowUserSave = true;
+    await firebase.firestore().collection("users").doc(uid).set(data,{merge:true});
+    await firebase.firestore().collection("profiles").doc(data.slug).set(data,{merge:true});
+
+    try{
+      if(window.DlinkyStore){
+        window.DlinkyStore.__onlyCache = true;
+        window.DlinkyStore.setItem("dlinkyUser", JSON.stringify(data));
+        window.DlinkyStore.__onlyCache = false;
+      }
+    }catch(e){}
+
+    return data;
+  }
+
+  async function loadUserFromFirestore(){
+    if(!window.firebase || !firebase.apps || !firebase.apps.length || !firebase.auth().currentUser) return null;
+    const fb = firebase.auth().currentUser;
+    const ref = firebase.firestore().collection("users").doc(fb.uid);
+    const snap = await ref.get();
+
+    let data = snap.exists ? (snap.data() || {}) : {};
+    data.uid = fb.uid;
+    data.email = (fb.email || data.email || "").toLowerCase().trim();
+    data.slug = cleanSlug(data.slug || data.name || (data.email ? data.email.split("@")[0] : "usuario"));
+    data.name = data.name || (data.email ? data.email.split("@")[0] : "Usuário");
+
+    const current = getUserObj();
+    data = Object.assign({}, current, data);
+
+    setUserObj(data);
+    window.__dlinkyAllowUserSave = true;
+
+    try{
+      if(window.DlinkyStore){
+        window.DlinkyStore.__onlyCache = true;
+        window.DlinkyStore.setItem("dlinkyUser", JSON.stringify(data));
+        window.DlinkyStore.__onlyCache = false;
+      }
+    }catch(e){}
+
+    await firebase.firestore().collection("users").doc(fb.uid).set(toPlain(data),{merge:true});
+    await firebase.firestore().collection("profiles").doc(data.slug).set(toPlain(data),{merge:true});
+
+    try{ if(typeof renderDash === "function") renderDash(); }catch(e){}
+    try{ if(typeof renderProfile === "function" && (location.hash||"").includes("profile")) renderProfile(); }catch(e){}
+    return data;
+  }
+
+  function patchStore(){
+    if(!window.DlinkyStore || window.DlinkyStore.__finalFirestoreOnlyPatched) return;
+    window.DlinkyStore.__finalFirestoreOnlyPatched = true;
+    const oldSet = window.DlinkyStore.setItem.bind(window.DlinkyStore);
+    window.DlinkyStore.setItem = function(key, value){
+      const result = oldSet(key, value);
+      if(this.__onlyCache) return result;
+      if(key === "dlinkyUser" && window.__dlinkyAllowUserSave){
+        clearTimeout(window.__dlinkyFinalSaveTimer);
+        window.__dlinkyFinalSaveTimer = setTimeout(()=>saveUserToFirestore().catch(console.warn), 250);
+      }
+      return result;
+    };
+  }
+
+  function patchSaveButtons(){
+    const saveImages = document.querySelector("#saveImages");
+    if(saveImages && !saveImages.__firestoreOnly){
+      saveImages.__firestoreOnly = true;
+      saveImages.addEventListener("click", function(){
+        setTimeout(()=>saveUserToFirestore().then(()=>{
+          try{ if(typeof renderDash === "function") renderDash(); }catch(e){}
+          try{ if(typeof renderProfile === "function") renderProfile(); }catch(e){}
+        }).catch(console.warn), 60);
+      }, true);
+    }
+
+    ["#saveAccount","#saveTheme","#saveLinks","#saveSocials","#saveEmbeds","#saveParticles","#saveColors"].forEach(sel=>{
+      const el=document.querySelector(sel);
+      if(el && !el.__firestoreOnly){
+        el.__firestoreOnly=true;
+        el.addEventListener("click",()=>setTimeout(()=>saveUserToFirestore().catch(console.warn),80),true);
+      }
+    });
+  }
+
+  function boot(){
+    patchStore();
+    patchSaveButtons();
+    setTimeout(patchSaveButtons,1000);
+    setTimeout(patchSaveButtons,2500);
+
+    if(window.firebase && firebase.apps && firebase.apps.length && firebase.auth){
+      firebase.auth().onAuthStateChanged(function(fbUser){
+        if(fbUser){
+          window.__dlinkyAllowUserSave = false;
+          loadUserFromFirestore().catch(console.warn);
+        }else{
+          window.__dlinkyAllowUserSave = false;
+        }
+      });
+    }
+  }
+
+  window.dlinkyForceLoadFromFirebase = loadUserFromFirestore;
+  window.dlinkyForceSaveToFirebase = saveUserToFirestore;
+
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
 })();
