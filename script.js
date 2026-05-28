@@ -13453,3 +13453,191 @@ document.addEventListener("click",(e)=>{
   document.addEventListener('DOMContentLoaded',()=>[200,800,1600].forEach(t=>setTimeout(applyAvatarLock,t)));
   [200,800,1600,3000].forEach(t=>setTimeout(applyAvatarLock,t));
 })();
+
+/* =========================================================
+   DLINKY FIX FINAL REAL — ÍCONE DO PERFIL FIXO
+   Não mexe no login/admin. Copiado do comportamento leve:
+   usa um avatar único e desenha por cima do card, sem deixar
+   outros patches de moldura esconderem o ícone.
+   ========================================================= */
+(function(){
+  if(window.__DLINKY_ICON_REAL_FIXED_2026__) return;
+  window.__DLINKY_ICON_REAL_FIXED_2026__ = true;
+
+  const q = (s,r=document)=>r.querySelector(s);
+  const clean = v => String(v || '').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/["']/g,'');
+  const good = v => {
+    v = clean(v);
+    return !!v && v !== 'none' && v !== 'null' && v !== 'undefined' && !v.startsWith('blob:');
+  };
+  const slugClean = v => String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30) || 'usuario';
+  const enc = k => encodeURIComponent(String(k||'')).replace(/\./g,'%2E');
+
+  function stateUser(){
+    let a = {};
+    try{ a = JSON.parse((window.DlinkyStore && DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }catch(e){}
+    try{ if(typeof user !== 'undefined' && user) a = Object.assign({}, a, user); }catch(e){}
+    try{ if(window.user) a = Object.assign({}, a, window.user); }catch(e){}
+    return a;
+  }
+
+  function pick(obj){
+    obj = obj || {};
+    const fields = ['avatar','avatarUrl','photoURL','photoUrl','foto','icon','iconUrl','profileAvatar','profileImage','image','pfp','picture'];
+    for(const k of fields){ if(good(obj[k])) return clean(obj[k]); }
+    return '';
+  }
+
+  async function getStoreDoc(key){
+    try{
+      if(!(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore)) return '';
+      const db = firebase.firestore();
+      let snap = await db.collection('dlinkyStore').doc(key).get();
+      if(!snap.exists) snap = await db.collection('dlinkyStore').doc(enc(key)).get();
+      if(snap.exists){
+        const d = snap.data() || {};
+        return clean(d.value || d.avatar || d.url || d.image || '');
+      }
+    }catch(e){}
+    return '';
+  }
+
+  async function findAvatar(){
+    const u = stateUser();
+    let av = pick(u);
+    if(good(av)) return av;
+
+    const input = q('#cfgAvatar') || q('#uploadAvatar');
+    if(input && good(input.value)) return clean(input.value);
+
+    try{
+      if(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore){
+        const db = firebase.firestore();
+        const hashSlug = (location.hash||'').replace(/^#\/?/,'').split('/')[0];
+        const slugs = [u.slug, hashSlug, window.__dlinkyDirectProfileSlug, 'usuario'].map(slugClean).filter(Boolean);
+        for(const s of [...new Set(slugs)]){
+          const ps = await db.collection('profiles').doc(s).get();
+          if(ps.exists){ av = pick(ps.data() || {}); if(good(av)) return av; }
+        }
+        if(firebase.auth && firebase.auth().currentUser){
+          const us = await db.collection('users').doc(firebase.auth().currentUser.uid).get();
+          if(us.exists){ av = pick(us.data() || {}); if(good(av)) return av; }
+        }
+      }
+    }catch(e){}
+
+    const email = clean(u.email || (window.firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '').toLowerCase();
+    const emailEncoded = email.replace(/@/g,'%40');
+    const emailFlat = email.replace(/[^a-z0-9]/g,'');
+    const slug = slugClean(u.slug || (location.hash||'').replace(/^#\/?/,'') || 'usuario');
+    const keys = [
+      'dlinkyAvatarPreserve_'+slug,
+      'dlinky_avatar_clean_'+slug,
+      'dlinky_avatar_real_'+slug,
+      'dlinkyAvatarPreserve_usuario',
+      'dlinky_avatar_clean_usuario',
+      'dlinky_avatar_real_usuario',
+      'dlinkyAvatarPreserve_'+email,
+      'dlinky_avatar_clean_'+email,
+      'dlinky_avatar_real_'+email,
+      'dlinkyAvatarPreserve_'+emailEncoded,
+      'dlinky_avatar_clean_'+emailEncoded,
+      'dlinky_avatar_real_'+emailEncoded,
+      'dlinkyAvatarPreserve_'+emailFlat,
+      'dlinky_avatar_clean_'+emailFlat,
+      'dlinky_avatar_real_'+emailFlat
+    ];
+    for(const k of [...new Set(keys.filter(Boolean))]){
+      av = await getStoreDoc(k);
+      if(good(av)) return av;
+      try{ av = clean(window.DlinkyStore && DlinkyStore.getItem(k)); if(good(av)) return av; }catch(e){}
+    }
+
+    // Último recurso: mostra algo no círculo em vez de deixar vazio.
+    if(good(u.banner)) return clean(u.banner);
+    if(good(u.bg)) return clean(u.bg);
+    return '';
+  }
+
+  function installCss(){
+    if(q('#dlinkyIconRealFixedCss2026')) return;
+    const st = document.createElement('style');
+    st.id = 'dlinkyIconRealFixedCss2026';
+    st.textContent = `
+      #profileCard{position:relative!important;overflow:visible!important;}
+      #dlinkyProfileIconFixed2026{
+        position:absolute!important;left:50%!important;top:145px!important;
+        width:94px!important;height:94px!important;min-width:94px!important;min-height:94px!important;
+        transform:translate(-50%,-50%)!important;border-radius:50%!important;
+        z-index:2147483640!important;display:none!important;visibility:visible!important;opacity:1!important;
+        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        border:3px solid #2f7dff!important;
+        box-shadow:0 0 0 5px rgba(9,5,14,.88),0 0 28px rgba(47,125,255,.8),0 0 46px rgba(168,85,247,.55)!important;
+        pointer-events:none!important;overflow:hidden!important;
+      }
+      #dlinkyProfileIconFixed2026 img{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:50%!important;display:block!important;}
+      #avatarDecoration #profileAvatar{background-size:cover!important;background-position:center!important;object-fit:cover!important;}
+    `;
+    document.head.appendChild(st);
+  }
+
+  async function applyIcon(){
+    installCss();
+    const card = q('#profileCard');
+    if(!card) return;
+    const av = await findAvatar();
+    if(!good(av)) return;
+
+    try{
+      if(typeof user !== 'undefined' && user){ user.avatar = av; }
+      window.user = Object.assign(window.user || {}, {avatar: av});
+      if(window.DlinkyStore){
+        const u = stateUser();
+        DlinkyStore.setItem('dlinkyUser', JSON.stringify(Object.assign({}, u, {avatar: av})));
+      }
+    }catch(e){}
+
+    let icon = q('#dlinkyProfileIconFixed2026', card);
+    if(!icon){
+      icon = document.createElement('div');
+      icon.id = 'dlinkyProfileIconFixed2026';
+      icon.innerHTML = '<img alt="avatar">';
+      card.appendChild(icon);
+    }
+    const safe = av.replace(/"/g,'%22');
+    icon.style.setProperty('background-image', `url("${safe}")`, 'important');
+    icon.style.setProperty('display', 'block', 'important');
+    icon.querySelector('img').src = av;
+
+    // Também alimenta o avatar original, caso alguma moldura use ele.
+    const original = q('#profileAvatar');
+    if(original){
+      original.src = av;
+      original.removeAttribute('srcset');
+      original.style.setProperty('background-image', `url("${safe}")`, 'important');
+      original.style.setProperty('display', 'block', 'important');
+      original.style.setProperty('visibility', 'visible', 'important');
+      original.style.setProperty('opacity', '1', 'important');
+    }
+    document.querySelectorAll('.dlinky-final-avatar,.dlinky-v4-avatar,.frame-avatar-demo,.inv-avatar-preview').forEach(el=>{
+      el.style.setProperty('background-image', `url("${safe}")`, 'important');
+      el.style.setProperty('background-size','cover','important');
+      el.style.setProperty('background-position','center','important');
+    });
+  }
+
+  function schedule(){ [0,50,150,350,800,1500,3000].forEach(t=>setTimeout(applyIcon,t)); }
+  const prevRP = window.renderProfile || (typeof renderProfile !== 'undefined' ? renderProfile : null);
+  if(typeof prevRP === 'function'){
+    const patched = function(){ const r = prevRP.apply(this, arguments); schedule(); return r; };
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded', schedule);
+  window.addEventListener('hashchange', schedule);
+  document.addEventListener('click', e=>{ if(e.target && e.target.closest && e.target.closest('#saveImages,#saveUploads,#viewProfile,#viewProfile2')) schedule(); }, true);
+  if(window.firebase && firebase.apps && firebase.apps.length && firebase.auth){
+    try{ firebase.auth().onAuthStateChanged(schedule); }catch(e){}
+  }
+  schedule();
+})();
