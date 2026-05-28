@@ -35,7 +35,7 @@ const presetUrls = {
 const defaultUser = {
   uid:'', name:'Usuário', slug:'usuario', email:'', bio:'', avatar:'', banner:'', bg:'', video:'', frame:'',
   music:'', welcome:'Clique aqui', color:'#a855f7', particles:false, particleType:'none', verified:false,
-  hideViews:false, template:'default', decoration:'none', views:0, links:[], socials:[], embeds:[], tags:[], history:['Conta criada no Dlinky'], coins:0, inventory:[], purchases:[], selos:[], cursor:'', nameFx:{neon:false,shine:false,rainbow:false,perspective:false}, bgFx:'none', tagSettings:{showFree:true,showDlinky:true,active:['programador','artista','músico']}, colors:{profileBg:'#1E40AF',cardBg:'#000000',textColor:'#FFFFFF',bioColor:'#FFFFFF'}, frameAdjust:{x:0,y:0,scale:1,rotate:0}
+  hideViews:false, template:'default', decoration:'none', views:0, links:[], socials:[], embeds:[], tags:[], history:['Conta criada no Dlinky'], coins:0, inventory:[], purchases:[], selos:[], cursor:'', nameFx:{neon:false,shine:false,rainbow:false,perspective:false}, bgFx:'none', tagSettings:{showFree:true,showDlinky:true,active:['programador','artista','músico']}, colors:{profileBg:'#1E40AF',cardBg:'#000000',textColor:'#FFFFFF',bioColor:'#FFFFFF'}, frameAdjust:{x:0,y:0,scale:1,rotate:0}, particleCount:45, particleSpeed:5, particleSize:'small', entryEffect:'auto'
 };
 
 let user = {...defaultUser};
@@ -93,6 +93,9 @@ function mergeUser(data){
   user.tagSettings = Object.assign({showFree:true,showDlinky:true,active:['programador','artista','músico']}, user.tagSettings || {});
   user.colors = Object.assign({profileBg:'#1E40AF',cardBg:'#000000',textColor:'#FFFFFF',bioColor:'#FFFFFF'}, user.colors || {});
   user.frameAdjust = Object.assign({x:0,y:0,scale:1,rotate:0}, user.frameAdjust || {});
+  user.particleCount = Number(user.particleCount || 45);
+  user.particleSpeed = Number(user.particleSpeed || 5);
+  user.particleSize = user.particleSize || 'small';
   window.user = user;
   return user;
 }
@@ -249,6 +252,10 @@ function renderDash(){
   setInput('#ctCardBg', user.colors?.cardBg || '#000000');
   setInput('#ctTextColor', user.colors?.textColor || '#FFFFFF');
   setInput('#ctBioColor', user.colors?.bioColor || '#FFFFFF');
+  setInput('#particleTypeNew', user.particleType || 'none');
+  setInput('#particleCountNew', user.particleCount || 45);
+  setInput('#particleSpeedNew', user.particleSpeed || 5);
+  setInput('#particleSizeNew', user.particleSize || 'small');
   renderColorsTags();
   renderHistory();
   updateAdminVisibility();
@@ -260,8 +267,13 @@ function renderHistory(){
 
 function renderProfile(){
   document.documentElement.style.setProperty('--neon', user.color || '#a855f7');
-  $('#welcomeText') && ($('#welcomeText').textContent = user.welcome || 'Clique aqui');
-  $('#entryOverlay')?.classList.add('hidden');
+  $('#welcomeText') && ($('#welcomeText').innerHTML = entryOverlayHtml());
+  const entry = $('#entryOverlay');
+  if(entry){
+    const key = 'dlinky_entry_' + (user.slug || 'profile');
+    entry.classList.toggle('hidden', sessionStorage.getItem(key) === '1');
+    entry.onclick = ()=>{ sessionStorage.setItem(key,'1'); entry.classList.add('hidden'); const a=$('#profileAudio'); if(a && user.music) a.play().catch(()=>{}); };
+  }
   $('#profileName') && ($('#profileName').textContent = user.name || 'Usuário');
   $('#profileSlug2') && ($('#profileSlug2').textContent = '@' + (user.slug || 'usuario'));
   $('#profileBio') && ($('#profileBio').textContent = user.bio || '');
@@ -335,23 +347,40 @@ function renderProfile(){
 window.renderProfile = renderProfile;
 window.renderDash = renderDash;
 
+function entryOverlayHtml(){
+  const map = {snow:'❄️', raios:'⚡', stars:'✨', bubbles:'🫧', rain:'💧', fire:'🔥', leaves:'🍃', matrix:'▦', hearts:'❤️', cats:'🐾'};
+  const icon = map[user.particleType || ''] || '✧';
+  const text = escapeHtml(user.welcome || 'Clique aqui');
+  return `<div class="entry-blur-orb">${icon}</div><h1>${text}</h1><span>${icon}</span>`;
+}
 function createProfileParticles(type){
   const layer = $('#profileParticleLayer');
   if(!layer) return;
   layer.innerHTML = '';
   if(type === 'none' || !user.particles) return;
-  const char = {snow:'✽', stars:'✦', hearts:'❤', embers:'•', bubbles:''}[type] || '✽';
-  const cls = {snow:'snow', stars:'star', hearts:'heart', embers:'ember', bubbles:'bubble'}[type] || 'star';
-  const count = 16;
+  const chars = {
+    snow:['❄','✻','❅'], raios:['⚡','ϟ'], stars:['✦','✧','✨'], hearts:['❤','♥'], embers:['•','✹'], bubbles:[''],
+    rain:['╱','│','╲'], fire:['🔥','•','✹'], leaves:['🍃','🍂'], matrix:['0','1','▦'], cats:['🐾','😺']
+  }[type] || ['✦'];
+  const cls = {snow:'snow', raios:'bolt', stars:'star', hearts:'heart', embers:'ember', bubbles:'bubble', rain:'rain', fire:'fire', leaves:'leaf', matrix:'matrix', cats:'cat'}[type] || 'star';
+  const count = Math.max(8, Math.min(140, Number(user.particleCount || 45)));
+  const speed = Math.max(1, Math.min(10, Number(user.particleSpeed || 5)));
+  const sizeMap = {small:[10,18], medium:[16,28], large:[24,42]};
+  const [minS,maxS] = sizeMap[user.particleSize || 'small'] || sizeMap.small;
   for(let i=0;i<count;i++){
-    const s = document.createElement('span');
-    s.className = 'fx ' + cls;
-    s.textContent = char;
-    s.style.left = Math.random()*100 + '%';
-    s.style.animationDuration = (8+Math.random()*12) + 's';
-    s.style.animationDelay = (-Math.random()*12) + 's';
-    s.style.fontSize = (12+Math.random()*12) + 'px';
-    layer.appendChild(s);
+    const el = document.createElement('span');
+    el.className = 'fx ' + cls;
+    el.textContent = chars[Math.floor(Math.random()*chars.length)];
+    el.style.left = Math.random()*100 + '%';
+    el.style.top = (-10 + Math.random()*110) + '%';
+    el.style.animationDuration = (18 - speed + Math.random()*8) + 's';
+    el.style.animationDelay = (-Math.random()*14) + 's';
+    el.style.fontSize = (minS + Math.random()*(maxS-minS)) + 'px';
+    if(type === 'bubbles'){
+      const b = minS + Math.random()*(maxS-minS);
+      el.style.width = el.style.height = b + 'px';
+    }
+    layer.appendChild(el);
   }
 }
 
@@ -364,12 +393,23 @@ function hexToRgba(hex, alpha){
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
 }
 const AVAILABLE_TAGS = [
-  ['programador','💻 programador'], ['artista','🖌️ artista'], ['músico','🎸 músico'], ['designer','🎨 designer'], ['gamer','🎮 gamer'], ['dev','⚡ dev'], ['anime','🌙 anime']
+  ['paz','☮️ Paz'], ['programador','💻 Programador'], ['artista','🖌️ Artista'], ['designer','🎨 Designer'], ['escritor','📝 Escritor'], ['investidor','💸 Investidor'], ['músico','🎸 Músico'], ['fotografo','📷 Fotógrafo'], ['arlivre','🏕️ Ar Livre'], ['bebida','🍺 Bebida'], ['comida','🍴 Comida'],
+  ['filmes','🎬 Filmes'], ['seriados','📺 Seriados'], ['fumante','🚬 Fumante'], ['negocios','🏢 Negócios'], ['academia','💪 Academia'], ['leitor','📕 Leitor'], ['atleta','🏃 Atleta'], ['ciencia','🧪 Ciência'], ['bonito','💋 Bonito(a)'], ['picante','🌶️ Picante'], ['animais','🐾 Animais'],
+  ['adoravel','🎀 Adorável'], ['produtor','🎹 Produtor(a)'], ['viagem','🧳 Viagem'], ['gamer','🎮 Gamer'], ['anjo','😇 Anjo(a)'], ['perigoso','😈 Perigoso(a)'], ['skatista','🛹 Skatista'], ['provocante','😏 Provocante'], ['basquete','🏀 Basquete'], ['frio','🥶 Frio'],
+  ['palhaco','🤡 Palhaço(a)'], ['brasil','🇧🇷 Brasil'], ['habbo','🅷 Habbo'], ['boliche','🎳 Boliche'], ['surfista','🏄 Surfista'], ['verao','🏝️ Verão'], ['toxico','☠️ Tóxico(a)'], ['pensativo','💭 Pensativo(a)'], ['comunicativo','🗣️ Comunicativo(a)'], ['insonia','💤 Insônia'],
+  ['apaixonado','😍 Apaixonado(a)'], ['lgbt','🌈 Lgbt'], ['futebol','⚽ Futebol'], ['timido','😳 Tímido(a)'], ['triste','😭 Triste'], ['bravo','👺 Bravo(a)'], ['amigavel','🤝 Amigável'], ['construtor','👷 Construtor(a)'], ['namorando','💑 Namorando'], ['solteiro','🧸 Solteiro(a)'],
+  ['lol','🎮 League Of Legends'], ['valorant','🔫 Valorant'], ['cs2','♠️ Counter-Strike 2'], ['paladins','🔷 Paladins'], ['dota2','🟥 Dota 2'], ['fortnite','🇫 Fortnite'], ['gta','🚓 Grand Theft Auto V'], ['cyber','🔮 Cybersecurity'], ['piloto','🛩️ Piloto(a)']
 ];
 function renderColorsTags(){
   const box = $('#ctTagsList');
   if(!box) return;
   const active = new Set(user.tagSettings?.active || []);
+  setInput('#ctShowFree', user.tagSettings?.showFree !== false);
+  setInput('#ctShowDlinky', user.tagSettings?.showDlinky !== false);
+  setInput('#ctProfileBg', user.colors?.profileBg || '#1E40AF');
+  setInput('#ctCardBg', user.colors?.cardBg || '#000000');
+  setInput('#ctTextColor', user.colors?.textColor || '#FFFFFF');
+  setInput('#ctBioColor', user.colors?.bioColor || '#FFFFFF');
   box.innerHTML = AVAILABLE_TAGS.map(([id,label])=>`<label class="ct-tag-choice"><input type="checkbox" data-ct-tag="${escapeAttr(id)}" ${active.has(id)?'checked':''}> ${escapeHtml(label)}</label>`).join('');
 }
 function renderProfileTagsAndSelos(){
@@ -489,7 +529,7 @@ function shopFrameCard(f, idx){
       ${framePreviewHtml({url:f.url || '', avatar:getBestAvatar()}, 'zyo-frame-preview')}
       <div><h3>${escapeHtml(f.name || 'Moldura')}</h3><p>${escapeHtml(f.desc || 'Destaque-se com estilo')}</p></div>
     </div>
-    <div class="zyo-price">🪙 Preço do item: <b>${price} Zylons</b></div>
+    <div class="zyo-price">🪙 Preço do item: <b>${price} Linkwuans</b></div>
     ${durationSelectHtml(id)}
     <small class="zyo-note">ⓘ Valor muda conforme a duração escolhida.</small>
     <div class="zyo-card-actions"><button class="btn primary small" type="button" data-buy-frame="${escapeAttr(id)}">🔒 Comprar</button><button class="btn dark small" type="button" data-gift-frame="${escapeAttr(id)}">🎁 Presentear</button></div>
@@ -509,9 +549,9 @@ function renderShop(){
       {z:3300, r:'200,00', bonus:'+65% bônus', hot:true}
     ];
     grid.className = 'zyo-shop-content';
-    grid.innerHTML = `<div class="zyo-shop-panel"><div class="zyo-panel-head"><span>⚙</span><div><b>Pacotes Promocionais</b><small>Escolha um dos pacotes abaixo com bônus exclusivos de Zylons para recargas rápidas.</small></div></div><div class="zyo-pack-grid">${packs.map(p=>`<div class="zyo-pack ${p.hot?'hot':''}">${p.hot?'<em>★ Mais vantajoso</em>':''}<h3>${p.z} Zylons</h3><p>R$ ${p.r}</p><small>${p.bonus}</small><button class="btn primary full" type="button" data-add-coins="${p.z}">☮ Recarregar</button></div>`).join('')}</div></div>
-    <div class="zyo-two"><div class="zyo-shop-panel"><div class="zyo-panel-head"><span>▣</span><div><b>Valor personalizado</b><small>Escolha se quer digitar em reais ou em Zylons</small></div></div><div class="zyo-input-row"><input id="customCoins" placeholder="▣ Digite o valor em R$ (mín. R$ 5.00)"><button class="btn primary" id="customCoinsBtn" type="button">▣</button><button class="btn dark" type="button">☮</button><button class="btn primary" type="button" id="customCoinsBtn2">⟳ Recarregar</button></div><small>Digite o valor desejado para a recarga.</small></div>
-    <div class="zyo-shop-panel"><div class="zyo-panel-head"><span>🎟</span><div><b>Código de voucher</b><small>Resgate Zylons com um código promocional válido</small></div></div><div class="zyo-input-row"><input id="voucherCode" placeholder="🎟 Digite seu código"><button class="btn primary" id="voucherBtn" type="button">▣ Aplicar</button></div><small>Cada voucher pode ser usado apenas uma vez.</small></div></div>`;
+    grid.innerHTML = `<div class="zyo-shop-panel"><div class="zyo-panel-head"><span>⚙</span><div><b>Pacotes Promocionais</b><small>Escolha um dos pacotes abaixo com bônus exclusivos de Linkwuans para recargas rápidas.</small></div></div><div class="zyo-pack-grid">${packs.map(p=>`<div class="zyo-pack ${p.hot?'hot':''}">${p.hot?'<em>★ Mais vantajoso</em>':''}<h3>${p.z} Linkwuans</h3><p>R$ ${p.r}</p><small>${p.bonus}</small><button class="btn primary full" type="button" data-add-coins="${p.z}">☮ Recarregar</button></div>`).join('')}</div></div>
+    <div class="zyo-two"><div class="zyo-shop-panel"><div class="zyo-panel-head"><span>▣</span><div><b>Valor personalizado</b><small>Escolha se quer digitar em reais ou em Linkwuans</small></div></div><div class="zyo-input-row"><input id="customCoins" placeholder="▣ Digite o valor em R$ (mín. R$ 5.00)"><button class="btn primary" id="customCoinsBtn" type="button">▣</button><button class="btn dark" type="button">☮</button><button class="btn primary" type="button" id="customCoinsBtn2">⟳ Recarregar</button></div><small>Digite o valor desejado para a recarga.</small></div>
+    <div class="zyo-shop-panel"><div class="zyo-panel-head"><span>🎟</span><div><b>Código de voucher</b><small>Resgate Linkwuans com um código promocional válido</small></div></div><div class="zyo-input-row"><input id="voucherCode" placeholder="🎟 Digite seu código"><button class="btn primary" id="voucherBtn" type="button">▣ Aplicar</button></div><small>Cada voucher pode ser usado apenas uma vez.</small></div></div>`;
     return;
   }
   grid.className = 'zyo-shop-grid';
@@ -534,7 +574,7 @@ function renderShop(){
   }
   if(shopMode === 'effects'){
     const effects = (assets.decorations || []).map((a,i)=>({name:a[0], value:a[1], price:Number(a[3]||20), idx:i}));
-    grid.innerHTML = `<div class="zyo-shop-title"><h2>Efeitos</h2><p>Compre efeitos visuais para o perfil.</p></div>` + effects.map(e=>`<div class="zyo-item-card"><div class="zyo-item-top"><div class="zyo-effect-preview">✦</div><div><h3>${escapeHtml(e.name)}</h3><p>Efeito visual premium</p></div></div><div class="zyo-price">🪙 Preço do item: <b>${e.price} Zylons</b></div>${durationSelectHtml('effect_'+e.idx)}<small class="zyo-note">ⓘ Valor muda conforme a duração escolhida.</small><div class="zyo-card-actions"><button class="btn primary small" type="button" data-buy-effect="${e.idx}">🔒 Comprar</button><button class="btn dark small" type="button">🎁 Presentear</button></div></div>`).join('');
+    grid.innerHTML = `<div class="zyo-shop-title"><h2>Efeitos</h2><p>Compre efeitos visuais para o perfil.</p></div>` + effects.map(e=>`<div class="zyo-item-card"><div class="zyo-item-top"><div class="zyo-effect-preview">✦</div><div><h3>${escapeHtml(e.name)}</h3><p>Efeito visual premium</p></div></div><div class="zyo-price">🪙 Preço do item: <b>${e.price} Linkwuans</b></div>${durationSelectHtml('effect_'+e.idx)}<small class="zyo-note">ⓘ Valor muda conforme a duração escolhida.</small><div class="zyo-card-actions"><button class="btn primary small" type="button" data-buy-effect="${e.idx}">🔒 Comprar</button><button class="btn dark small" type="button">🎁 Presentear</button></div></div>`).join('');
     return;
   }
   grid.innerHTML = `<div class="zyo-shop-title"><h2>Outros</h2><p>Itens extras ficarão disponíveis aqui.</p></div><div class="zyo-item-card"><div class="zyo-item-top"><div class="zyo-effect-preview">+</div><div><h3>Em breve</h3><p>Novos itens para personalização.</p></div></div></div>`;
@@ -548,7 +588,7 @@ function renderInventory(){
   if(!items.length){ grid.innerHTML = '<p>Nenhum item nessa categoria.</p>'; return; }
   grid.innerHTML = items.map(({it,i})=>`<div class="asset-card inv-item-card">
     ${it.type === 'frame' ? framePreviewHtml({url:it.url || it.value}, 'inv-preview') : `<div class="asset-preview"><span style="display:grid;place-items:center;height:100%;font-size:36px">✦</span></div>`}
-    <div class="asset-body"><b>${escapeHtml(it.name || 'Item')}</b><small>${escapeHtml(it.type || '')}</small>${it.type==='frame'?`<button class="btn primary small" type="button" data-use-inv-frame="${i}">Usar</button><button class="btn dark small" type="button" data-adjust-inv-frame="${i}">Ajustar</button>`:''}${it.type==='effect'?`<button class="btn primary small" type="button" data-use-inv-effect="${i}">Usar</button>`:''}<button class="btn dark small" type="button" data-remove-inv="${i}">Remover</button></div>
+    <div class="asset-body"><b>${escapeHtml(it.name || 'Item')}</b><small>${escapeHtml(it.type || '')}</small>${it.type==='frame'?`<button class="btn primary small" type="button" data-use-inv-frame="${i}">Usar</button><button class="btn dark small" type="button" data-adjust-inv-frame="${i}">Ajustar</button>`:''}${it.type==='effect'?`<button class="btn primary small" type="button" data-use-inv-effect="${i}">Usar</button>`:''}<button class="btn dark small" type="button" data-remove-inv="${i}">Remover do perfil</button></div>
   </div>`).join('');
 }
 
@@ -793,9 +833,17 @@ function bindEvents(){
     }
     if(e.target.dataset.removeInv !== undefined){
       const idx = Number(e.target.dataset.removeInv);
-      user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
-      user.inventory.splice(idx,1);
-      await saveUser('Item removido.');
+      const it = (user.inventory || [])[idx];
+      if(it?.type === 'frame' && (user.frame === (it.url || it.value))){
+        user.frame = '';
+        user.frameAdjust = {x:0,y:0,scale:1,rotate:0};
+        await saveUser('Moldura removida do perfil. Ela continua no inventário.');
+      } else if(it?.type === 'effect' && user.decoration === (it.value || it.url)){
+        user.decoration = 'none';
+        await saveUser('Efeito removido do perfil. Ele continua no inventário.');
+      } else {
+        toast('Esse item continua no inventário. Use quando quiser.');
+      }
       renderInventory(); renderDash(); return;
     }
     if(e.target.dataset.assetTab){
@@ -955,6 +1003,23 @@ function bindEvents(){
     addHistory('Cores e tags alteradas');
     await saveUser('Cores e tags salvas!');
   });
+
+
+  document.addEventListener('click', e=>{
+    const pick = e.target.closest('[data-particle-pick]');
+    if(pick){ const sel=$('#particleTypeNew'); if(sel) sel.value = pick.dataset.particlePick; }
+  });
+  $('#saveParticlesNew')?.addEventListener('click', async ()=>{
+    user.particleType = $('#particleTypeNew')?.value || 'none';
+    user.particles = user.particleType !== 'none';
+    user.particleCount = Number($('#particleCountNew')?.value || 45);
+    user.particleSpeed = Number($('#particleSpeedNew')?.value || 5);
+    user.particleSize = $('#particleSizeNew')?.value || 'small';
+    addHistory('Partículas alteradas');
+    await saveUser('Partículas salvas!');
+  });
+  $('#previewParticlesNew')?.addEventListener('click', ()=>{ location.hash = '#/' + user.slug; });
+  $('#customCoinsBtn,#customCoinsBtn2')?.addEventListener?.('click', async ()=>{});
 
   ['adjustX','adjustY','adjustScale','adjustRotate'].forEach(id=>$('#'+id)?.addEventListener('input', updateAdjustPreview));
   $('#closeFrameAdjust')?.addEventListener('click', ()=>$('#frameAdjustModal')?.classList.remove('show','real-centered-modal','dlinky-clean-adjust'));
