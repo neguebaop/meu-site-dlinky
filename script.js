@@ -35,13 +35,14 @@ const presetUrls = {
 const defaultUser = {
   uid:'', name:'Usuário', slug:'usuario', email:'', bio:'', avatar:'', banner:'', bg:'', video:'', frame:'',
   music:'', welcome:'Clique aqui', color:'#a855f7', particles:false, particleType:'none', verified:false,
-  hideViews:false, template:'default', decoration:'none', views:0, links:[], socials:[], embeds:[], tags:[], history:['Conta criada no Dlinky'], coins:0, inventory:[], purchases:[]
+  hideViews:false, template:'default', decoration:'none', views:0, links:[], socials:[], embeds:[], tags:[], history:['Conta criada no Dlinky'], coins:0, inventory:[], purchases:[], selos:[], cursor:'', nameFx:{neon:false,shine:false,rainbow:false,perspective:false}, bgFx:'none', tagSettings:{showFree:true,showDlinky:true,active:['programador','artista','músico']}, colors:{profileBg:'#1E40AF',cardBg:'#000000',textColor:'#FFFFFF',bioColor:'#FFFFFF'}, frameAdjust:{x:0,y:0,scale:1,rotate:0}
 };
 
 let user = {...defaultUser};
 let currentAuthUser = null;
 let assetMode = 'backgrounds';
 let shopMode = 'coins';
+let inventoryFilter = 'todos';
 let routeToken = 0;
 const ADMIN_EMAILS = ['jailtonsilas48@gmail.com','amoester199@gmail.com'];
 let customFrames = [];
@@ -86,6 +87,12 @@ function mergeUser(data){
   user.links = Array.isArray(user.links) ? user.links : [];
   user.socials = Array.isArray(user.socials) ? user.socials : [];
   user.history = Array.isArray(user.history) ? user.history : [];
+  user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
+  user.selos = Array.isArray(user.selos) ? user.selos : [];
+  user.nameFx = Object.assign({neon:false,shine:false,rainbow:false,perspective:false}, user.nameFx || {});
+  user.tagSettings = Object.assign({showFree:true,showDlinky:true,active:['programador','artista','músico']}, user.tagSettings || {});
+  user.colors = Object.assign({profileBg:'#1E40AF',cardBg:'#000000',textColor:'#FFFFFF',bioColor:'#FFFFFF'}, user.colors || {});
+  user.frameAdjust = Object.assign({x:0,y:0,scale:1,rotate:0}, user.frameAdjust || {});
   window.user = user;
   return user;
 }
@@ -188,6 +195,7 @@ function openTab(id){
   if(id === 'assets') renderAssets();
   if(id === 'store') renderShop();
   if(id === 'inventory') renderInventory();
+  if(id === 'colors') renderColorsTags();
   if(id === 'history') renderHistory();
   if(id === 'admin') renderAdminPanel();
   if(id === 'adminSelos') renderAdminSelosPanel();
@@ -224,6 +232,24 @@ function renderDash(){
   setInput('#cfgDecoration', user.decoration || 'none');
   setInput('#cfgVerified', user.verified);
   setInput('#cfgHideViews', user.hideViews);
+  setInput('#uploadAvatar', user.avatar);
+  setInput('#uploadBg', user.bg);
+  setInput('#uploadCursor', user.cursor);
+  setInput('#uploadMusic', user.music);
+  setInput('#customName', user.name);
+  setInput('#customBio', user.bio);
+  setInput('#customBgFx', user.bgFx || 'none');
+  setInput('#fxNeonName', user.nameFx?.neon);
+  setInput('#fxShineName', user.nameFx?.shine);
+  setInput('#fxRainbowName', user.nameFx?.rainbow);
+  setInput('#fxPerspective', user.nameFx?.perspective);
+  setInput('#ctShowFree', user.tagSettings?.showFree !== false);
+  setInput('#ctShowDlinky', user.tagSettings?.showDlinky !== false);
+  setInput('#ctProfileBg', user.colors?.profileBg || '#1E40AF');
+  setInput('#ctCardBg', user.colors?.cardBg || '#000000');
+  setInput('#ctTextColor', user.colors?.textColor || '#FFFFFF');
+  setInput('#ctBioColor', user.colors?.bioColor || '#FFFFFF');
+  renderColorsTags();
   renderHistory();
   updateAdminVisibility();
 }
@@ -255,9 +281,42 @@ function renderProfile(){
     if(user.video){ vid.src = user.video; vid.load(); vid.classList.add('show'); vid.play().catch(()=>{}); }
   }
   const frame = $('#profileFrame');
-  if(frame){ frame.src = user.frame || ''; frame.style.display = user.frame ? 'block' : 'none'; }
+  if(frame){
+    frame.src = user.frame || '';
+    frame.style.display = user.frame ? 'block' : 'none';
+    const fa = user.frameAdjust || {x:0,y:0,scale:1,rotate:0};
+    frame.style.setProperty('--frame-x', (Number(fa.x)||0)+'px');
+    frame.style.setProperty('--frame-y', (Number(fa.y)||0)+'px');
+    frame.style.setProperty('--frame-scale', Number(fa.scale||1));
+    frame.style.setProperty('--frame-rotate', (Number(fa.rotate)||0)+'deg');
+    frame.classList.toggle('manual-adjusted', !!user.frame);
+  }
   const deco = $('#avatarDecoration');
-  if(deco) deco.className = 'avatar-decoration ' + (user.decoration || 'none');
+  if(deco) deco.className = 'avatar-decoration has-img-frame ' + (user.decoration || 'none');
+
+  const card = $('#profileCard');
+  if(card){
+    card.classList.toggle('fx-perspective', !!user.nameFx?.perspective);
+    card.classList.toggle('bgfx-radial', user.bgFx === 'radial');
+    card.classList.toggle('bgfx-scan', user.bgFx === 'scan');
+    card.classList.toggle('bgfx-grain', user.bgFx === 'grain');
+    card.style.background = user.colors?.cardBg ? hexToRgba(user.colors.cardBg, .72) : '';
+    card.style.color = user.colors?.textColor || '';
+  }
+  const pn = $('#profileName');
+  if(pn){
+    pn.classList.toggle('fx-neon-name', !!user.nameFx?.neon);
+    pn.classList.toggle('fx-shine-name', !!user.nameFx?.shine);
+    pn.classList.toggle('fx-rainbow-name', !!user.nameFx?.rainbow);
+    pn.style.color = user.colors?.textColor || '';
+  }
+  if($('#profileBio')) $('#profileBio').style.color = user.colors?.bioColor || '';
+  const cursorUrl = String(user.cursor || '').trim();
+  const profilePage = $('#profile');
+  if(profilePage) profilePage.style.cursor = cursorUrl ? `url("${cursorUrl.replace(/"/g,'%22')}"), auto` : '';
+  document.body.classList.toggle('dlinky-profile-custom-cursor', !!cursorUrl && $('#profile')?.classList.contains('active'));
+  document.documentElement.style.setProperty('--dlinky-profile-cursor', cursorUrl ? `url("${cursorUrl.replace(/"/g,'%22')}"), auto` : 'auto');
+  renderProfileTagsAndSelos();
 
   const links = $('#profileLinks');
   if(links) links.innerHTML = (user.links || []).map(l => `<a target="_blank" rel="noopener" href="${safeUrl(l.url)}">${escapeHtml(l.name || 'Link')}</a>`).join('');
@@ -294,6 +353,78 @@ function createProfileParticles(type){
     s.style.fontSize = (12+Math.random()*12) + 'px';
     layer.appendChild(s);
   }
+}
+
+
+function hexToRgba(hex, alpha){
+  hex = String(hex || '').replace('#','').trim();
+  if(hex.length === 3) hex = hex.split('').map(x=>x+x).join('');
+  const n = parseInt(hex,16);
+  if(Number.isNaN(n)) return '';
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
+}
+const AVAILABLE_TAGS = [
+  ['programador','💻 programador'], ['artista','🖌️ artista'], ['músico','🎸 músico'], ['designer','🎨 designer'], ['gamer','🎮 gamer'], ['dev','⚡ dev'], ['anime','🌙 anime']
+];
+function renderColorsTags(){
+  const box = $('#ctTagsList');
+  if(!box) return;
+  const active = new Set(user.tagSettings?.active || []);
+  box.innerHTML = AVAILABLE_TAGS.map(([id,label])=>`<label class="ct-tag-choice"><input type="checkbox" data-ct-tag="${escapeAttr(id)}" ${active.has(id)?'checked':''}> ${escapeHtml(label)}</label>`).join('');
+}
+function renderProfileTagsAndSelos(){
+  const box = $('#profileTags');
+  if(box){
+    const tags = [];
+    if(user.tagSettings?.showFree !== false) tags.push('✦ grátis');
+    if(user.tagSettings?.showDlinky !== false) tags.push('⚡ dlinky');
+    const active = new Set(user.tagSettings?.active || []);
+    AVAILABLE_TAGS.forEach(([id,label])=>{ if(active.has(id)) tags.push(label); });
+    box.innerHTML = tags.map(t=>`<span>${escapeHtml(t)}</span>`).join('');
+  }
+  let seloBox = $('#profileSelos');
+  if(!seloBox && $('#profileSocials')){
+    seloBox = document.createElement('div');
+    seloBox.id = 'profileSelos';
+    seloBox.className = 'profile-selos';
+    $('#profileSocials').insertAdjacentElement('afterend', seloBox);
+  }
+  if(seloBox){
+    seloBox.innerHTML = (user.selos || []).map(s=>`<img title="${escapeAttr(s.name||'Selo')}" src="${escapeAttr(s.url||'')}" style="width:${Number(s.size||32)}px;height:${Number(s.size||32)}px">`).join('');
+  }
+}
+function itemMatchesInventoryFilter(it){
+  if(inventoryFilter === 'todos') return true;
+  if(inventoryFilter === 'molduras') return it.type === 'frame';
+  if(inventoryFilter === 'insignias') return it.type === 'badge' || it.type === 'insignia';
+  if(inventoryFilter === 'efeitos') return it.type === 'effect';
+  if(inventoryFilter === 'presentes') return !!it.gift;
+  if(inventoryFilter === 'selos') return it.type === 'selo';
+  return true;
+}
+function openFrameAdjust(){
+  if(!user.frame) return toast('Use uma moldura primeiro.');
+  const m = $('#frameAdjustModal'); if(!m) return;
+  const fa = Object.assign({x:0,y:0,scale:1,rotate:0}, user.frameAdjust || {});
+  setBg($('#adjustAvatar'), user.avatar);
+  const img = $('#adjustFrame'); if(img) img.src = user.frame;
+  $('#adjustX').value = Number(fa.x||0);
+  $('#adjustY').value = Number(fa.y||0);
+  $('#adjustScale').value = Math.round(Number(fa.scale||1)*100);
+  $('#adjustRotate').value = Number(fa.rotate||0);
+  m.classList.add('show','real-centered-modal','dlinky-clean-adjust');
+  updateAdjustPreview();
+}
+function updateAdjustPreview(){
+  const img = $('#adjustFrame'); if(!img) return;
+  const x = Number($('#adjustX')?.value||0), y = Number($('#adjustY')?.value||0), sc = Number($('#adjustScale')?.value||100)/100, rot = Number($('#adjustRotate')?.value||0);
+  img.style.transform = `translate(-50%,-50%) translate(${x}px,${y}px) scale(${sc}) rotate(${rot}deg)`;
+}
+async function saveFrameAdjust(){
+  user.frameAdjust = {x:Number($('#adjustX')?.value||0), y:Number($('#adjustY')?.value||0), scale:Number($('#adjustScale')?.value||100)/100, rotate:Number($('#adjustRotate')?.value||0)};
+  $('#frameAdjustModal')?.classList.remove('show','real-centered-modal','dlinky-clean-adjust');
+  addHistory('Ajuste da moldura salvo');
+  await saveUser('Ajuste da moldura salvo!');
 }
 
 function renderLinksEditor(){
@@ -357,7 +488,7 @@ function renderShop(){
     return;
   }
   if(shopMode === 'effects'){
-    grid.innerHTML = (assets.decorations || []).map((a,i)=>`<div class="asset-card"><div class="asset-preview"><span style="display:grid;place-items:center;height:100%;font-size:36px">✦</span></div><div class="asset-body"><b>${escapeHtml(a[0])}</b><small>Efeito grátis</small><button class="btn primary small" type="button" data-use-effect="${i}">Usar</button></div></div>`).join('');
+    grid.innerHTML = (assets.decorations || []).map((a,i)=>{ const price = Number(a[3] ?? 10); return `<div class="asset-card"><div class="asset-preview"><span style="display:grid;place-items:center;height:100%;font-size:36px">✦</span></div><div class="asset-body"><b>${escapeHtml(a[0])}</b><small>Preço: ${price} Linkwuans</small><button class="btn primary small" type="button" data-buy-effect="${i}">Comprar/Usar</button></div></div>`; }).join('');
     return;
   }
   grid.innerHTML = '<div class="panel"><h3>Outros</h3><p>Em breve você pode cadastrar mais itens aqui.</p></div>';
@@ -366,11 +497,12 @@ function renderInventory(){
   $('#invCoins') && ($('#invCoins').textContent = Number(user.coins || 0));
   $('#invItemsCount') && ($('#invItemsCount').textContent = (user.inventory || []).length);
   const grid = $('#inventoryGrid'); if(!grid) return;
-  const items = Array.isArray(user.inventory) ? user.inventory : [];
-  if(!items.length){ grid.innerHTML = '<p>Nenhum item no inventário.</p>'; return; }
-  grid.innerHTML = items.map((it,i)=>`<div class="asset-card inv-item-card">
+  const items = (Array.isArray(user.inventory) ? user.inventory : []).map((it,i)=>({it,i})).filter(x=>itemMatchesInventoryFilter(x.it));
+  $$('#inventoryTabs button').forEach(b=>b.classList.toggle('active', b.dataset.invFilter === inventoryFilter));
+  if(!items.length){ grid.innerHTML = '<p>Nenhum item nessa categoria.</p>'; return; }
+  grid.innerHTML = items.map(({it,i})=>`<div class="asset-card inv-item-card">
     ${it.type === 'frame' ? framePreviewHtml({url:it.url || it.value}, 'inv-preview') : `<div class="asset-preview"><span style="display:grid;place-items:center;height:100%;font-size:36px">✦</span></div>`}
-    <div class="asset-body"><b>${escapeHtml(it.name || 'Item')}</b><small>${escapeHtml(it.type || '')}</small>${it.type==='frame'?`<button class="btn primary small" type="button" data-use-inv-frame="${i}">Usar</button>`:''}<button class="btn dark small" type="button" data-remove-inv="${i}">Remover</button></div>
+    <div class="asset-body"><b>${escapeHtml(it.name || 'Item')}</b><small>${escapeHtml(it.type || '')}</small>${it.type==='frame'?`<button class="btn primary small" type="button" data-use-inv-frame="${i}">Usar</button><button class="btn dark small" type="button" data-adjust-inv-frame="${i}">Ajustar</button>`:''}${it.type==='effect'?`<button class="btn primary small" type="button" data-use-inv-effect="${i}">Usar</button>`:''}<button class="btn dark small" type="button" data-remove-inv="${i}">Remover</button></div>
   </div>`).join('');
 }
 
@@ -542,6 +674,15 @@ function bindEvents(){
     if(e.target.dataset.delSocial !== undefined){
       user.socials.splice(Number(e.target.dataset.delSocial),1); renderSocialEditor(); return;
     }
+    if(e.target.dataset.invFilter){
+      inventoryFilter = e.target.dataset.invFilter;
+      renderInventory(); return;
+    }
+    if(e.target.dataset.adjustInvFrame !== undefined){
+      const it = (user.inventory || [])[Number(e.target.dataset.adjustInvFrame)];
+      if(it){ user.frame = it.url || it.value || user.frame; }
+      openFrameAdjust(); return;
+    }
     if(e.target.dataset.shopTab){
       shopMode = e.target.dataset.shopTab;
       $$('.shop-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.shopTab === shopMode));
@@ -562,8 +703,22 @@ function bindEvents(){
       user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
       user.inventory.unshift({type:'frame', name:frame.name || 'Moldura', url:frame.url || '', value:frame.url || '', date:Date.now()});
       user.frame = frame.url || '';
+      user.frameAdjust = {x:0,y:0,scale:1,rotate:0};
       addHistory('Moldura comprada/usada: ' + (frame.name || 'Moldura'));
       await saveUser('Moldura aplicada!');
+      renderShop(); renderDash(); return;
+    }
+    if(e.target.dataset.buyEffect !== undefined){
+      const a = (assets.decorations || [])[Number(e.target.dataset.buyEffect)];
+      if(!a) return;
+      const price = Number(a[3] ?? 10);
+      if(Number(user.coins || 0) < price) return toast('Saldo insuficiente.');
+      user.coins = Number(user.coins || 0) - price;
+      user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
+      user.inventory.unshift({type:'effect', name:a[0], value:a[1], date:Date.now()});
+      user.decoration = a[1];
+      addHistory('Efeito comprado/aplicado: ' + a[0]);
+      await saveUser('Efeito comprado e aplicado!');
       renderShop(); renderDash(); return;
     }
     if(e.target.dataset.useEffect !== undefined){
@@ -577,8 +732,17 @@ function bindEvents(){
       const it = (user.inventory || [])[Number(e.target.dataset.useInvFrame)];
       if(!it) return;
       user.frame = it.url || it.value || '';
+      user.frameAdjust = user.frameAdjust || {x:0,y:0,scale:1,rotate:0};
       addHistory('Moldura do inventário aplicada: ' + (it.name || 'Moldura'));
       await saveUser('Moldura aplicada!');
+      renderInventory(); renderDash(); return;
+    }
+    if(e.target.dataset.useInvEffect !== undefined){
+      const it = (user.inventory || [])[Number(e.target.dataset.useInvEffect)];
+      if(!it) return;
+      user.decoration = it.value || it.url || user.decoration;
+      addHistory('Efeito do inventário aplicado: ' + (it.name || 'Efeito'));
+      await saveUser('Efeito aplicado!');
       renderInventory(); renderDash(); return;
     }
     if(e.target.dataset.removeInv !== undefined){
@@ -701,6 +865,55 @@ function bindEvents(){
     addHistory('Ícones sociais alterados');
     await saveUser('Ícones sociais salvos!');
   });
+
+  $('#saveUploads')?.addEventListener('click', async ()=>{
+    const av = $('#uploadAvatar')?.value.trim();
+    const bg = $('#uploadBg')?.value.trim();
+    const cur = $('#uploadCursor')?.value.trim();
+    const mus = $('#uploadMusic')?.value.trim();
+    if(av !== undefined) user.avatar = av;
+    if(bg !== undefined) user.bg = bg;
+    if(cur !== undefined) user.cursor = cur;
+    if(mus !== undefined) user.music = mus;
+    addHistory('Ativos enviados/alterados');
+    await saveUser('Ativos salvos!');
+  });
+
+  $('#saveCustom')?.addEventListener('click', async ()=>{
+    user.name = $('#customName')?.value.trim() || user.name;
+    user.bio = $('#customBio')?.value || '';
+    user.bgFx = $('#customBgFx')?.value || 'none';
+    user.nameFx = {
+      neon: !!$('#fxNeonName')?.checked,
+      shine: !!$('#fxShineName')?.checked,
+      rainbow: !!$('#fxRainbowName')?.checked,
+      perspective: !!$('#fxPerspective')?.checked
+    };
+    addHistory('Customização alterada');
+    await saveUser('Customização salva!');
+  });
+
+  $('#ctSaveBtn')?.addEventListener('click', async ()=>{
+    user.tagSettings = {
+      showFree: !!$('#ctShowFree')?.checked,
+      showDlinky: !!$('#ctShowDlinky')?.checked,
+      active: $$('[data-ct-tag]').filter(x=>x.checked).map(x=>x.dataset.ctTag)
+    };
+    user.colors = {
+      profileBg: $('#ctProfileBg')?.value || '#1E40AF',
+      cardBg: $('#ctCardBg')?.value || '#000000',
+      textColor: $('#ctTextColor')?.value || '#FFFFFF',
+      bioColor: $('#ctBioColor')?.value || '#FFFFFF'
+    };
+    user.color = user.colors.profileBg || user.color;
+    addHistory('Cores e tags alteradas');
+    await saveUser('Cores e tags salvas!');
+  });
+
+  ['adjustX','adjustY','adjustScale','adjustRotate'].forEach(id=>$('#'+id)?.addEventListener('input', updateAdjustPreview));
+  $('#closeFrameAdjust')?.addEventListener('click', ()=>$('#frameAdjustModal')?.classList.remove('show','real-centered-modal','dlinky-clean-adjust'));
+  $('#resetFrameAdjust')?.addEventListener('click', ()=>{ $('#adjustX').value=0; $('#adjustY').value=0; $('#adjustScale').value=100; $('#adjustRotate').value=0; updateAdjustPreview(); });
+  $('#saveFrameAdjust')?.addEventListener('click', saveFrameAdjust);
 }
 
 function startDashboardParticles(){
