@@ -4450,15 +4450,3 @@ body:has(#profile.active) #particlesCanvas{display:none!important;}
 #avatarDecoration #profileAvatar{position:absolute!important;left:50%!important;top:50%!important;width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;max-width:96px!important;max-height:96px!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;object-fit:cover!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;display:block!important;visibility:visible!important;opacity:1!important;z-index:2!important;}
 #avatarDecoration #profileFrame{position:absolute!important;left:50%!important;top:50%!important;width:150px!important;height:150px!important;min-width:150px!important;min-height:150px!important;max-width:150px!important;max-height:150px!important;transform:translate(-50%,-50%)!important;object-fit:contain!important;background:none!important;visibility:visible!important;opacity:1!important;z-index:5!important;pointer-events:none!important;}
 #dlinkyStableAvatarStage,#dlinkyFrameVaultStage,#dlinkyFinalProfileStage,#dlinkyV4ProfileStage{display:none!important;visibility:hidden!important;pointer-events:none!important;}
-/* Fix leve: avatar fixo e clique rápido nos ícones */
-#profileAvatar, #dashAvatar, #sideAvatar {
-  background-size: cover !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-}
-#profileSocials, #profileLinks, .social-icon, .profile-links a {
-  pointer-events: auto !important;
-}
-.social-icon { cursor: pointer; }
