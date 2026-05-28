@@ -1707,7 +1707,7 @@ renderDash();
       [80,250,700].forEach(t=>setTimeout(cleanDuplicateFrame,t));
     }
   });
-  setInterval(()=>{ if((location.hash||'').includes('/profile') || document.querySelector('#profile.page.active')) cleanDuplicateFrame(); },1200);
+  /* intervalo pesado removido */
 })();
 
 
@@ -13157,168 +13157,191 @@ document.addEventListener("click",(e)=>{
   else boot();
 })();
 
+
+
 /* =========================================================
-   DLINKY FIX DEFINITIVO — AVATAR/ÍCONE VISÍVEL NO PERFIL
-   Lê avatar de users, profiles e também chaves antigas dlinkyStore.
+   DLINKY FIX FINAL LEVE — salva avatar fixo + mantém admin/login
+   - Não usa localStorage
+   - Salva cfgAvatar direto em users/{uid} e profiles/{slug}
+   - Cria overlay fixo para o ícone do perfil não sumir
    ========================================================= */
 (function(){
-  if(window.__DLINKY_AVATAR_ICON_VISIBLE_FINAL__) return;
-  window.__DLINKY_AVATAR_ICON_VISIBLE_FINAL__ = true;
+  if(window.__DLINKY_LIGHT_ICON_SAVE_FIX__) return;
+  window.__DLINKY_LIGHT_ICON_SAVE_FIX__ = true;
 
   const $ = (s,r=document)=>r.querySelector(s);
   const clean = v => String(v || '').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/["']/g,'');
-  const ok = v => {
+  const good = v => {
     v = clean(v);
-    return !!v && v !== 'none' && v !== 'null' && v !== 'undefined' && !v.startsWith('blob:');
+    return /^https?:\/\//i.test(v) || /\.(png|jpg|jpeg|gif|webp|apng|svg)(\?|#|$)/i.test(v);
   };
   const slugClean = v => String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30) || 'usuario';
-  const enc = k => encodeURIComponent(String(k||'')).replace(/\./g,'%2E');
 
-  function getU(){
-    let a = {};
-    try{ a = JSON.parse((window.DlinkyStore && DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }catch(e){}
-    try{ if(typeof user !== 'undefined' && user) a = Object.assign({}, a, user); }catch(e){}
-    try{ if(window.user) a = Object.assign({}, a, window.user); }catch(e){}
-    return a;
+  function getUserObj(){
+    let u = {};
+    try{ u = JSON.parse((window.DlinkyStore && DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }catch(e){}
+    try{ if(typeof user !== 'undefined' && user) u = Object.assign({}, u, user); }catch(e){}
+    try{ if(window.user) u = Object.assign({}, u, window.user); }catch(e){}
+    return u;
   }
-
-  function pickAvatar(u){
-    u = u || {};
-    const fields = ['avatar','avatarUrl','photoURL','photoUrl','foto','icon','iconUrl','profileAvatar','profileImage','image','pfp','picture'];
-    for(const k of fields){ if(ok(u[k])) return clean(u[k]); }
-    const input = $('#cfgAvatar');
-    if(input && ok(input.value)) return clean(input.value);
-    return '';
-  }
-
-  async function readDlinkyStoreKey(key){
+  function setUserObj(u){
+    try{ if(typeof user !== 'undefined' && user) Object.assign(user,u); }catch(e){}
+    try{ window.user = Object.assign(window.user || {}, u); }catch(e){}
     try{
-      if(!(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore)) return '';
-      let snap = await firebase.firestore().collection('dlinkyStore').doc(enc(key)).get();
-      if(!snap.exists) snap = await firebase.firestore().collection('dlinkyStore').doc(key).get();
-      if(snap.exists){
-        const d = snap.data() || {};
-        return clean(d.value || d.avatar || d.url || '');
+      if(window.DlinkyStore){
+        const old = JSON.parse(DlinkyStore.getItem('dlinkyUser') || '{}') || {};
+        DlinkyStore.setItem('dlinkyUser', JSON.stringify(Object.assign(old,u)));
       }
     }catch(e){}
+  }
+  function currentSlug(){
+    const u = getUserObj();
+    const h = (location.hash || '').replace(/^#\/?/,'').split('/')[0];
+    return slugClean(u.slug || h || 'usuario');
+  }
+  function currentEmail(){
+    try{ return String((firebase.auth().currentUser && firebase.auth().currentUser.email) || getUserObj().email || '').toLowerCase().trim(); }catch(e){ return String(getUserObj().email || '').toLowerCase().trim(); }
+  }
+  function getAvatarLocal(){
+    const input = $('#cfgAvatar');
+    if(input && good(input.value)) return clean(input.value);
+    const u = getUserObj();
+    for(const k of ['avatar','avatarUrl','photoURL','photoUrl','icon','iconUrl','foto','picture','profileImage']){
+      if(good(u[k])) return clean(u[k]);
+    }
     return '';
   }
-
-  async function findAvatarEverywhere(){
-    const u = getU();
-    let av = pickAvatar(u);
-    if(ok(av)) return av;
-
+  async function readAvatarFromFirestore(){
+    try{
+      if(!(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore)) return '';
+      const db = firebase.firestore();
+      const authUser = firebase.auth && firebase.auth().currentUser;
+      if(authUser){
+        const us = await db.collection('users').doc(authUser.uid).get();
+        if(us.exists){
+          const d = us.data() || {};
+          for(const k of ['avatar','avatarUrl','photoURL','icon','foto','picture']) if(good(d[k])) return clean(d[k]);
+        }
+      }
+      const ps = await db.collection('profiles').doc(currentSlug()).get();
+      if(ps.exists){
+        const d = ps.data() || {};
+        for(const k of ['avatar','avatarUrl','photoURL','icon','foto','picture']) if(good(d[k])) return clean(d[k]);
+      }
+    }catch(e){ console.warn('avatar read', e); }
+    return '';
+  }
+  async function resolveAvatar(){
+    return getAvatarLocal() || await readAvatarFromFirestore() || '';
+  }
+  async function saveAvatarNow(){
+    const av = getAvatarLocal();
+    const u = getUserObj();
+    const slug = slugClean(u.slug || currentSlug());
+    const email = currentEmail();
+    if(good(av)) setUserObj({avatar: av, slug, email});
     try{
       if(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore){
         const db = firebase.firestore();
-        const hashSlug = (location.hash||'').replace(/^#\/?/,'').split('/')[0];
-        const slugs = [u.slug, hashSlug, window.__dlinkyDirectProfileSlug, 'usuario'].map(slugClean).filter(Boolean);
-        for(const s of [...new Set(slugs)]){
-          const ps = await db.collection('profiles').doc(s).get();
-          if(ps.exists){ av = pickAvatar(ps.data() || {}); if(ok(av)) return av; }
-        }
-        if(firebase.auth && firebase.auth().currentUser){
-          const us = await db.collection('users').doc(firebase.auth().currentUser.uid).get();
-          if(us.exists){ av = pickAvatar(us.data() || {}); if(ok(av)) return av; }
-        }
+        const authUser = firebase.auth && firebase.auth().currentUser;
+        const data = Object.assign({}, getUserObj(), {avatar: av, slug, email, updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
+        if(authUser){ data.uid = authUser.uid; await db.collection('users').doc(authUser.uid).set(data,{merge:true}); }
+        await db.collection('profiles').doc(slug).set(data,{merge:true});
       }
-    }catch(e){}
-
-    const email = clean(u.email || (window.firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '');
-    const emailClean = email.toLowerCase().trim();
-    const emailEncoded = emailClean.replace(/@/g,'%40');
-    const slug = slugClean(u.slug || (location.hash||'').replace(/^#\/?/,'') || 'usuario');
-    const keys = [
-      'dlinkyAvatarPreserve_'+slug,
-      'dlinky_avatar_clean_'+slug,
-      'dlinkyAvatarPreserve_usuario',
-      'dlinky_avatar_clean_usuario',
-      'dlinkyAvatarPreserve_'+emailClean,
-      'dlinky_avatar_clean_'+emailClean,
-      'dlinkyAvatarPreserve_'+emailEncoded,
-      'dlinky_avatar_clean_'+emailEncoded,
-      'dlinkyAvatarPreserve_'+(emailClean||'').replace(/[^a-z0-9]/g,''),
-      'dlinky_avatar_clean_'+(emailClean||'').replace(/[^a-z0-9]/g,'')
-    ];
-    for(const k of [...new Set(keys)]){
-      av = await readDlinkyStoreKey(k);
-      if(ok(av)) return av;
-    }
-    return '';
+    }catch(e){ console.warn('avatar save', e); }
+    applyAvatar(av);
   }
-
-  function installCss(){
-    if($('#dlinkyAvatarVisibleCssFinal')) return;
-    const st = document.createElement('style');
-    st.id = 'dlinkyAvatarVisibleCssFinal';
-    st.textContent = `
+  function ensureCss(){
+    if($('#dlinkyIconFixedCss')) return;
+    const st=document.createElement('style');
+    st.id='dlinkyIconFixedCss';
+    st.textContent=`
       #profileCard{position:relative!important;overflow:visible!important;}
-      #avatarDecoration{display:block!important;visibility:visible!important;opacity:1!important;z-index:50!important;}
-      #avatarDecoration > #profileAvatar{display:block!important;visibility:visible!important;opacity:1!important;}
-      #dlinkyRealProfileIconFinal{
-        position:absolute!important;left:50%!important;top:145px!important;
-        width:94px!important;height:94px!important;border-radius:50%!important;
-        transform:translate(-50%,-50%)!important;z-index:214748300!important;
-        display:none;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
-        border:3px solid #2f7dff!important;box-shadow:0 0 0 4px rgba(8,4,14,.85),0 0 30px rgba(47,125,255,.75),0 0 42px rgba(168,85,247,.55)!important;
-        pointer-events:none!important;overflow:hidden!important;
-      }
-      #dlinkyRealProfileIconFinal img{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:50%!important;display:block!important;}
+      #avatarDecoration{display:grid!important;place-items:center!important;visibility:visible!important;opacity:1!important;z-index:60!important;}
+      #profileAvatar{display:block!important;visibility:visible!important;opacity:1!important;background-size:cover!important;background-position:center!important;}
+      #dlinkyFixedAvatarIcon{position:absolute!important;left:50%!important;top:145px!important;width:94px!important;height:94px!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;z-index:999999!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;border:3px solid #2f7dff!important;box-shadow:0 0 0 4px rgba(8,4,14,.85),0 0 30px rgba(47,125,255,.7)!important;display:none!important;pointer-events:none!important;}
+      #dlinkyFixedAvatarIcon.on{display:block!important;}
     `;
     document.head.appendChild(st);
   }
-
-  async function showAvatar(){
-    installCss();
-    const card = $('#profileCard');
-    if(!card) return;
-    let av = await findAvatarEverywhere();
+  function applyAvatar(av){
+    av = clean(av);
+    ensureCss();
+    if(!good(av)) return;
+    setUserObj({avatar: av});
     const original = $('#profileAvatar');
-    if(ok(av) && original){
-      original.src = av;
+    if(original){
+      if(original.tagName === 'IMG') original.src = av;
+      original.style.setProperty('background-image', `url("${av.replace(/"/g,'%22')}")`, 'important');
       original.style.setProperty('display','block','important');
       original.style.setProperty('visibility','visible','important');
       original.style.setProperty('opacity','1','important');
-      original.style.backgroundImage = `url("${av.replace(/"/g,'%22')}")`;
     }
-    let icon = $('#dlinkyRealProfileIconFinal', card);
-    if(!icon){
-      icon = document.createElement('div');
-      icon.id = 'dlinkyRealProfileIconFinal';
-      icon.innerHTML = '<img alt="avatar">';
-      card.appendChild(icon);
-    }
-    if(ok(av)){
-      const img = icon.querySelector('img');
-      img.src = av;
-      icon.style.backgroundImage = `url("${av.replace(/"/g,'%22')}")`;
-      icon.style.setProperty('display','block','important');
-      try{ if(typeof user !== 'undefined' && user) user.avatar = av; window.user = Object.assign(window.user||{}, {avatar:av}); }catch(e){}
-      try{
-        const input = $('#cfgAvatar');
-        if(input && !input.value) input.value = av;
-      }catch(e){}
-    }else{
-      icon.style.setProperty('display','none','important');
+    const card = $('#profileCard');
+    if(card){
+      let icon = $('#dlinkyFixedAvatarIcon', card);
+      if(!icon){ icon=document.createElement('div'); icon.id='dlinkyFixedAvatarIcon'; card.appendChild(icon); }
+      icon.style.setProperty('background-image', `url("${av.replace(/"/g,'%22')}")`, 'important');
+      icon.classList.add('on');
     }
   }
+  async function refreshAvatar(){
+    const av = await resolveAvatar();
+    if(good(av)) applyAvatar(av);
+  }
 
-  const old = window.renderProfile || (typeof renderProfile !== 'undefined' ? renderProfile : null);
-  if(typeof old === 'function' && !old.__avatarVisibleFinal){
+  // RenderProfile original continua com admin/loja/login; só reforçamos o ícone no fim, sem loop pesado.
+  const oldRP = window.renderProfile || (typeof renderProfile !== 'undefined' ? renderProfile : null);
+  if(typeof oldRP === 'function' && !oldRP.__dlinkyLightIconFix){
     const patched = function(){
-      const r = old.apply(this, arguments);
-      [0,80,250,700,1500,3000].forEach(t=>setTimeout(showAvatar,t));
+      const r = oldRP.apply(this, arguments);
+      refreshAvatar();
+      requestAnimationFrame(refreshAvatar);
       return r;
     };
-    patched.__avatarVisibleFinal = true;
+    patched.__dlinkyLightIconFix = true;
     window.renderProfile = patched;
     try{ renderProfile = patched; }catch(e){}
   }
-  document.addEventListener('DOMContentLoaded',()=>[100,500,1200,2500].forEach(t=>setTimeout(showAvatar,t)));
-  window.addEventListener('hashchange',()=>[100,500,1200].forEach(t=>setTimeout(showAvatar,t)));
-  if(window.firebase && firebase.apps && firebase.apps.length && firebase.auth){
-    try{ firebase.auth().onAuthStateChanged(()=>[300,1000,2200].forEach(t=>setTimeout(showAvatar,t))); }catch(e){}
-  }
-  [300,1000,2200].forEach(t=>setTimeout(showAvatar,t));
+
+  // Salvar imagens: captura avatar antes de qualquer código antigo mexer.
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.closest && e.target.closest('#saveImages')){
+      saveAvatarNow();
+      setTimeout(saveAvatarNow, 250);
+    }
+  }, true);
+
+  // Corrige troca de links/sociais para não voltar para valor fixo antigo.
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.closest && e.target.closest('#saveLinks')){
+      setTimeout(function(){
+        try{
+          const links = Array.from(document.querySelectorAll('.link-row')).map(r=>({
+            name:(r.querySelector('[data-link-name]')||{}).value || '',
+            url:(r.querySelector('[data-link-url]')||{}).value || ''
+          })).filter(x=>x.name || x.url);
+          setUserObj({links});
+          if(window.dlinkyForceSaveToFirebase) window.dlinkyForceSaveToFirebase();
+        }catch(err){console.warn(err)}
+      },50);
+    }
+    if(e.target && e.target.closest && e.target.closest('#saveSocials')){
+      setTimeout(function(){
+        try{
+          const socials = Array.from(document.querySelectorAll('.social-row')).map(r=>({
+            name:(r.querySelector('[data-social-name]')||{}).value || 'Instagram',
+            url:(r.querySelector('[data-social-url]')||{}).value || '',
+            on:!!(r.querySelector('[data-social-on]')||{}).checked
+          }));
+          setUserObj({socials});
+          if(window.dlinkyForceSaveToFirebase) window.dlinkyForceSaveToFirebase();
+        }catch(err){console.warn(err)}
+      },50);
+    }
+  }, true);
+
+  document.addEventListener('DOMContentLoaded', refreshAvatar);
+  window.addEventListener('hashchange', ()=>setTimeout(refreshAvatar,80));
+  try{ if(window.firebase && firebase.auth) firebase.auth().onAuthStateChanged(()=>setTimeout(refreshAvatar,200)); }catch(e){}
 })();
