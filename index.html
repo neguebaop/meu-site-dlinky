@@ -351,7 +351,7 @@
   </section>
 
   <section id="simple" class="page"><header class="topbar glass smallbar"><a class="brand" href="#/"><span class="brand-icon">D</span><strong>Dlinky</strong></a></header><main class="simple-content panel"><h1 id="simpleTitle"></h1><p id="simpleText"></p><button class="btn primary" data-goto="register">Criar meu perfil</button></main></section>
-<!-- app.js removido: código principal está em script.js -->
+<script src="app.js"></script>
 
   <div id="frameAdjustModal" class="modal frame-adjust-modal">
     <div class="modal-card adjust-card">
@@ -374,7 +374,7 @@
       </div>
     </div>
   </div>
-<!-- dlinky_sem_insignias_clean.js removido: código principal está em script.js -->
+<script src="dlinky_sem_insignias_clean.js"></script>
   
 
   <!-- Firebase SDK: login real + Firestore -->
@@ -383,152 +383,21 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
   
-<!-- ===== DLINKY FIREBASE ONLINE V3: salva online antes do script carregar ===== -->
+<!-- DLINKY FIX: bloco antigo Firebase Online V3 desativado.
+     Ele sobrescrevia o localStorage global e podia restaurar dados vazios após atualizar/relogar.
+     Agora o salvamento fica somente no Firebase Auth/Firestore por usuário. -->
 <script>
-(function(){
-  const FIREBASE_PROJECT_ID = "dlinky-45df5";
-  const FIREBASE_API_KEY = "AIzaSyBQDC8YM_6tJKyF2irGmOiW8NYHeJkHdFI";
-  const DOC_URL =
-    "https://firestore.googleapis.com/v1/projects/" +
-    FIREBASE_PROJECT_ID +
-    "/databases/(default)/documents/dlinky/main?key=" +
-    FIREBASE_API_KEY;
-
-  const realLocalStorage = window.localStorage;
-  const cloudStore = {};
-  let lastSaved = "";
-  let saveTimer = null;
-
-  function readDoc(raw){
-    const doc = JSON.parse(raw || "{}");
-    const str = doc?.fields?.store?.stringValue || "{}";
-    const obj = JSON.parse(str || "{}");
-    Object.keys(cloudStore).forEach(k => delete cloudStore[k]);
-    Object.keys(obj || {}).forEach(k => cloudStore[k] = String(obj[k]));
-    lastSaved = JSON.stringify(cloudStore);
-  }
-
-  function body(){
-    return JSON.stringify({
-      fields:{
-        store:{stringValue:JSON.stringify(cloudStore)},
-        updatedAt:{timestampValue:new Date().toISOString()}
-      }
-    });
-  }
-
-  function loadSync(){
-    try{
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", DOC_URL, false);
-      xhr.send(null);
-      if(xhr.status >= 200 && xhr.status < 300){
-        readDoc(xhr.responseText);
-        console.log("Dlinky Firebase V3: carregou online");
-        return true;
-      }
-      if(xhr.status === 404){
-        saveSync(true);
-        return true;
-      }
-      console.error("Dlinky Firebase V3: erro ao ler", xhr.status, xhr.responseText);
-      return false;
-    }catch(e){
-      console.error("Dlinky Firebase V3: falha ao ler", e);
-      return false;
-    }
-  }
-
-  function saveSync(force){
-    const now = JSON.stringify(cloudStore);
-    if(!force && now === lastSaved) return true;
-    try{
-      const xhr = new XMLHttpRequest();
-      xhr.open("PATCH", DOC_URL, false);
-      xhr.setRequestHeader("Content-Type", "application/json");
-      xhr.send(body());
-      if(xhr.status >= 200 && xhr.status < 300){
-        lastSaved = now;
-        console.log("Dlinky Firebase V3: salvou online");
-        return true;
-      }
-      console.error("Dlinky Firebase V3: erro ao salvar", xhr.status, xhr.responseText);
-      return false;
-    }catch(e){
-      console.error("Dlinky Firebase V3: falha ao salvar", e);
-      return false;
-    }
-  }
-
-  function saveSoon(){
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => saveSync(false), 80);
-  }
-
-  loadSync();
-
-  const ogGet = Storage.prototype.getItem;
-  const ogSet = Storage.prototype.setItem;
-  const ogRemove = Storage.prototype.removeItem;
-  const ogClear = Storage.prototype.clear;
-  const ogKey = Storage.prototype.key;
-
-  Storage.prototype.getItem = function(key){
-    if(this === realLocalStorage){
-      key = String(key);
-      return Object.prototype.hasOwnProperty.call(cloudStore,key) ? cloudStore[key] : null;
-    }
-    return ogGet.call(this,key);
-  };
-
-  Storage.prototype.setItem = function(key,value){
-    if(this === realLocalStorage){
-      cloudStore[String(key)] = String(value);
-      saveSoon();
-      return;
-    }
-    return ogSet.call(this,key,value);
-  };
-
-  Storage.prototype.removeItem = function(key){
-    if(this === realLocalStorage){
-      delete cloudStore[String(key)];
-      saveSoon();
-      return;
-    }
-    return ogRemove.call(this,key);
-  };
-
-  Storage.prototype.clear = function(){
-    if(this === realLocalStorage){
-      Object.keys(cloudStore).forEach(k => delete cloudStore[k]);
-      saveSoon();
-      return;
-    }
-    return ogClear.call(this);
-  };
-
-  Storage.prototype.key = function(i){
-    if(this === realLocalStorage) return Object.keys(cloudStore)[i] || null;
-    return ogKey.call(this,i);
-  };
-
-  window.dlinkyCloudSaveNow = () => saveSync(true);
-  window.dlinkyCloudReloadNow = () => loadSync();
-  window.dlinkyCloudDebug = () => {
-    console.log(JSON.parse(JSON.stringify(cloudStore)));
-    return cloudStore;
-  };
-
-  window.addEventListener("beforeunload", () => saveSync(false));
-  document.addEventListener("visibilitychange", () => {
-    if(document.visibilityState === "hidden") saveSync(false);
-  });
-  setInterval(() => saveSync(false), 2000);
-})();
+window.dlinkyCloudSaveNow = function(){ return true; };
+window.dlinkyCloudReloadNow = function(){ return true; };
+window.dlinkyCloudDebug = function(){ return {}; };
 </script>
 
 <script src="script.js"></script>
+<script src="dlinky_ultimate_save_fix.js"></script>
+
+
+
+
 
 
   <div id="dlinkyPixRechargeModal" class="dlinky-pix-modal" aria-hidden="true">
