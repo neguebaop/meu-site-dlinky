@@ -4157,12 +4157,12 @@ document.addEventListener("click",(e)=>{
   const ADMIN_EMAIL = "jailtonsilas48@gmail.com";
 
   const firebaseConfig = {
-    apiKey: "AIzaSyBQDC8YM_6tJKyF2irGmO1W8NYHeJkHdFI",
+    apiKey: "AIzaSyBQDC8YM_6tJKyF2irGmOiW8NYHeJkHdFI",
     authDomain: "dlinky-45df5.firebaseapp.com",
     projectId: "dlinky-45df5",
     storageBucket: "dlinky-45df5.firebasestorage.app",
     messagingSenderId: "329520494601",
-    appId: "1:329520494601:web:6444b8a4be23ee5a6d7726"
+    appId: "1:329520494601:web:d6f27af06c8d872121a0d8"
   };
 
   function $(s){ return document.querySelector(s); }
@@ -10440,12 +10440,12 @@ document.addEventListener("click",(e)=>{
   window.__DLINKY_GLOBAL_FIREBASE_CATALOG__ = true;
 
   const firebaseConfig = {
-    apiKey: "AIzaSyBQDC8YM_6tJKyF2irGmO1W8NYHeJkHdFI",
+    apiKey: "AIzaSyBQDC8YM_6tJKyF2irGmOiW8NYHeJkHdFI",
     authDomain: "dlinky-45df5.firebaseapp.com",
     projectId: "dlinky-45df5",
     storageBucket: "dlinky-45df5.firebasestorage.app",
     messagingSenderId: "329520494601",
-    appId: "1:329520494601:web:6444b8a4be23ee5a6d7726"
+    appId: "1:329520494601:web:d6f27af06c8d872121a0d8"
   };
 
   const KEYS = {
