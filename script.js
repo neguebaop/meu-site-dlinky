@@ -47,6 +47,8 @@ let routeToken = 0;
 const ADMIN_EMAILS = ['jailtonsilas48@gmail.com','amoester199@gmail.com'];
 let customFrames = [];
 let adminSelos = [];
+let landingFeaturedUsers = [];
+const DLINKY_PIX_KEY = 'COLE_SUA_CHAVE_PIX_AQUI';
 
 window.user = user;
 
@@ -535,6 +537,112 @@ function shopFrameCard(f, idx){
     <div class="zyo-card-actions"><button class="btn primary small" type="button" data-buy-frame="${escapeAttr(id)}">🔒 Comprar</button><button class="btn dark small" type="button" data-gift-frame="${escapeAttr(id)}">🎁 Presentear</button></div>
   </div>`;
 }
+
+function packPriceBRL(coins){
+  coins = Number(coins || 0);
+  if(coins === 345) return 30;
+  if(coins === 650) return 50;
+  if(coins === 1450) return 100;
+  if(coins === 3300) return 200;
+  return Math.max(5, Math.ceil(coins / 11.5));
+}
+async function openPixRecharge(coins){
+  if(!currentAuthUser) return toast('Faça login para recarregar.');
+  const price = packPriceBRL(coins);
+  const orderId = 'DLK-' + Date.now().toString(36).toUpperCase();
+  const modal = document.getElementById('dlinkyPixRechargeModal');
+  if(!modal) return toast('Modal PIX não encontrado.');
+  const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.value!==undefined ? el.value=val : el.textContent=val; };
+  set('dlinkyPixProduct', coins + ' Linkwuans');
+  set('dlinkyPixPrice', 'R$ ' + price.toFixed(2).replace('.',','));
+  set('dlinkyPixUser', user.email || user.slug || 'Usuário');
+  set('dlinkyPixKey', DLINKY_PIX_KEY);
+  set('dlinkyPixOrderId', orderId);
+  modal.dataset.coins = String(coins);
+  modal.dataset.price = String(price);
+  modal.dataset.order = orderId;
+  modal.classList.add('show');
+  modal.setAttribute('aria-hidden','false');
+}
+async function confirmPixRecharge(){
+  const modal = document.getElementById('dlinkyPixRechargeModal');
+  if(!modal || !currentAuthUser) return;
+  const coins = Number(modal.dataset.coins || 0);
+  const price = Number(modal.dataset.price || 0);
+  const orderId = modal.dataset.order || ('DLK-' + Date.now().toString(36));
+  await db.collection('paymentRequests').doc(orderId).set({
+    orderId, type:'recharge', coins, price,
+    status:'pending', email:user.email || currentAuthUser.email || '', slug:user.slug || '', uid:currentAuthUser.uid,
+    pixKey: DLINKY_PIX_KEY,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, {merge:true});
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden','true');
+  toast('Pedido enviado ao admin. Seus Linkwuans serão liberados após o pagamento.');
+}
+async function loadPaymentRequests(){
+  if(!isAdmin()) return [];
+  try{
+    const snap = await db.collection('paymentRequests').orderBy('createdAt','desc').limit(20).get();
+    return snap.docs.map(d=>({id:d.id,...d.data()}));
+  }catch(e){ return []; }
+}
+async function renderAdminPayments(){
+  const box=document.getElementById('adminPaymentsList');
+  if(!box || !isAdmin()) return;
+  const reqs=await loadPaymentRequests();
+  box.innerHTML = reqs.length ? reqs.map(r=>`<div class="admin-item"><div><b>${escapeHtml(r.email||r.slug||'Usuário')}</b><small>Pedido: ${escapeHtml(r.orderId||r.id)} • ${Number(r.coins||0)} Linkwuans • R$ ${Number(r.price||0).toFixed(2).replace('.',',')} • ${escapeHtml(r.status||'pending')}</small></div><button class="btn primary small" type="button" data-admin-release-payment="${escapeAttr(r.id)}">Liberar</button></div>`).join('') : '<p>Nenhum pedido PIX ainda.</p>';
+}
+async function releasePayment(id){
+  if(!isAdmin()) return;
+  const ref=db.collection('paymentRequests').doc(id);
+  const snap=await ref.get();
+  if(!snap.exists) return toast('Pedido não encontrado.');
+  const r=snap.data();
+  const target = await findUserDocByEmailOrSlug(r.email || r.slug);
+  if(!target) return toast('Usuário do pedido não encontrado.');
+  const data={...target.data};
+  data.coins = Number(data.coins||0) + Number(r.coins||0);
+  await db.collection('users').doc(target.id).set(data,{merge:true});
+  if(data.slug) await db.collection('profiles').doc(cleanSlug(data.slug)).set(data,{merge:true});
+  await ref.set({status:'released', releasedAt:firebase.firestore.FieldValue.serverTimestamp(), releasedBy:currentAuthUser.email||''},{merge:true});
+  toast('Linkwuans liberados.');
+  await renderAdminPayments();
+}
+async function loadLandingFeatured(){
+  try{
+    const cfg = await db.collection('siteConfig').doc('landing').get();
+    const slugs = cfg.exists && Array.isArray(cfg.data().featuredUsers) ? cfg.data().featuredUsers : [];
+    let users=[];
+    for(const raw of slugs.slice(0,12)){
+      const slug=cleanSlug(raw);
+      const ps=await db.collection('profiles').doc(slug).get();
+      if(ps.exists) users.push(ps.data()); else users.push({name:slug,slug,avatar:''});
+    }
+    if(!users.length) users=[{name:'Lariogth',slug:'lariogth',avatar:''},{name:'Snow011',slug:'snow011',avatar:''},{name:'wnk',slug:'wnk',avatar:''},{name:'natsumi',slug:'natsumi',avatar:''}];
+    renderLandingFeatured(users);
+  }catch(e){ renderLandingFeatured([]); }
+}
+function renderLandingFeatured(users){
+  const old=document.querySelector('.zyo-marquee-track');
+  if(!old) return;
+  const items=(users||[]).concat(users||[]);
+  old.innerHTML = items.map(u=>`<span class="featured-pill"><i class="featured-avatar-mini" style="background-image:${u.avatar?`url('${escapeAttr(u.avatar)}')`:'none'}"></i><b>${escapeHtml(u.name||u.slug||'Usuário')}</b><small>/${escapeHtml(u.slug||'usuario')}</small></span>`).join('');
+}
+async function saveLandingFeaturedFromAdmin(){
+  if(!isAdmin()) return toast('Área somente para admin.');
+  const val=(document.getElementById('adminFeaturedUsers')?.value||'').split(/[\n,]+/).map(x=>cleanSlug(x)).filter(Boolean).slice(0,12);
+  await db.collection('siteConfig').doc('landing').set({featuredUsers:val,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+  toast('Usuários da tela inicial salvos.');
+  await loadLandingFeatured();
+}
+async function fillAdminFeaturedField(){
+  if(!isAdmin()) return;
+  const el=document.getElementById('adminFeaturedUsers');
+  if(!el) return;
+  try{ const snap=await db.collection('siteConfig').doc('landing').get(); if(snap.exists && Array.isArray(snap.data().featuredUsers)) el.value=snap.data().featuredUsers.join('\n'); }catch(e){}
+}
+
 function renderShop(){
   $('#walletCoins') && ($('#walletCoins').textContent = Number(user.coins || 0));
   $('#invCountMini') && ($('#invCountMini').textContent = (user.inventory || []).length);
@@ -614,6 +722,12 @@ function renderAdminPanel(){
   if(list){
     list.innerHTML = customFrames.map(f=>`<div class="admin-item admin-frame-item"><div class="mini-frame-preview"><span class="mini-avatar" style="background-image:url('${escapeAttr(getBestAvatar())}')"></span><img src="${escapeAttr(f.url || '')}" onerror="this.classList.add('bad');this.parentNode.classList.add('bad');"></div><div><b>${escapeHtml(f.name || 'Moldura')}</b><small>${escapeHtml(f.desc || '')}</small><small>Preço: ${escapeHtml(f.price || '0')} Linkwuans</small><small class="bad-url-note">Imagem não abriu. Use link direto .png/.gif/.webp.</small></div><button class="delete" type="button" data-admin-del-frame="${escapeHtml(f.id)}">×</button></div>`).join('') || '<p>Nenhuma moldura cadastrada.</p>';
   }
+  const adminTab=document.getElementById('tab-admin');
+  if(adminTab && !document.getElementById('adminLandingFeaturedPanel')){
+    adminTab.insertAdjacentHTML('beforeend', `<div class="panel form-panel" id="adminLandingFeaturedPanel"><h2>Usuários em destaque na tela inicial</h2><p>Coloque um slug por linha. A foto será puxada do perfil cadastrado.</p><textarea id="adminFeaturedUsers" placeholder="linkroubadao\nryukforever\nsnow011"></textarea><button class="btn primary" id="adminSaveFeaturedUsers" type="button">Salvar destaques</button></div><div class="panel"><h2>Pedidos PIX pendentes</h2><div id="adminPaymentsList" class="admin-list"></div></div>`);
+  }
+  fillAdminFeaturedField();
+  renderAdminPayments();
 }
 function renderAdminSelosPanel(){
   updateAdminVisibility();
@@ -775,10 +889,8 @@ function bindEvents(){
       renderShop(); return;
     }
     if(e.target.dataset.addCoins){
-      user.coins = Number(user.coins || 0) + Number(e.target.dataset.addCoins || 0);
-      addHistory('Recarga adicionada: ' + e.target.dataset.addCoins + ' Linkwuans');
-      await saveUser('Linkwuans adicionados!');
-      renderShop(); renderDash(); return;
+      openPixRecharge(Number(e.target.dataset.addCoins || 0));
+      return;
     }
     if(e.target.dataset.buyFrame){
       const frame = customFrames.find(f=>f.id === e.target.dataset.buyFrame);
@@ -863,6 +975,11 @@ function bindEvents(){
       return;
     }
     if(e.target.closest('#adminAddFrame')){ await adminAddFrame(); return; }
+    if(e.target.closest('#adminSaveFeaturedUsers')){ await saveLandingFeaturedFromAdmin(); return; }
+    if(e.target.dataset.adminReleasePayment){ await releasePayment(e.target.dataset.adminReleasePayment); return; }
+    if(e.target.closest('#dlinkyPixClose')){ document.getElementById('dlinkyPixRechargeModal')?.classList.remove('show'); return; }
+    if(e.target.closest('#dlinkyPixCopy')){ const k=document.getElementById('dlinkyPixKey')?.value||''; navigator.clipboard?.writeText(k); toast('Chave PIX copiada.'); return; }
+    if(e.target.closest('#dlinkyPixConfirm')){ await confirmPixRecharge(); return; }
     if(e.target.closest('#adminApplyUser')){ await adminApplyUser(); return; }
     if(e.target.closest('#adminSendGift')){ await adminSendGift(); return; }
     if(e.target.closest('#adminAddSeloBtn')){ await adminAddSelo(); return; }
@@ -1064,5 +1181,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderDash();
   animateLandingCounters();
   startDashboardParticles();
+loadLandingFeatured();
   route();
 });
