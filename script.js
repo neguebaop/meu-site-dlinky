@@ -35,12 +35,13 @@ const presetUrls = {
 const defaultUser = {
   uid:'', name:'Usuário', slug:'usuario', email:'', bio:'', avatar:'', banner:'', bg:'', video:'', frame:'',
   music:'', welcome:'Clique aqui', color:'#a855f7', particles:false, particleType:'none', verified:false,
-  hideViews:false, template:'default', decoration:'none', views:0, links:[], socials:[], embeds:[], tags:[], history:['Conta criada no Dlinky']
+  hideViews:false, template:'default', decoration:'none', views:0, links:[], socials:[], embeds:[], tags:[], history:['Conta criada no Dlinky'], coins:0, inventory:[], purchases:[]
 };
 
 let user = {...defaultUser};
 let currentAuthUser = null;
 let assetMode = 'backgrounds';
+let shopMode = 'coins';
 let routeToken = 0;
 const ADMIN_EMAILS = ['jailtonsilas48@gmail.com','amoester199@gmail.com'];
 let customFrames = [];
@@ -57,6 +58,19 @@ function escapeHtml(s=''){
 function safeUrl(u=''){
   u = String(u || '').trim();
   return /^https?:\/\//i.test(u) ? u : '#';
+}
+
+function escapeAttr(s=''){
+  return escapeHtml(s).replace(/'/g,'&#39;');
+}
+function getBestAvatar(){
+  return String(user.avatar || '').trim();
+}
+function normalizeImageUrl(url){
+  url = String(url || '').trim();
+  if(!url) return '';
+  // Aceita link direto. Para moldura, use de preferência .png/.gif/.webp/.apng.
+  return url;
 }
 function toast(t){
   const el = $('#toast');
@@ -172,6 +186,8 @@ function openTab(id){
   if(id === 'links') renderLinksEditor();
   if(id === 'socials') renderSocialEditor();
   if(id === 'assets') renderAssets();
+  if(id === 'store') renderShop();
+  if(id === 'inventory') renderInventory();
   if(id === 'history') renderHistory();
   if(id === 'admin') renderAdminPanel();
   if(id === 'adminSelos') renderAdminSelosPanel();
@@ -186,6 +202,10 @@ function renderDash(){
   $('#dashName') && ($('#dashName').textContent = user.name || 'Usuário');
   $('#dashSlug') && ($('#dashSlug').textContent = '@' + (user.slug || 'usuario'));
   $('#viewsCount') && ($('#viewsCount').textContent = user.views || 0);
+  $('#walletCoins') && ($('#walletCoins').textContent = Number(user.coins || 0));
+  $('#invCountMini') && ($('#invCountMini').textContent = (user.inventory || []).length);
+  $('#invCoins') && ($('#invCoins').textContent = Number(user.coins || 0));
+  $('#invItemsCount') && ($('#invItemsCount').textContent = (user.inventory || []).length);
   setBg($('#dashAvatar'), user.avatar);
   setBg($('#sideAvatar'), user.avatar);
   setInput('#cfgName', user.name);
@@ -308,6 +328,53 @@ function renderAssets(){
 }
 
 
+function moneyPrice(v){ return Number(v || 0); }
+function framePreviewHtml(frame, extraClass=''){
+  const url = normalizeImageUrl(frame.url || frame.value || '');
+  const av = getBestAvatar();
+  return `<div class="asset-preview frame-shop-preview ${extraClass}">
+    <span class="frame-avatar-demo" style="background-image:url('${escapeAttr(av)}')"></span>
+    <img class="frame-img big" src="${escapeAttr(url)}" onerror="this.classList.add('bad');this.parentNode.classList.add('bad')">
+    <small class="bad-url-note">Link da imagem inválido. Use link direto .png/.gif/.webp.</small>
+  </div>`;
+}
+function renderShop(){
+  $('#walletCoins') && ($('#walletCoins').textContent = Number(user.coins || 0));
+  $('#invCountMini') && ($('#invCountMini').textContent = (user.inventory || []).length);
+  const grid = $('#shopGrid'); if(!grid) return;
+  $$('.shop-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.shopTab === shopMode));
+  grid.innerHTML = '';
+  if(shopMode === 'coins'){
+    grid.innerHTML = [10,25,50,100].map(v=>`<div class="asset-card shop-card"><div class="asset-preview coin-preview">✦</div><div class="asset-body"><b>${v} Linkwuans</b><small>Recarga manual/teste</small><button class="btn primary small" type="button" data-add-coins="${v}">Adicionar</button></div></div>`).join('');
+    return;
+  }
+  if(shopMode === 'frames'){
+    if(!customFrames.length){ grid.innerHTML = '<p>Nenhuma moldura cadastrada ainda.</p>'; return; }
+    grid.innerHTML = customFrames.map(f=>`<div class="asset-card frame-shop-card">
+      ${framePreviewHtml(f)}
+      <div class="asset-body"><b>${escapeHtml(f.name || 'Moldura')}</b><small>${escapeHtml(f.desc || '')}</small><small>Preço: ${moneyPrice(f.price)} Linkwuans</small><button class="btn primary small" type="button" data-buy-frame="${escapeAttr(f.id)}">Comprar/Usar</button></div>
+    </div>`).join('');
+    return;
+  }
+  if(shopMode === 'effects'){
+    grid.innerHTML = (assets.decorations || []).map((a,i)=>`<div class="asset-card"><div class="asset-preview"><span style="display:grid;place-items:center;height:100%;font-size:36px">✦</span></div><div class="asset-body"><b>${escapeHtml(a[0])}</b><small>Efeito grátis</small><button class="btn primary small" type="button" data-use-effect="${i}">Usar</button></div></div>`).join('');
+    return;
+  }
+  grid.innerHTML = '<div class="panel"><h3>Outros</h3><p>Em breve você pode cadastrar mais itens aqui.</p></div>';
+}
+function renderInventory(){
+  $('#invCoins') && ($('#invCoins').textContent = Number(user.coins || 0));
+  $('#invItemsCount') && ($('#invItemsCount').textContent = (user.inventory || []).length);
+  const grid = $('#inventoryGrid'); if(!grid) return;
+  const items = Array.isArray(user.inventory) ? user.inventory : [];
+  if(!items.length){ grid.innerHTML = '<p>Nenhum item no inventário.</p>'; return; }
+  grid.innerHTML = items.map((it,i)=>`<div class="asset-card inv-item-card">
+    ${it.type === 'frame' ? framePreviewHtml({url:it.url || it.value}, 'inv-preview') : `<div class="asset-preview"><span style="display:grid;place-items:center;height:100%;font-size:36px">✦</span></div>`}
+    <div class="asset-body"><b>${escapeHtml(it.name || 'Item')}</b><small>${escapeHtml(it.type || '')}</small>${it.type==='frame'?`<button class="btn primary small" type="button" data-use-inv-frame="${i}">Usar</button>`:''}<button class="btn dark small" type="button" data-remove-inv="${i}">Remover</button></div>
+  </div>`).join('');
+}
+
+
 async function loadAdminData(){
   if(!db) return;
   try{
@@ -327,7 +394,7 @@ function renderAdminPanel(){
     select.innerHTML = '<option value="">Selecione uma moldura da loja</option>' + customFrames.map(f=>`<option value="${escapeHtml(f.id)}">${escapeHtml(f.name || 'Moldura')}</option>`).join('');
   }
   if(list){
-    list.innerHTML = customFrames.map(f=>`<div class="admin-item"><img src="${escapeHtml(f.url || '')}" onerror="this.style.display='none'"><div><b>${escapeHtml(f.name || 'Moldura')}</b><small>${escapeHtml(f.desc || '')}</small><small>Preço: ${escapeHtml(f.price || '0')} Linkwuans</small></div><button class="delete" type="button" data-admin-del-frame="${escapeHtml(f.id)}">×</button></div>`).join('') || '<p>Nenhuma moldura cadastrada.</p>';
+    list.innerHTML = customFrames.map(f=>`<div class="admin-item admin-frame-item"><div class="mini-frame-preview"><span class="mini-avatar" style="background-image:url('${escapeAttr(getBestAvatar())}')"></span><img src="${escapeAttr(f.url || '')}" onerror="this.classList.add('bad');this.parentNode.classList.add('bad');"></div><div><b>${escapeHtml(f.name || 'Moldura')}</b><small>${escapeHtml(f.desc || '')}</small><small>Preço: ${escapeHtml(f.price || '0')} Linkwuans</small><small class="bad-url-note">Imagem não abriu. Use link direto .png/.gif/.webp.</small></div><button class="delete" type="button" data-admin-del-frame="${escapeHtml(f.id)}">×</button></div>`).join('') || '<p>Nenhuma moldura cadastrada.</p>';
   }
 }
 function renderAdminSelosPanel(){
@@ -371,6 +438,7 @@ async function adminAddFrame(){
   await db.collection('adminFrames').add(item);
   await loadAdminData();
   renderAdminPanel();
+  if($('#tab-store')?.classList.contains('active')) renderShop();
   toast('Moldura adicionada na loja.');
 }
 async function adminApplyUser(){
@@ -473,6 +541,52 @@ function bindEvents(){
     }
     if(e.target.dataset.delSocial !== undefined){
       user.socials.splice(Number(e.target.dataset.delSocial),1); renderSocialEditor(); return;
+    }
+    if(e.target.dataset.shopTab){
+      shopMode = e.target.dataset.shopTab;
+      $$('.shop-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.shopTab === shopMode));
+      renderShop(); return;
+    }
+    if(e.target.dataset.addCoins){
+      user.coins = Number(user.coins || 0) + Number(e.target.dataset.addCoins || 0);
+      addHistory('Recarga adicionada: ' + e.target.dataset.addCoins + ' Linkwuans');
+      await saveUser('Linkwuans adicionados!');
+      renderShop(); renderDash(); return;
+    }
+    if(e.target.dataset.buyFrame){
+      const frame = customFrames.find(f=>f.id === e.target.dataset.buyFrame);
+      if(!frame) return toast('Moldura não encontrada.');
+      const price = Number(frame.price || 0);
+      if(Number(user.coins || 0) < price) return toast('Saldo insuficiente.');
+      user.coins = Number(user.coins || 0) - price;
+      user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
+      user.inventory.unshift({type:'frame', name:frame.name || 'Moldura', url:frame.url || '', value:frame.url || '', date:Date.now()});
+      user.frame = frame.url || '';
+      addHistory('Moldura comprada/usada: ' + (frame.name || 'Moldura'));
+      await saveUser('Moldura aplicada!');
+      renderShop(); renderDash(); return;
+    }
+    if(e.target.dataset.useEffect !== undefined){
+      const a = (assets.decorations || [])[Number(e.target.dataset.useEffect)];
+      if(!a) return;
+      user.decoration = a[1];
+      addHistory('Efeito aplicado: ' + a[0]);
+      await saveUser('Efeito aplicado!'); return;
+    }
+    if(e.target.dataset.useInvFrame !== undefined){
+      const it = (user.inventory || [])[Number(e.target.dataset.useInvFrame)];
+      if(!it) return;
+      user.frame = it.url || it.value || '';
+      addHistory('Moldura do inventário aplicada: ' + (it.name || 'Moldura'));
+      await saveUser('Moldura aplicada!');
+      renderInventory(); renderDash(); return;
+    }
+    if(e.target.dataset.removeInv !== undefined){
+      const idx = Number(e.target.dataset.removeInv);
+      user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
+      user.inventory.splice(idx,1);
+      await saveUser('Item removido.');
+      renderInventory(); renderDash(); return;
     }
     if(e.target.dataset.assetTab){
       assetMode = e.target.dataset.assetTab;
