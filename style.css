@@ -4569,3 +4569,24 @@ body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle 
 .dlinky-buy-card h2{margin:0 0 8px!important;font-size:25px!important}.dlinky-buy-card p{color:#bbb;margin:0 0 18px!important}.dlinky-buy-preview{border:1px dashed #555;border-radius:12px;min-height:120px;padding:14px;display:flex;align-items:center;gap:18px;background:#202025;margin-bottom:16px}.buy-frame-preview{width:120px;height:120px;position:relative;display:grid;place-items:center}.buy-frame-preview span{width:78px;height:78px;border-radius:50%;background:#777 center/cover;display:block}.buy-frame-preview img{position:absolute;inset:0;width:120px;height:120px;object-fit:contain;filter:drop-shadow(0 0 10px #fff8)}.buy-effect-preview{width:92px;height:92px;display:grid;place-items:center;border-radius:20px;background:#1e40af;font-size:44px;box-shadow:0 0 30px #2563eb55}.dlinky-buy-info{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:12px 0}.dlinky-buy-info div{background:#424249;border:1px solid #62626a;border-radius:8px;padding:10px}.dlinky-buy-info span{display:block;color:#bbb;font-size:13px}.dlinky-buy-info b{display:block;margin-top:4px}.dlinky-buy-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
 /* Partículas mais bonitas */
 .fx.snow{filter:drop-shadow(0 0 8px #fff);opacity:.9}.fx.star{filter:drop-shadow(0 0 10px #9fb8ff)}.fx.ember,.fx.fire{filter:drop-shadow(0 0 10px #ff7a18)}.fx.leaf{filter:drop-shadow(0 0 7px #4ade80)}
+
+/* ===== DLINKY FINAL PATCH CSS ===== */
+#profile.active #profileParticleLayer.dlinky-final-particles{display:block!important;visibility:visible!important;opacity:1!important;position:fixed!important;inset:0!important;z-index:1!important;pointer-events:none!important;overflow:hidden!important;}
+#profileParticleLayer.dlinky-final-particles .fx{position:fixed!important;top:-42px!important;left:0;will-change:transform,opacity!important;animation:dlinkyFinalFall linear infinite!important;text-shadow:0 0 12px currentColor!important;z-index:1!important;}
+#profileParticleLayer.dlinky-final-particles .fx.snow{color:#fff!important;filter:drop-shadow(0 0 8px #fff)!important;}
+#profileParticleLayer.dlinky-final-particles .fx.bolt{color:#ffd84d!important;filter:drop-shadow(0 0 12px #ffd84d)!important;animation-name:dlinkyFinalBolt!important;}
+#profileParticleLayer.dlinky-final-particles .fx.star{color:#b9d6ff!important;filter:drop-shadow(0 0 10px #7ab7ff)!important;}
+#profileParticleLayer.dlinky-final-particles .fx.heart{color:#ff5c9d!important;filter:drop-shadow(0 0 8px #ff5c9d)!important;}
+#profileParticleLayer.dlinky-final-particles .fx.fire{color:#ff8b32!important;filter:drop-shadow(0 0 10px #ff4a00)!important;}
+#profileParticleLayer.dlinky-final-particles .fx.leaf{filter:drop-shadow(0 0 8px #74ff90)!important;}
+#profileParticleLayer.dlinky-final-particles .fx.matrix{color:#39ff88!important;font-family:monospace!important;}
+#profileParticleLayer.dlinky-final-particles .fx.rain{color:#9ed7ff!important;opacity:.85!important;}
+#profileParticleLayer.dlinky-final-particles .fx.cat{filter:drop-shadow(0 0 8px #ff9a3d)!important;}
+#profileParticleLayer.dlinky-final-particles .fx.bubble{border:2px solid rgba(140,190,255,.75)!important;border-radius:50%!important;color:transparent!important;box-shadow:0 0 18px rgba(140,190,255,.7)!important;}
+@keyframes dlinkyFinalFall{0%{transform:translate3d(0,-8vh,0) rotate(0deg);opacity:0}8%{opacity:1}100%{transform:translate3d(var(--drift,25px),118vh,0) rotate(360deg);opacity:.12}}
+@keyframes dlinkyFinalBolt{0%{transform:translate3d(0,-8vh,0) scale(.9);opacity:0}12%{opacity:1}55%{opacity:1}100%{transform:translate3d(var(--drift,20px),118vh,0) scale(1.1);opacity:0}}
+#profile .entry-overlay:not(.hidden) ~ #profileParticleLayer{display:none!important;visibility:hidden!important;opacity:0!important;}
+#profile .profile-meta span:not(#profileViews){display:none!important;}
+#adjustPreview .adjust-avatar{background-size:cover!important;background-position:center!important;}
+.profile-frame.manual-adjusted{transform:translate(var(--frame-x,0),var(--frame-y,0)) scale(var(--frame-scale,1)) rotate(var(--frame-rotate,0deg))!important;}
+.drop:hover{border-color:#2f7dff!important;background:#2f7dff12!important;}
