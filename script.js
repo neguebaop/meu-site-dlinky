@@ -1267,3 +1267,226 @@ document.addEventListener('DOMContentLoaded', ()=>{
 loadLandingFeatured();
   route();
 });
+
+/* ===== DLINKY FINAL PATCH: partículas, views, tags, upload local, moldura e Mistic scaffold ===== */
+(function(){
+  const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
+  function cleanUrl(u){
+    u=String(u||'').trim();
+    if(!u) return '';
+    if(u.startsWith('/originals/')) return 'https://i.pinimg.com'+u;
+    if(u.startsWith('originals/')) return 'https://i.pinimg.com/'+u;
+    if(u.startsWith('//')) return 'https:'+u;
+    return u;
+  }
+  window.normalizeImageUrl = cleanUrl;
+  window.getBestAvatar = function(){ return cleanUrl((window.user&&user.avatar)||''); };
+
+  function dedupeInventory(){
+    if(!window.user) return;
+    const seen=new Set();
+    user.inventory=(Array.isArray(user.inventory)?user.inventory:[]).filter(it=>{
+      const key=[it.type||'', it.itemId||'', it.url||it.value||'', String(it.name||'').toLowerCase()].join('|');
+      if(seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  }
+  function dedupeSocials(){
+    if(!window.user) return;
+    const seen=new Set();
+    user.socials=(Array.isArray(user.socials)?user.socials:[]).filter(s=>{
+      const key=[String(s.name||'').toLowerCase(), String(s.url||'').trim().toLowerCase()].join('|');
+      if(!s.url && seen.has(String(s.name||'').toLowerCase()+ '|')) return false;
+      if(seen.has(key)) return false; seen.add(key); return true;
+    });
+  }
+
+  const oldRenderDash = window.renderDash;
+  window.renderDash = function(){
+    dedupeInventory(); dedupeSocials();
+    if(typeof oldRenderDash==='function') oldRenderDash();
+    const nf=user.nameFx||{};
+    const set=(id,v)=>{const el=q(id); if(el) el.checked=!!v;};
+    set('#fxNeonName', nf.neon); set('#fxShineName', nf.shine); set('#fxRainbowName', nf.rainbow); set('#fxPerspective', nf.perspective);
+    if(q('#uploadAvatar')) q('#uploadAvatar').value=cleanUrl(user.avatar||'');
+    if(q('#uploadBg')) q('#uploadBg').value=cleanUrl(user.bg||'');
+    if(q('#uploadCursor')) q('#uploadCursor').value=user.cursor||'';
+    if(q('#uploadMusic')) q('#uploadMusic').value=user.music||'';
+  };
+  renderDash = window.renderDash;
+
+  const oldRenderInventory = window.renderInventory;
+  window.renderInventory = function(){ dedupeInventory(); if(typeof oldRenderInventory==='function') oldRenderInventory(); };
+  if(typeof renderInventory!=='undefined') renderInventory=window.renderInventory;
+
+  window.createProfileParticles = function(type){
+    const layer=q('#profileParticleLayer'); if(!layer) return;
+    layer.innerHTML='';
+    const overlay=q('#entryOverlay');
+    if(overlay && !overlay.classList.contains('hidden')) return;
+    if(type==='none' || !user.particles) return;
+    const map={
+      snow:{chars:['❄','❅','✻'],cls:'snow'}, raios:{chars:['⚡','ϟ'],cls:'bolt'}, stars:{chars:['✦','✧','✨'],cls:'star'}, hearts:{chars:['❤','♥'],cls:'heart'},
+      bubbles:{chars:[''],cls:'bubble'}, rain:{chars:['│','╱'],cls:'rain'}, fire:{chars:['🔥','•'],cls:'fire'}, leaves:{chars:['🍃','🍂'],cls:'leaf'}, matrix:{chars:['0','1','▦'],cls:'matrix'}, cats:{chars:['🐾','😺'],cls:'cat'}
+    };
+    const cfg=map[type]||map.stars;
+    const count=Math.max(10,Math.min(160,Number(user.particleCount||45)));
+    const speed=Math.max(1,Math.min(10,Number(user.particleSpeed||5)));
+    const sz={small:[9,15],medium:[14,24],large:[22,38]}[user.particleSize||'small']||[9,15];
+    layer.className='dlinky-final-particles';
+    for(let i=0;i<count;i++){
+      const el=document.createElement('span');
+      el.className='fx '+cfg.cls;
+      el.textContent=cfg.chars[Math.floor(Math.random()*cfg.chars.length)];
+      el.style.left=(Math.random()*100)+'%';
+      el.style.setProperty('--drift', ((Math.random()*70)-35)+'px');
+      el.style.animationDuration=(Math.max(5,18-speed*1.25)+Math.random()*8)+'s';
+      el.style.animationDelay=(-Math.random()*18)+'s';
+      el.style.fontSize=(sz[0]+Math.random()*(sz[1]-sz[0]))+'px';
+      if(cfg.cls==='bubble'){
+        const b=sz[0]+Math.random()*(sz[1]-sz[0]); el.style.width=b+'px'; el.style.height=b+'px';
+      }
+      layer.appendChild(el);
+    }
+  };
+  createProfileParticles=window.createProfileParticles;
+
+  async function countViewOnce(){
+    try{
+      if(!q('#profile')?.classList.contains('active')) return;
+      const slug=cleanSlug(user.slug||''); if(!slug) return;
+      const key='dlinky_view_counted_'+slug+'_'+Date.now().toString().slice(0,8);
+      if(sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key,'1');
+      user.views=(Number(user.views)||0)+1;
+      q('#profileViews')&&(q('#profileViews').textContent=`👁 ${user.views||0} views`);
+      await db.collection('profiles').doc(slug).set({views:firebase.firestore.FieldValue.increment(1)},{merge:true});
+      if(user.uid) await db.collection('users').doc(user.uid).set({views:firebase.firestore.FieldValue.increment(1)},{merge:true});
+    }catch(e){ console.warn('view count skipped', e); }
+  }
+
+  const oldRenderProfile = window.renderProfile;
+  window.renderProfile = function(){
+    if(typeof oldRenderProfile==='function') oldRenderProfile();
+    // remove tags fixas duplicadas; tags agora vêm só de Cores e Tags
+    const meta=q('.profile-meta');
+    if(meta){
+      let pv=q('#profileViews');
+      if(!pv){ pv=document.createElement('span'); pv.id='profileViews'; meta.appendChild(pv); }
+      meta.innerHTML=''; meta.appendChild(pv); pv.textContent=`👁 ${user.views||0} views`; pv.style.display=user.hideViews?'none':'inline-block';
+    }
+    // normaliza URLs quebradas /originals do Pinimg
+    ['#profileAvatar','#profileBanner','#profileBg'].forEach(sel=>{
+      const el=q(sel); if(!el) return;
+      if(sel==='#profileAvatar') setBg(el, cleanUrl(user.avatar));
+      if(sel==='#profileBanner') setBg(el, cleanUrl(user.banner));
+      if(sel==='#profileBg') setBg(el, cleanUrl(user.bg));
+    });
+    const frame=q('#profileFrame');
+    if(frame && user.frame){ frame.src=cleanUrl(user.frame); }
+    const audio=q('#profileAudio');
+    if(audio && audio.src && !q('#profile')?.classList.contains('active')){ audio.pause(); }
+    const overlay=q('#entryOverlay');
+    if(overlay && !overlay.classList.contains('hidden')){ const l=q('#profileParticleLayer'); if(l) l.innerHTML=''; }
+    else createProfileParticles(user.particleType||'none');
+    setTimeout(countViewOnce, 400);
+  };
+  renderProfile=window.renderProfile;
+
+  q('#entryOverlay')?.addEventListener('click',()=>{
+    setTimeout(()=>createProfileParticles(user.particleType||'none'),380);
+  },true);
+
+  window.addEventListener('hashchange',()=>setTimeout(()=>{
+    if(!q('#profile')?.classList.contains('active')){
+      q('#profileAudio')?.pause();
+      const l=q('#profileParticleLayer'); if(l) l.innerHTML='';
+    }
+  },150));
+
+  // Ajuste de moldura: sempre mostra avatar real, normaliza URL e aplica ajuste na hora
+  const oldOpenFrameAdjust = window.openFrameAdjust;
+  window.openFrameAdjust = function(){
+    if(typeof oldOpenFrameAdjust==='function') oldOpenFrameAdjust();
+    setBg(q('#adjustAvatar'), cleanUrl(user.avatar));
+    const img=q('#adjustFrame'); if(img && user.frame) img.src=cleanUrl(user.frame);
+  };
+  if(typeof openFrameAdjust!=='undefined') openFrameAdjust=window.openFrameAdjust;
+  ['#adjustX','#adjustY','#adjustScale','#adjustRotate'].forEach(id=>q(id)?.addEventListener('input',()=>{ if(typeof updateAdjustPreview==='function') updateAdjustPreview(); }));
+
+  // Upload local: clicar na caixa abre arquivos e grava em dataURL no input correspondente.
+  const uploadMap=[
+    ['#uploadAvatar','image/*,.gif'], ['#uploadBg','image/*,.gif,.mp4,.webm'], ['#uploadCursor','.cur,.ani,.png,.gif,image/*'], ['#uploadMusic','.mp3,.ogg,audio/*']
+  ];
+  uploadMap.forEach(([inputSel,accept])=>{
+    const inp=q(inputSel); const drop=inp?.parentElement?.querySelector('.drop'); if(!inp||!drop) return;
+    drop.style.cursor='pointer';
+    drop.addEventListener('click',()=>{
+      const f=document.createElement('input'); f.type='file'; f.accept=accept;
+      f.onchange=()=>{
+        const file=f.files&&f.files[0]; if(!file) return;
+        const reader=new FileReader();
+        reader.onload=()=>{ inp.value=String(reader.result||''); toast('Arquivo carregado. Clique em Enviar para salvar.'); };
+        reader.readAsDataURL(file);
+      };
+      f.click();
+    });
+  });
+
+  // Corrige salvamento dos inputs de ativos sem apagar campos vazios por acidente.
+  q('#saveUploads')?.addEventListener('click', async (e)=>{
+    e.preventDefault(); e.stopImmediatePropagation();
+    const av=q('#uploadAvatar')?.value.trim()||'';
+    const bg=q('#uploadBg')?.value.trim()||'';
+    const cur=q('#uploadCursor')?.value.trim()||'';
+    const mus=q('#uploadMusic')?.value.trim()||'';
+    user.avatar=cleanUrl(av); user.bg=cleanUrl(bg); user.cursor=cur; user.music=mus;
+    addHistory('Ativos enviados/alterados');
+    await saveUser('Ativos salvos!');
+  },true);
+
+  // Antes de salvar sociais, remove duplicados idênticos.
+  q('#saveSocials')?.addEventListener('click',()=>setTimeout(()=>{dedupeSocials(); saveUser('Ícones sociais salvos!');},0),true);
+})();
+
+/* ===== DLINKY MISTICPAY FRONTEND HOOK (opcional) ===== */
+(function(){
+  const q=(s)=>document.querySelector(s);
+  const oldPix = window.openPixRecharge || (typeof openPixRecharge!=='undefined' ? openPixRecharge : null);
+  window.openPixRecharge = async function(coins){
+    if(!window.currentAuthUser && typeof currentAuthUser!=='undefined' && !currentAuthUser) return toast('Faça login para recarregar.');
+    const price = (typeof packPriceBRL==='function') ? packPriceBRL(coins) : Number(coins||0);
+    const orderId = 'DLK-' + Date.now().toString(36).toUpperCase();
+    const modal = document.getElementById('dlinkyPixRechargeModal');
+    if(!modal){ if(oldPix) return oldPix(coins); return; }
+    const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.value!==undefined ? el.value=val : el.textContent=val; };
+    set('dlinkyPixProduct', coins + ' Linkwans');
+    set('dlinkyPixPrice', 'R$ ' + price.toFixed(2).replace('.',','));
+    set('dlinkyPixUser', (user.email || user.slug || 'Usuário'));
+    set('dlinkyPixOrderId', orderId);
+    const qr = document.getElementById('dlinkyPixQr');
+    if(qr) qr.innerHTML = '<div class="dlinky-pix-qr-fake">Gerando PIX...</div>';
+    modal.dataset.coins = String(coins); modal.dataset.price = String(price); modal.dataset.order = orderId;
+    modal.classList.add('show'); modal.setAttribute('aria-hidden','false');
+    try{
+      const res = await fetch('/.netlify/functions/create-mistic-pix',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({amount:price, linkwans:coins, orderId, uid:currentAuthUser?.uid||'', email:user.email||currentAuthUser?.email||'', name:user.name||user.slug||''})
+      });
+      const data = await res.json().catch(()=>({}));
+      const copy = data.pixCopyPaste || data.qrCode || '';
+      if(copy) set('dlinkyPixKey', copy);
+      else set('dlinkyPixKey', (getUserPaymentCfg?.().pixKey || DLINKY_PIX_KEY || ''));
+      if(qr){
+        const img = data.qrCode && String(data.qrCode).startsWith('http') ? data.qrCode : (copy ? pixQrUrl(copy) : pixQrUrl(document.getElementById('dlinkyPixKey')?.value||''));
+        qr.innerHTML = img ? `<img alt="QR Code PIX" src="${img}">` : '<div class="dlinky-pix-qr-fake">PIX</div>';
+      }
+      await db.collection('paymentRequests').doc(orderId).set({orderId,type:'recharge',coins:Number(coins),price,status:'waiting_pix',uid:currentAuthUser?.uid||'',email:user.email||currentAuthUser?.email||'',mistic:data.raw||data,createdAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+    }catch(e){
+      console.warn('MisticPay indisponível, usando PIX manual',e);
+      const key=(getUserPaymentCfg?.().pixKey || DLINKY_PIX_KEY || ''); set('dlinkyPixKey', key);
+      if(qr) qr.innerHTML = pixQrUrl(key+' '+orderId+' R$ '+price.toFixed(2)) ? `<img alt="QR Code PIX" src="${pixQrUrl(key+' '+orderId+' R$ '+price.toFixed(2))}">` : '<div class="dlinky-pix-qr-fake">PIX</div>';
+    }
+  };
+  if(typeof openPixRecharge!=='undefined') openPixRecharge=window.openPixRecharge;
+})();
