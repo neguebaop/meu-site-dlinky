@@ -98,6 +98,10 @@ function mergeUser(data){
   user.particleCount = Number(user.particleCount || 45);
   user.particleSpeed = Number(user.particleSpeed || 5);
   user.particleSize = user.particleSize || 'small';
+  // Se o tipo de partícula foi salvo, nunca deixa reload desligar sozinho.
+  if(user.particleType && user.particleType !== 'none') user.particles = true;
+  // Garante que efeitos do nome nunca virem undefined depois do F5.
+  user.nameFx = Object.assign({neon:false,shine:false,rainbow:false,perspective:false}, user.nameFx || {});
   window.user = user;
   return user;
 }
@@ -241,6 +245,10 @@ function renderDash(){
   setInput('#uploadBg', user.bg);
   setInput('#uploadCursor', user.cursor);
   setInput('#uploadMusic', user.music);
+  setInput('#payName', user.payment?.payName || 'Dlinky');
+  setInput('#payPix', user.payment?.pixKey || DLINKY_PIX_KEY);
+  setInput('#payEndpoint', user.payment?.endpoint || '');
+  setInput('#payToken', user.payment?.token || '');
   setInput('#customName', user.name);
   setInput('#customBio', user.bio);
   setInput('#customBgFx', user.bgFx || 'none');
@@ -526,15 +534,16 @@ function durationSelectHtml(id){
 function shopFrameCard(f, idx){
   const id = f.id || ('frame_'+idx);
   const price = Number(f.price || 20);
-  return `<div class="zyo-item-card frame-shop-card">
+  const owned = itemAlreadyOwned('frame', id, f.url || '', f.name || '');
+  return `<div class="zyo-item-card frame-shop-card ${owned?'owned':''}">
     <div class="zyo-item-top">
       ${framePreviewHtml({url:f.url || '', avatar:getBestAvatar()}, 'zyo-frame-preview')}
-      <div><h3>${escapeHtml(f.name || 'Moldura')}</h3><p>${escapeHtml(f.desc || 'Destaque-se com estilo')}</p></div>
+      <div><h3>${escapeHtml(f.name || 'Moldura')}</h3><p>${escapeHtml(f.desc || 'Destaque-se com estilo')}</p>${owned?'<small class="owned-badge">✓ Já comprado</small>':''}</div>
     </div>
     <div class="zyo-price">🪙 Preço do item: <b>${price} Linkwuans</b></div>
     ${durationSelectHtml(id)}
     <small class="zyo-note">ⓘ Valor muda conforme a duração escolhida.</small>
-    <div class="zyo-card-actions"><button class="btn primary small" type="button" data-buy-frame="${escapeAttr(id)}">🔒 Comprar</button><button class="btn dark small" type="button" data-gift-frame="${escapeAttr(id)}">🎁 Presentear</button></div>
+    <div class="zyo-card-actions">${owned?`<button class="btn dark small" type="button" disabled>✓ Já comprado</button>`:`<button class="btn primary small" type="button" data-buy-frame="${escapeAttr(id)}">🔒 Comprar</button>`}<button class="btn dark small" type="button" data-gift-frame="${escapeAttr(id)}">🎁 Presentear</button></div>
   </div>`;
 }
 
@@ -546,6 +555,67 @@ function packPriceBRL(coins){
   if(coins === 3300) return 200;
   return Math.max(5, Math.ceil(coins / 11.5));
 }
+function pixQrUrl(text){
+  text = String(text || '').trim();
+  if(!text || text === 'COLE_SUA_CHAVE_PIX_AQUI') return '';
+  return 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(text);
+}
+function getUserPaymentCfg(){
+  return Object.assign({pixKey:DLINKY_PIX_KEY, payName:'Dlinky'}, user.payment || {});
+}
+function itemAlreadyOwned(kind, id, url, name){
+  const inv = Array.isArray(user.inventory) ? user.inventory : [];
+  return inv.some(it => {
+    if(kind === 'frame') return it.type === 'frame' && ((id && it.itemId === id) || (url && (it.url === url || it.value === url)) || (name && it.name === name));
+    if(kind === 'effect') return it.type === 'effect' && ((id && it.itemId === id) || (url && (it.value === url || it.url === url)) || (name && it.name === name));
+    return false;
+  });
+}
+function openConfirmPurchaseModal(kind, data){
+  let modal = document.getElementById('dlinkyConfirmPurchaseModal');
+  if(!modal){
+    document.body.insertAdjacentHTML('beforeend', `<div id="dlinkyConfirmPurchaseModal" class="modal dlinky-buy-modal"><div class="modal-card dlinky-buy-card"><button class="modal-close" id="dlinkyBuyClose" type="button">×</button><h2>Confirmar compra</h2><p>Revise os detalhes antes de concluir.</p><div class="dlinky-buy-preview" id="dlinkyBuyPreview"></div><div class="dlinky-buy-info"><div><span>Item</span><b id="dlinkyBuyItem"></b></div><div><span>Duração</span><b id="dlinkyBuyDuration"></b></div><div><span>Tipo</span><b id="dlinkyBuyType"></b></div><div><span>Preço</span><b id="dlinkyBuyPrice"></b></div></div><small>Esta ação consome seus Linkwuans. Item comprado uma vez fica no inventário.</small><div class="dlinky-buy-actions"><button class="btn dark" id="dlinkyBuyCancel" type="button">Cancelar</button><button class="btn primary" id="dlinkyBuyConfirm" type="button">Comprar</button></div></div></div>`);
+    modal = document.getElementById('dlinkyConfirmPurchaseModal');
+  }
+  modal.dataset.kind = kind;
+  modal.dataset.payload = JSON.stringify(data || {});
+  const preview = document.getElementById('dlinkyBuyPreview');
+  const avatar = getBestAvatar();
+  if(preview){
+    if(kind === 'frame') preview.innerHTML = `<div class="buy-frame-preview"><span style="background-image:${avatar?`url('${escapeAttr(avatar)}')`:'none'}"></span><img src="${escapeAttr(data.url||'')}" onerror="this.style.display='none'"></div><b>${escapeHtml(user.name||user.slug||'Usuário')}</b>`;
+    else preview.innerHTML = `<div class="buy-effect-preview">✦</div><b>${escapeHtml(data.name||'Efeito')}</b>`;
+  }
+  const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v};
+  set('dlinkyBuyItem', data.name || 'Item');
+  set('dlinkyBuyDuration', data.duration || 'Permanente');
+  set('dlinkyBuyType', kind === 'frame' ? 'Moldura' : 'Efeito');
+  set('dlinkyBuyPrice', Number(data.price||0) + ' Linkwuans');
+  modal.classList.add('show');
+}
+async function confirmStorePurchase(){
+  const modal=document.getElementById('dlinkyConfirmPurchaseModal');
+  if(!modal) return;
+  const kind=modal.dataset.kind;
+  let data={}; try{data=JSON.parse(modal.dataset.payload||'{}')}catch(e){}
+  const price=Number(data.price||0);
+  if(itemAlreadyOwned(kind, data.id, data.url || data.value, data.name)){ toast('Você já comprou esse item. Ele continua no inventário.'); modal.classList.remove('show'); return; }
+  if(Number(user.coins||0) < price) return toast('Saldo insuficiente. Recarregue Linkwuans.');
+  user.coins = Number(user.coins||0) - price;
+  user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
+  if(kind === 'frame'){
+    user.inventory.unshift({type:'frame', itemId:data.id||'', name:data.name||'Moldura', url:data.url||'', value:data.url||'', duration:data.duration||'Permanente', date:Date.now()});
+    user.frame = data.url || '';
+    user.frameAdjust = {x:0,y:0,scale:1,rotate:0};
+    addHistory('Moldura comprada/usada: ' + (data.name || 'Moldura'));
+  }else if(kind === 'effect'){
+    user.inventory.unshift({type:'effect', itemId:data.id||'', name:data.name||'Efeito', value:data.value||'', duration:data.duration||'Permanente', date:Date.now()});
+    user.decoration = data.value || 'none';
+    addHistory('Efeito comprado/aplicado: ' + (data.name || 'Efeito'));
+  }
+  modal.classList.remove('show');
+  await saveUser('Compra concluída!');
+  renderShop(); renderInventory(); renderDash();
+}
 async function openPixRecharge(coins){
   if(!currentAuthUser) return toast('Faça login para recarregar.');
   const price = packPriceBRL(coins);
@@ -556,8 +626,15 @@ async function openPixRecharge(coins){
   set('dlinkyPixProduct', coins + ' Linkwuans');
   set('dlinkyPixPrice', 'R$ ' + price.toFixed(2).replace('.',','));
   set('dlinkyPixUser', user.email || user.slug || 'Usuário');
-  set('dlinkyPixKey', DLINKY_PIX_KEY);
+  const payCfg = getUserPaymentCfg();
+  const pixKey = payCfg.pixKey || DLINKY_PIX_KEY;
+  set('dlinkyPixKey', pixKey);
   set('dlinkyPixOrderId', orderId);
+  const qr = document.getElementById('dlinkyPixQr');
+  if(qr){
+    const qrUrl = pixQrUrl(pixKey + ' | Pedido ' + orderId + ' | R$ ' + price.toFixed(2));
+    qr.innerHTML = qrUrl ? `<img alt="QR Code PIX" src="${qrUrl}">` : '<div class="dlinky-pix-qr-fake">PIX</div>';
+  }
   modal.dataset.coins = String(coins);
   modal.dataset.price = String(price);
   modal.dataset.order = orderId;
@@ -573,7 +650,7 @@ async function confirmPixRecharge(){
   await db.collection('paymentRequests').doc(orderId).set({
     orderId, type:'recharge', coins, price,
     status:'pending', email:user.email || currentAuthUser.email || '', slug:user.slug || '', uid:currentAuthUser.uid,
-    pixKey: DLINKY_PIX_KEY,
+    pixKey: (getUserPaymentCfg().pixKey || DLINKY_PIX_KEY),
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   }, {merge:true});
   modal.classList.remove('show');
@@ -893,31 +970,26 @@ function bindEvents(){
       return;
     }
     if(e.target.dataset.buyFrame){
-      const frame = customFrames.find(f=>f.id === e.target.dataset.buyFrame);
+      const id = e.target.dataset.buyFrame;
+      const allFrames = customFrames.length ? customFrames : [];
+      const frame = allFrames.find(f=>f.id === id);
       if(!frame) return toast('Moldura não encontrada.');
       const price = Number(frame.price || 0);
-      if(Number(user.coins || 0) < price) return toast('Saldo insuficiente.');
-      user.coins = Number(user.coins || 0) - price;
-      user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
-      user.inventory.unshift({type:'frame', name:frame.name || 'Moldura', url:frame.url || '', value:frame.url || '', date:Date.now()});
-      user.frame = frame.url || '';
-      user.frameAdjust = {x:0,y:0,scale:1,rotate:0};
-      addHistory('Moldura comprada/usada: ' + (frame.name || 'Moldura'));
-      await saveUser('Moldura aplicada!');
-      renderShop(); renderDash(); return;
+      const duration = document.querySelector(`[data-duration-for="${CSS.escape(id)}"]`)?.value || 'Permanente';
+      if(itemAlreadyOwned('frame', id, frame.url || '', frame.name || '')) return toast('Você já comprou essa moldura. Use ela pelo inventário.');
+      openConfirmPurchaseModal('frame', {id, name:frame.name || 'Moldura', url:frame.url || '', price, duration});
+      return;
     }
     if(e.target.dataset.buyEffect !== undefined){
-      const a = (assets.decorations || [])[Number(e.target.dataset.buyEffect)];
+      const idx = Number(e.target.dataset.buyEffect);
+      const a = (assets.decorations || [])[idx];
       if(!a) return;
       const price = Number(a[3] ?? 10);
-      if(Number(user.coins || 0) < price) return toast('Saldo insuficiente.');
-      user.coins = Number(user.coins || 0) - price;
-      user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
-      user.inventory.unshift({type:'effect', name:a[0], value:a[1], date:Date.now()});
-      user.decoration = a[1];
-      addHistory('Efeito comprado/aplicado: ' + a[0]);
-      await saveUser('Efeito comprado e aplicado!');
-      renderShop(); renderDash(); return;
+      const id = 'effect_' + idx;
+      const duration = document.querySelector(`[data-duration-for="${CSS.escape(id)}"]`)?.value || 'Permanente';
+      if(itemAlreadyOwned('effect', id, a[1], a[0])) return toast('Você já comprou esse efeito. Use ele pelo inventário.');
+      openConfirmPurchaseModal('effect', {id, name:a[0], value:a[1], price, duration});
+      return;
     }
     if(e.target.dataset.useEffect !== undefined){
       const a = (assets.decorations || [])[Number(e.target.dataset.useEffect)];
@@ -977,6 +1049,8 @@ function bindEvents(){
     if(e.target.closest('#adminAddFrame')){ await adminAddFrame(); return; }
     if(e.target.closest('#adminSaveFeaturedUsers')){ await saveLandingFeaturedFromAdmin(); return; }
     if(e.target.dataset.adminReleasePayment){ await releasePayment(e.target.dataset.adminReleasePayment); return; }
+    if(e.target.closest('#dlinkyBuyClose') || e.target.closest('#dlinkyBuyCancel')){ document.getElementById('dlinkyConfirmPurchaseModal')?.classList.remove('show'); return; }
+    if(e.target.closest('#dlinkyBuyConfirm')){ await confirmStorePurchase(); return; }
     if(e.target.closest('#dlinkyPixClose')){ document.getElementById('dlinkyPixRechargeModal')?.classList.remove('show'); return; }
     if(e.target.closest('#dlinkyPixCopy')){ const k=document.getElementById('dlinkyPixKey')?.value||''; navigator.clipboard?.writeText(k); toast('Chave PIX copiada.'); return; }
     if(e.target.closest('#dlinkyPixConfirm')){ await confirmPixRecharge(); return; }
@@ -1134,6 +1208,15 @@ function bindEvents(){
     user.particleSize = $('#particleSizeNew')?.value || 'small';
     addHistory('Partículas alteradas');
     await saveUser('Partículas salvas!');
+  });
+  $('#savePay')?.addEventListener('click', async ()=>{
+    user.payment = {
+      payName: $('#payName')?.value.trim() || 'Dlinky',
+      pixKey: $('#payPix')?.value.trim() || DLINKY_PIX_KEY,
+      endpoint: $('#payEndpoint')?.value.trim() || '',
+      token: $('#payToken')?.value.trim() || ''
+    };
+    await saveUser('Configuração PIX salva.');
   });
   $('#previewParticlesNew')?.addEventListener('click', ()=>{ location.hash = '#/' + user.slug; });
   $('#customCoinsBtn,#customCoinsBtn2')?.addEventListener?.('click', async ()=>{});
