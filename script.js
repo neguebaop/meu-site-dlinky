@@ -4154,12 +4154,12 @@ document.addEventListener("click",(e)=>{
   const ADMIN_EMAIL = "jailtonsilas48@gmail.com";
 
   const firebaseConfig = {
-    apiKey: "AIzaSyCPmjhOSXXNaVXXXdrAK9Y77fqxCoLv7Wo",
-    authDomain: "dlinky.firebaseapp.com",
-    projectId: "dlinky",
-    storageBucket: "dlinky.firebasestorage.app",
-    messagingSenderId: "856690547155",
-    appId: "1:856690547155:web:6444b8a4be23ee5a6d7726"
+    apiKey: "AIzaSyBQDC8YM_6tJKyF2irGmO1W8NYHeJkHdFI",
+    authDomain: "dlinky-45df5.firebaseapp.com",
+    projectId: "dlinky-45df5",
+    storageBucket: "dlinky-45df5.firebasestorage.app",
+    messagingSenderId: "329520494601",
+    appId: "1:329520494601:web:6444b8a4be23ee5a6d7726"
   };
 
   function $(s){ return document.querySelector(s); }
@@ -10435,12 +10435,12 @@ document.addEventListener("click",(e)=>{
   window.__DLINKY_GLOBAL_FIREBASE_CATALOG__ = true;
 
   const firebaseConfig = {
-    apiKey: "AIzaSyCPmjhOSXXNaVXXXdrAK9Y77fqxCoLv7Wo",
-    authDomain: "dlinky.firebaseapp.com",
-    projectId: "dlinky",
-    storageBucket: "dlinky.firebasestorage.app",
-    messagingSenderId: "856690547155",
-    appId: "1:856690547155:web:6444b8a4be23ee5a6d7726"
+    apiKey: "AIzaSyBQDC8YM_6tJKyF2irGmO1W8NYHeJkHdFI",
+    authDomain: "dlinky-45df5.firebaseapp.com",
+    projectId: "dlinky-45df5",
+    storageBucket: "dlinky-45df5.firebasestorage.app",
+    messagingSenderId: "329520494601",
+    appId: "1:329520494601:web:6444b8a4be23ee5a6d7726"
   };
 
   const KEYS = {
@@ -12852,115 +12852,153 @@ document.addEventListener("click",(e)=>{
   window.addEventListener('hashchange',()=>[50,300,800].forEach(t=>setTimeout(forceIcon,t)));
   setTimeout(forceIcon,300);
 })();
-
 /* =========================================================
-   DLINKY FIX FINAL V5 — FIREBASE OK + ÍCONE DO PERFIL
-   Motivo do bug: vários CSS/patches antigos escondiam o #profileAvatar
-   e alguns usuários novos vinham com avatar vazio. Este bloco roda por
-   último, força o avatar real ou um padrão e não mexe na loja/molduras.
+   DLINKY FIX FINAL — FIREBASE MEDIA + AVATAR ORIGINAL
+   Corrige F5/relogar apagando avatar/banner/bg por local antigo.
+   - Save Images grava direto no Firestore por UID e perfil por slug.
+   - Ao recarregar, carrega Firestore antes de preencher inputs.
+   - Esconde palcos/avatar fake antigos e usa #profileAvatar original.
    ========================================================= */
 (function(){
   'use strict';
-  if(window.__DLINKY_FINAL_ICON_FIREBASE_V5__) return;
-  window.__DLINKY_FINAL_ICON_FIREBASE_V5__ = true;
+  if(window.__DLINKY_FIREBASE_MEDIA_AVATAR_ORIGINAL_FINAL_2026__) return;
+  window.__DLINKY_FIREBASE_MEDIA_AVATAR_ORIGINAL_FINAL_2026__ = true;
 
-  var FALLBACK_AVATAR = 'https://i.pinimg.com/originals/a8/0f/18/a80f1877da2c94a0ad5f28958dd95eb.gif';
-  function q(s,r){return (r||document).querySelector(s)}
-  function clean(v){return String(v||'').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/["']/g,'')}
-  function good(v){v=clean(v);return !!v && v!=='none' && v!=='null' && v!=='undefined' && !v.startsWith('blob:null')}
-  function readUser(){
-    var a={};
-    try{ if(window.DlinkyStore) a=JSON.parse(DlinkyStore.getItem('dlinkyUser')||'{}')||{}; }catch(e){}
-    try{ if(typeof user!=='undefined' && user) a=Object.assign({},a,user); }catch(e){}
-    try{ if(window.user) a=Object.assign({},a,window.user); }catch(e){}
-    return a||{};
+  const $ = (s,r=document)=>r.querySelector(s);
+  const clean = v => String(v || '').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/["']/g,'');
+  const ok = v => { v = clean(v); return !!v && v !== 'null' && v !== 'undefined' && v !== 'none'; };
+  const slugClean = v => String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30) || 'usuario';
+  const toastSafe = m => { try{ if(typeof toast === 'function') toast(m); else console.log(m); }catch(e){ console.log(m); } };
+
+  function fbReady(){ return !!(window.firebase && firebase.apps && firebase.apps.length && firebase.auth && firebase.firestore); }
+  function currentGlobalUser(){
+    let u = {};
+    try{ u = JSON.parse((window.DlinkyStore && DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }catch(e){}
+    try{ if(window.user) u = Object.assign({}, u, window.user); }catch(e){}
+    try{ if(typeof user !== 'undefined' && user) u = Object.assign({}, u, user); }catch(e){}
+    return u || {};
   }
-  function saveUserAvatar(u,av){
-    try{ if(typeof user!=='undefined' && user) user.avatar=av; }catch(e){}
-    try{ window.user=Object.assign({},window.user||{},u||{},{avatar:av}); }catch(e){}
-    try{
-      if(window.DlinkyStore){
-        var now=readUser(); now.avatar=av;
-        DlinkyStore.setItem('dlinkyUser',JSON.stringify(now));
-        DlinkyStore.setItem('dlinky_avatar_clean_'+(now.email||now.slug||'local'),av);
-        DlinkyStore.setItem('dlinkyAvatarPreserve_'+(now.email||now.slug||'local'),av);
-      }
-    }catch(e){}
+  function setGlobalUser(u){
+    u = u || {};
+    try{ window.user = u; user = u; }catch(e){ window.user = u; }
+    try{ if(window.DlinkyStore) DlinkyStore.setItem('dlinkyUser', JSON.stringify(u)); }catch(e){}
   }
-  function bestAvatar(){
-    var u=readUser();
-    var fields=['avatar','avatarUrl','photoURL','photoUrl','foto','icon','iconUrl','profileAvatar','profileImage','image','pfp','picture'];
-    for(var i=0;i<fields.length;i++){ if(good(u[fields[i]])) return clean(u[fields[i]]); }
-    var inputs=['#cfgAvatar','#uploadAvatar','#avatarUrl','#profileAvatarUrl'];
-    for(i=0;i<inputs.length;i++){ var inp=q(inputs[i]); if(inp && good(inp.value)) return clean(inp.value); }
-    var els=['#dashAvatar','#sideAvatar','#frameBuyAvatar','#adjustAvatar','#profileAvatar'];
-    for(i=0;i<els.length;i++){
-      var el=q(els[i]); if(!el) continue;
-      if(el.tagName==='IMG' && good(el.getAttribute('src'))) return clean(el.getAttribute('src'));
-      var bg=''; try{bg=(el.style&&el.style.backgroundImage)||getComputedStyle(el).backgroundImage||''}catch(e){}
-      var m=bg.match(/url\(["']?(.*?)["']?\)/); if(m && good(m[1])) return clean(m[1]);
+  function putInput(sel,val){ const el=$(sel); if(el && document.activeElement !== el) el.value = val || ''; }
+  function setImgOrBg(el,url){
+    if(!el) return;
+    url = clean(url);
+    if(el.tagName === 'IMG'){
+      if(ok(url)){ el.src = url; el.style.setProperty('display','block','important'); el.style.setProperty('visibility','visible','important'); el.style.setProperty('opacity','1','important'); }
+      else { el.removeAttribute('src'); el.style.setProperty('display','none','important'); }
+    }else{
+      el.style.setProperty('background-image', ok(url) ? `url("${url.replace(/"/g,'%22')}")` : '', 'important');
     }
-    return FALLBACK_AVATAR;
   }
   function installCss(){
-    if(q('#dlinkyFinalIconV5Css')) return;
-    var st=document.createElement('style');
-    st.id='dlinkyFinalIconV5Css';
-    st.textContent=''+
-    '#profileCard,.profile-wrap{overflow:visible!important;position:relative!important;}'+
-    '#avatarDecoration,#avatarDecoration.dlinky-avatar-lite-on,#avatarDecoration.dlinky-avatar-final-lock,#avatarDecoration.dlinky-hard-avatar-v8,#avatarDecoration.dlinky-clean-avatar-v7,#avatarDecoration.dlinky-final-avatar-stage{display:block!important;visibility:visible!important;opacity:1!important;position:relative!important;width:112px!important;height:112px!important;min-width:112px!important;min-height:112px!important;max-width:112px!important;max-height:112px!important;margin:-56px auto 12px!important;overflow:visible!important;transform:none!important;z-index:2147480!important;isolation:isolate!important;}'+
-    '#avatarDecoration>#profileAvatar,#avatarDecoration.dlinky-avatar-lite-on>#profileAvatar,#avatarDecoration.dlinky-avatar-final-lock>#profileAvatar,#avatarDecoration.dlinky-hard-avatar-v8>#profileAvatar,#avatarDecoration.dlinky-clean-avatar-v7>#profileAvatar,#avatarDecoration.dlinky-final-avatar-stage>#profileAvatar,#profileAvatar.avatar.big-avatar,#profileAvatar{display:block!important;visibility:visible!important;opacity:1!important;position:absolute!important;left:50%!important;top:50%!important;width:96px!important;height:96px!important;min-width:96px!important;min-height:96px!important;max-width:96px!important;max-height:96px!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;object-fit:cover!important;object-position:center!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;z-index:2147482!important;border:3px solid rgba(255,255,255,.96)!important;box-shadow:0 0 0 4px rgba(10,5,18,.70),0 0 30px rgba(168,85,247,.85)!important;pointer-events:none!important;background-color:#151020!important;animation:none!important;transition:none!important;}'+
-    '#dlinkyProfileAvatarV4,#dlinkyIconV3,#dlinkyProfileIconOnly2026{display:none!important;}';
+    if($('#dlinkyMediaFinalCss2026')) return;
+    const st=document.createElement('style');
+    st.id='dlinkyMediaFinalCss2026';
+    st.textContent=`
+      #dlinkyProfileAvatarV4,#dlinkyIconV3,#dlinkyProfileIconOnly2026,#dlinkyStableAvatarStage,
+      #dlinkyAvatarLiteRoot,#dlinkyCleanAvatarStage,#dlinkyFinalProfileStage,#dlinkyV4ProfileStage{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}
+      #avatarDecoration{position:relative!important;overflow:visible!important;display:block!important;width:96px!important;height:96px!important;margin:0 auto!important;z-index:5!important;}
+      #avatarDecoration #profileAvatar.big-avatar,#avatarDecoration #profileAvatar.avatar,#profileAvatar{
+        width:96px!important;height:96px!important;border-radius:50%!important;object-fit:cover!important;
+        background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        position:relative!important;z-index:2!important;opacity:1!important;visibility:visible!important;
+      }
+      #profileFrame.profile-frame,#avatarDecoration #profileFrame{position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;width:145px!important;height:145px!important;object-fit:contain!important;z-index:4!important;pointer-events:none!important;}
+    `;
     document.head.appendChild(st);
   }
-  function forceIcon(){
+  function applyMediaToInputsAndProfile(u){
     installCss();
-    var wrap=q('#avatarDecoration');
-    if(!wrap) return;
-    wrap.classList.remove('dlinky-avatar-lite-on','dlinky-hard-avatar-v8','dlinky-clean-avatar-v7','dlinky-final-avatar-stage');
-    wrap.classList.add('dlinky-final-icon-v5');
-    var av=q('#profileAvatar',wrap) || q('#profileAvatar');
-    if(!av){
-      av=document.createElement('img'); av.id='profileAvatar'; av.className='avatar big-avatar'; av.alt='avatar';
-      wrap.insertBefore(av, wrap.firstChild);
-    }
-    var src=bestAvatar() || FALLBACK_AVATAR;
-    if(av.tagName==='IMG'){
-      if(av.getAttribute('src')!==src) av.setAttribute('src',src);
-      av.setAttribute('alt','avatar');
-    }
-    av.style.setProperty('background-image','url("'+src.replace(/"/g,'%22')+'")','important');
-    av.style.setProperty('display','block','important');
-    av.style.setProperty('visibility','visible','important');
-    av.style.setProperty('opacity','1','important');
-    av.style.setProperty('position','absolute','important');
-    av.style.setProperty('left','50%','important');
-    av.style.setProperty('top','50%','important');
-    av.style.setProperty('width','96px','important');
-    av.style.setProperty('height','96px','important');
-    av.style.setProperty('transform','translate(-50%,-50%)','important');
-    av.style.setProperty('z-index','2147482','important');
-    wrap.style.setProperty('display','block','important');
-    wrap.style.setProperty('visibility','visible','important');
-    wrap.style.setProperty('opacity','1','important');
-    wrap.style.setProperty('height','112px','important');
-    wrap.style.setProperty('margin','-56px auto 12px','important');
-    saveUserAvatar(readUser(),src);
+    u = u || currentGlobalUser();
+    putInput('#cfgAvatar', u.avatar || '');
+    putInput('#cfgBanner', u.banner || '');
+    putInput('#cfgBg', u.bg || '');
+    putInput('#cfgVideo', u.video || '');
+    putInput('#cfgFrame', u.frame || u.frameUrl || '');
+    setImgOrBg($('#profileAvatar'), u.avatar || '');
+    setImgOrBg($('#dashAvatar'), u.avatar || '');
+    setImgOrBg($('#sideAvatar'), u.avatar || '');
+    setImgOrBg($('#profileBanner'), u.banner || '');
+    setImgOrBg($('#profileBg'), u.bg || '');
+    const fr=$('#profileFrame');
+    if(fr){ const f=clean(u.frame || u.frameUrl || ''); if(ok(f)){ fr.src=f; fr.style.setProperty('display','block','important'); } else { fr.removeAttribute('src'); fr.style.setProperty('display','none','important'); } }
   }
-  var oldRender = null;
-  try{ oldRender = window.renderProfile || (typeof renderProfile!=='undefined' ? renderProfile : null); }catch(e){}
-  if(typeof oldRender==='function' && !oldRender.__dlinkyFinalIconV5){
-    var patched=function(){
-      var r=oldRender.apply(this,arguments);
-      [0,50,150,350,800,1500,2500].forEach(function(t){setTimeout(forceIcon,t)});
-      return r;
-    };
-    patched.__dlinkyFinalIconV5=true;
-    window.renderProfile=patched;
-    try{ renderProfile=patched; }catch(e){}
+  async function loadFirebaseUser(){
+    if(!fbReady() || !firebase.auth().currentUser) return null;
+    const fb = firebase.auth().currentUser;
+    const db = firebase.firestore();
+    const snap = await db.collection('users').doc(fb.uid).get();
+    let data = snap.exists ? (snap.data() || {}) : {};
+    let slug = slugClean(data.slug || fb.email?.split('@')[0] || 'usuario');
+    if(slug){
+      try{
+        const ps = await db.collection('profiles').doc(slug).get();
+        if(ps.exists){
+          const p = ps.data() || {};
+          ['avatar','banner','bg','video','frame','frameUrl'].forEach(k=>{ if(!ok(data[k]) && ok(p[k])) data[k] = p[k]; });
+        }
+      }catch(e){}
+    }
+    const base = currentGlobalUser();
+    const merged = Object.assign({}, base, data, { uid: fb.uid, email: (fb.email || data.email || base.email || '').toLowerCase().trim(), slug });
+    setGlobalUser(merged);
+    applyMediaToInputsAndProfile(merged);
+    try{ if(typeof renderDash === 'function') renderDash(); }catch(e){}
+    applyMediaToInputsAndProfile(merged);
+    return merged;
   }
-  document.addEventListener('DOMContentLoaded',function(){[50,250,700,1500].forEach(function(t){setTimeout(forceIcon,t)})});
-  window.addEventListener('hashchange',function(){[50,250,700,1500].forEach(function(t){setTimeout(forceIcon,t)})});
-  setInterval(function(){ if(String(location.hash||'').includes('profile') || q('#profile.active')) forceIcon(); }, 1200);
-  setTimeout(forceIcon,400);
+  async function saveMediaFromInputs(e){
+    if(e){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); }
+    if(!fbReady() || !firebase.auth().currentUser){ toastSafe('Faça login para salvar no Firebase.'); return; }
+    let u = currentGlobalUser();
+    const avatar = clean($('#cfgAvatar')?.value || '');
+    const banner = clean($('#cfgBanner')?.value || '');
+    const bg = clean($('#cfgBg')?.value || '');
+    const video = clean($('#cfgVideo')?.value || '');
+    const frame = clean($('#cfgFrame')?.value || '');
+    // Só atualiza campos de imagem quando tem URL. Assim placeholder/input vazio não apaga nada no F5.
+    if(ok(avatar)) u.avatar = avatar;
+    if(ok(banner)) u.banner = banner;
+    if(ok(bg)) u.bg = bg;
+    u.video = ok(video) ? video : '';
+    if(ok(frame)){ u.frame = frame; u.frameUrl = frame; }
+    const fb = firebase.auth().currentUser;
+    u.uid = fb.uid; u.email = (fb.email || u.email || '').toLowerCase().trim(); u.slug = slugClean(u.slug || u.name || u.email?.split('@')[0] || 'usuario');
+    setGlobalUser(u);
+    applyMediaToInputsAndProfile(u);
+    const payload = Object.assign({}, u, { updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    await firebase.firestore().collection('users').doc(fb.uid).set(payload, { merge:true });
+    await firebase.firestore().collection('profiles').doc(u.slug).set({
+      uid:u.uid,email:u.email,slug:u.slug,name:u.name||'Usuário',bio:u.bio||'',
+      avatar:u.avatar||'',banner:u.banner||'',bg:u.bg||'',video:u.video||'',frame:u.frame||'',frameUrl:u.frameUrl||u.frame||'',
+      color:u.color||'#a855f7',particleType:u.particleType||'snow',particles:u.particles!==false,verified:!!u.verified,
+      links:Array.isArray(u.links)?u.links:[],socials:Array.isArray(u.socials)?u.socials:[],tags:Array.isArray(u.tags)?u.tags:[],embeds:Array.isArray(u.embeds)?u.embeds:[],
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+    toastSafe('Salvo com sucesso!');
+  }
+  function bindSave(){
+    const btn=$('#saveImages');
+    if(btn && !btn.__dlinkyMediaFinalBound){
+      btn.__dlinkyMediaFinalBound = true;
+      btn.addEventListener('click', saveMediaFromInputs, true);
+      btn.onclick = saveMediaFromInputs;
+    }
+  }
+  const oldRenderProfile = window.renderProfile || (typeof renderProfile !== 'undefined' ? renderProfile : null);
+  if(typeof oldRenderProfile === 'function' && !oldRenderProfile.__dlinkyMediaFinal2026){
+    const patched=function(){ const r=oldRenderProfile.apply(this, arguments); [0,80,250,700].forEach(t=>setTimeout(()=>applyMediaToInputsAndProfile(currentGlobalUser()),t)); return r; };
+    patched.__dlinkyMediaFinal2026 = true;
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+  function start(){ installCss(); bindSave(); setTimeout(loadFirebaseUser,150); setTimeout(()=>applyMediaToInputsAndProfile(currentGlobalUser()),500); }
+  document.addEventListener('DOMContentLoaded', start);
+  window.addEventListener('hashchange',()=>setTimeout(()=>applyMediaToInputsAndProfile(currentGlobalUser()),150));
+  setTimeout(start,300);
+  const wait=setInterval(()=>{ if(fbReady()){ clearInterval(wait); bindSave(); firebase.auth().onAuthStateChanged(()=>{ setTimeout(loadFirebaseUser,100); setTimeout(loadFirebaseUser,800); }); } },200);
 })();
