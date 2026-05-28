@@ -13345,3 +13345,111 @@ document.addEventListener("click",(e)=>{
   window.addEventListener('hashchange', ()=>setTimeout(refreshAvatar,80));
   try{ if(window.firebase && firebase.auth) firebase.auth().onAuthStateChanged(()=>setTimeout(refreshAvatar,200)); }catch(e){}
 })();
+
+/* =========================================================
+   DLINKY HOTFIX — AVATAR/ÍCONE FIXO SEM MEXER NO ADMIN/LOGIN
+   Causa real: patches de moldura antigos escondiam #profileAvatar
+   mesmo quando não havia moldura ativa. Este patch roda por último,
+   recupera a URL salva no Firestore e força o ícone a aparecer.
+   ========================================================= */
+(function(){
+  const q=(s,r=document)=>r.querySelector(s);
+  const normKey=()=>String((window.user&&(user.email||user.slug))||'usuario').trim()||'usuario';
+  function storeGet(k){try{return window.DlinkyStore&&window.DlinkyStore.getItem(k)||'';}catch(e){return''}}
+  function storeSet(k,v){try{if(window.DlinkyStore&&v)window.DlinkyStore.setItem(k,String(v));}catch(e){}}
+  function avatarUrl(){
+    let u=(window.user&&(user.avatar||user.photoURL||user.foto||user.icon))||'';
+    const key=normKey();
+    if(!u) u=storeGet('dlinky_avatar_clean_'+key);
+    if(!u) u=storeGet('dlinkyAvatarPreserve_'+key);
+    if(!u) u=storeGet('dlinky_avatar_real_'+key);
+    if(!u) u=storeGet('dlinkyAvatarPreserve_usuario')||storeGet('dlinky_avatar_clean_usuario');
+    return String(u||'').trim();
+  }
+  function hasFrame(){
+    try{
+      if(window.user&&(user.frame||user.activeFrameId)) return true;
+      const final=q('#dlinkyFinalProfileStage .dlinky-final-frame');
+      if(final && final.getAttribute('src')) return true;
+      const v4=q('#dlinkyV4ProfileStage .dlinky-v4-frame');
+      if(v4 && v4.getAttribute('src')) return true;
+    }catch(e){}
+    return false;
+  }
+  function applyAvatarLock(){
+    const url=avatarUrl();
+    if(!url) return;
+    if(window.user){
+      user.avatar=url;
+      storeSet('dlinky_avatar_clean_'+normKey(),url);
+      storeSet('dlinkyAvatarPreserve_'+normKey(),url);
+      storeSet('dlinky_avatar_real_'+normKey(),url);
+      try{window.DlinkyStore.setItem('dlinkyUser',JSON.stringify(user));}catch(e){}
+    }
+
+    // Atualiza todos os lugares que podem mostrar o avatar.
+    ['#profileAvatar','#dashAvatar','#sideAvatar','#frameBuyAvatar','#adjustAvatar'].forEach(sel=>{
+      const el=q(sel); if(!el) return;
+      if(el.tagName==='IMG'){
+        el.src=url; el.removeAttribute('srcset'); el.style.objectFit='cover';
+      }else{
+        el.style.setProperty('background-image',`url("${url}")`,'important');
+        el.style.setProperty('background-size','cover','important');
+        el.style.setProperty('background-position','center','important');
+      }
+      el.style.setProperty('opacity','1','important');
+      el.style.setProperty('visibility','visible','important');
+    });
+
+    // Se houver palco de moldura, o avatar dele recebe a imagem.
+    ['.dlinky-final-avatar','.dlinky-v4-avatar'].forEach(sel=>{
+      document.querySelectorAll(sel).forEach(el=>{
+        el.style.setProperty('background-image',`url("${url}")`,'important');
+        el.style.setProperty('background-size','cover','important');
+        el.style.setProperty('background-position','center','important');
+        el.style.setProperty('opacity','1','important');
+        el.style.setProperty('visibility','visible','important');
+      });
+    });
+
+    // Bug principal: sem moldura ativa, códigos antigos deixavam display:none no #profileAvatar.
+    const p=q('#profileAvatar');
+    if(p && !hasFrame()){
+      p.style.setProperty('display','inline-block','important');
+      p.style.setProperty('width','94px','important');
+      p.style.setProperty('height','94px','important');
+      p.style.setProperty('border-radius','50%','important');
+      p.style.setProperty('background-image',`url("${url}")`,'important');
+      const deco=q('#avatarDecoration');
+      if(deco){
+        deco.classList.remove('dlinky-final-only','dlinky-v5-only-frame','dlinky-v4-lock');
+        deco.style.setProperty('display','grid','important');
+        deco.style.setProperty('place-items','center','important');
+      }
+    }
+  }
+
+  const oldSaveImages=window.saveImages;
+  const saveBtn=()=>q('#saveImages');
+  document.addEventListener('click',function(e){
+    if(e.target&&e.target.closest&&e.target.closest('#saveImages')){
+      setTimeout(applyAvatarLock,80);
+      setTimeout(applyAvatarLock,350);
+      setTimeout(applyAvatarLock,1000);
+    }
+  },true);
+
+  const prevRP=window.renderProfile;
+  window.renderProfile=function(){
+    if(prevRP) prevRP();
+    [0,80,250,700,1500,3000].forEach(t=>setTimeout(applyAvatarLock,t));
+  };
+  const prevRD=window.renderDash;
+  window.renderDash=function(){
+    if(prevRD) prevRD();
+    [0,100,500].forEach(t=>setTimeout(applyAvatarLock,t));
+  };
+  window.addEventListener('hashchange',()=>[100,500,1200].forEach(t=>setTimeout(applyAvatarLock,t)));
+  document.addEventListener('DOMContentLoaded',()=>[200,800,1600].forEach(t=>setTimeout(applyAvatarLock,t)));
+  [200,800,1600,3000].forEach(t=>setTimeout(applyAvatarLock,t));
+})();
