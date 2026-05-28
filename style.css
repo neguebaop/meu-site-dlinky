@@ -4462,3 +4462,19 @@ body:has(#profile.active) #particlesCanvas{display:none!important;}
   pointer-events: auto !important;
 }
 .social-icon { cursor: pointer; }
+
+/* FIX loja/admin molduras: abas clicáveis e preview limpo */
+#tab-store .shop-tabs,
+#tab-store .shop-tabs button,
+#shopGrid,
+#shopGrid .asset-card,
+#shopGrid button,
+#inventoryGrid,
+#inventoryGrid .asset-card,
+#inventoryGrid button { pointer-events:auto!important; position:relative!important; z-index:50!important; }
+#shopGrid .frame-shop-preview,
+#inventoryGrid .frame-shop-preview,
+.mini-frame-preview{position:relative;display:grid;place-items:center;background:radial-gradient(circle,#25162f,#07050b 70%);overflow:hidden;border-radius:12px;min-height:150px}
+.frame-avatar-demo,.mini-avatar{display:block;width:78px;height:78px;border-radius:50%;background:#202028 center/cover no-repeat;border:2px solid #2f7dff;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1}
+.frame-img.big{position:absolute;left:50%;top:50%;width:150px!important;height:150px!important;transform:translate(-50%,-50%)!important;object-fit:contain!important;z-index:2;filter:drop-shadow(0 0 14px rgba(168,85,247,.65))}
+.mini-frame-preview{width:76px;height:76px;min-height:76px;flex:0 0 76px}.mini-frame-preview .mini-avatar{width:42px;height:42px}.mini-frame-preview img{position:absolute;left:50%;top:50%;width:72px;height:72px;transform:translate(-50%,-50%);object-fit:contain;z-index:2}.bad-url-note{display:none;color:#fecaca!important;font-size:11px!important}.frame-shop-preview.bad .bad-url-note,.mini-frame-preview.bad+.bad-url-note,.admin-frame-item .mini-frame-preview.bad ~ div .bad-url-note{display:block!important}.frame-shop-preview img.bad,.mini-frame-preview img.bad{display:none!important}.coin-preview{display:grid!important;place-items:center;font-size:44px;color:#c084fc;text-shadow:0 0 20px #a855f7}.shop-tabs button{cursor:pointer!important}.asset-card .btn{margin-top:8px}.admin-frame-item{align-items:center!important}
