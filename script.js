@@ -13160,3 +13160,169 @@ document.addEventListener("click",(e)=>{
   if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
 })();
+
+/* =========================================================
+   DLINKY FIX DEFINITIVO — AVATAR/ÍCONE VISÍVEL NO PERFIL
+   Lê avatar de users, profiles e também chaves antigas dlinkyStore.
+   ========================================================= */
+(function(){
+  if(window.__DLINKY_AVATAR_ICON_VISIBLE_FINAL__) return;
+  window.__DLINKY_AVATAR_ICON_VISIBLE_FINAL__ = true;
+
+  const $ = (s,r=document)=>r.querySelector(s);
+  const clean = v => String(v || '').trim().replace(/^url\(["']?|["']?\)$/g,'').replace(/["']/g,'');
+  const ok = v => {
+    v = clean(v);
+    return !!v && v !== 'none' && v !== 'null' && v !== 'undefined' && !v.startsWith('blob:');
+  };
+  const slugClean = v => String(v||'usuario').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]/g,'').slice(0,30) || 'usuario';
+  const enc = k => encodeURIComponent(String(k||'')).replace(/\./g,'%2E');
+
+  function getU(){
+    let a = {};
+    try{ a = JSON.parse((window.DlinkyStore && DlinkyStore.getItem('dlinkyUser')) || '{}') || {}; }catch(e){}
+    try{ if(typeof user !== 'undefined' && user) a = Object.assign({}, a, user); }catch(e){}
+    try{ if(window.user) a = Object.assign({}, a, window.user); }catch(e){}
+    return a;
+  }
+
+  function pickAvatar(u){
+    u = u || {};
+    const fields = ['avatar','avatarUrl','photoURL','photoUrl','foto','icon','iconUrl','profileAvatar','profileImage','image','pfp','picture'];
+    for(const k of fields){ if(ok(u[k])) return clean(u[k]); }
+    const input = $('#cfgAvatar');
+    if(input && ok(input.value)) return clean(input.value);
+    return '';
+  }
+
+  async function readDlinkyStoreKey(key){
+    try{
+      if(!(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore)) return '';
+      let snap = await firebase.firestore().collection('dlinkyStore').doc(enc(key)).get();
+      if(!snap.exists) snap = await firebase.firestore().collection('dlinkyStore').doc(key).get();
+      if(snap.exists){
+        const d = snap.data() || {};
+        return clean(d.value || d.avatar || d.url || '');
+      }
+    }catch(e){}
+    return '';
+  }
+
+  async function findAvatarEverywhere(){
+    const u = getU();
+    let av = pickAvatar(u);
+    if(ok(av)) return av;
+
+    try{
+      if(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore){
+        const db = firebase.firestore();
+        const hashSlug = (location.hash||'').replace(/^#\/?/,'').split('/')[0];
+        const slugs = [u.slug, hashSlug, window.__dlinkyDirectProfileSlug, 'usuario', 'linkroubadao'].map(slugClean).filter(Boolean);
+        for(const s of [...new Set(slugs)]){
+          const ps = await db.collection('profiles').doc(s).get();
+          if(ps.exists){ av = pickAvatar(ps.data() || {}); if(ok(av)) return av; }
+        }
+        if(firebase.auth && firebase.auth().currentUser){
+          const us = await db.collection('users').doc(firebase.auth().currentUser.uid).get();
+          if(us.exists){ av = pickAvatar(us.data() || {}); if(ok(av)) return av; }
+        }
+      }
+    }catch(e){}
+
+    const email = clean(u.email || (window.firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '');
+    const emailClean = email.toLowerCase().trim();
+    const emailEncoded = emailClean.replace(/@/g,'%40');
+    const slug = slugClean(u.slug || (location.hash||'').replace(/^#\/?/,'') || 'usuario');
+    const keys = [
+      'dlinkyAvatarPreserve_'+slug,
+      'dlinky_avatar_clean_'+slug,
+      'dlinkyAvatarPreserve_usuario',
+      'dlinky_avatar_clean_usuario',
+      'dlinkyAvatarPreserve_'+emailClean,
+      'dlinky_avatar_clean_'+emailClean,
+      'dlinkyAvatarPreserve_'+emailEncoded,
+      'dlinky_avatar_clean_'+emailEncoded,
+      'dlinkyAvatarPreserve_'+(emailClean||'').replace(/[^a-z0-9]/g,''),
+      'dlinky_avatar_clean_'+(emailClean||'').replace(/[^a-z0-9]/g,'')
+    ];
+    for(const k of [...new Set(keys)]){
+      av = await readDlinkyStoreKey(k);
+      if(ok(av)) return av;
+    }
+    return '';
+  }
+
+  function installCss(){
+    if($('#dlinkyAvatarVisibleCssFinal')) return;
+    const st = document.createElement('style');
+    st.id = 'dlinkyAvatarVisibleCssFinal';
+    st.textContent = `
+      #profileCard{position:relative!important;overflow:visible!important;}
+      #avatarDecoration{display:block!important;visibility:visible!important;opacity:1!important;z-index:50!important;}
+      #avatarDecoration > #profileAvatar{display:block!important;visibility:visible!important;opacity:1!important;}
+      #dlinkyRealProfileIconFinal{
+        position:absolute!important;left:50%!important;top:145px!important;
+        width:94px!important;height:94px!important;border-radius:50%!important;
+        transform:translate(-50%,-50%)!important;z-index:214748300!important;
+        display:none;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;
+        border:3px solid #2f7dff!important;box-shadow:0 0 0 4px rgba(8,4,14,.85),0 0 30px rgba(47,125,255,.75),0 0 42px rgba(168,85,247,.55)!important;
+        pointer-events:none!important;overflow:hidden!important;
+      }
+      #dlinkyRealProfileIconFinal img{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:50%!important;display:block!important;}
+    `;
+    document.head.appendChild(st);
+  }
+
+  async function showAvatar(){
+    installCss();
+    const card = $('#profileCard');
+    if(!card) return;
+    let av = await findAvatarEverywhere();
+    const original = $('#profileAvatar');
+    if(ok(av) && original){
+      original.src = av;
+      original.style.setProperty('display','block','important');
+      original.style.setProperty('visibility','visible','important');
+      original.style.setProperty('opacity','1','important');
+      original.style.backgroundImage = `url("${av.replace(/"/g,'%22')}")`;
+    }
+    let icon = $('#dlinkyRealProfileIconFinal', card);
+    if(!icon){
+      icon = document.createElement('div');
+      icon.id = 'dlinkyRealProfileIconFinal';
+      icon.innerHTML = '<img alt="avatar">';
+      card.appendChild(icon);
+    }
+    if(ok(av)){
+      const img = icon.querySelector('img');
+      img.src = av;
+      icon.style.backgroundImage = `url("${av.replace(/"/g,'%22')}")`;
+      icon.style.setProperty('display','block','important');
+      try{ if(typeof user !== 'undefined' && user) user.avatar = av; window.user = Object.assign(window.user||{}, {avatar:av}); }catch(e){}
+      try{
+        const input = $('#cfgAvatar');
+        if(input && !input.value) input.value = av;
+      }catch(e){}
+    }else{
+      icon.style.setProperty('display','none','important');
+    }
+  }
+
+  const old = window.renderProfile || (typeof renderProfile !== 'undefined' ? renderProfile : null);
+  if(typeof old === 'function' && !old.__avatarVisibleFinal){
+    const patched = function(){
+      const r = old.apply(this, arguments);
+      [0,80,250,700,1500,3000].forEach(t=>setTimeout(showAvatar,t));
+      return r;
+    };
+    patched.__avatarVisibleFinal = true;
+    window.renderProfile = patched;
+    try{ renderProfile = patched; }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',()=>[100,500,1200,2500].forEach(t=>setTimeout(showAvatar,t)));
+  window.addEventListener('hashchange',()=>[100,500,1200].forEach(t=>setTimeout(showAvatar,t)));
+  if(window.firebase && firebase.apps && firebase.apps.length && firebase.auth){
+    try{ firebase.auth().onAuthStateChanged(()=>[300,1000,2200].forEach(t=>setTimeout(showAvatar,t))); }catch(e){}
+  }
+  [300,1000,2200].forEach(t=>setTimeout(showAvatar,t));
+})();
